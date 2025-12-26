@@ -3,9 +3,9 @@ Description=LunchMoney Ingest Service (lmi-service)
 After=network.target
 
 [Service]
-WorkingDirectory=%h/%i
+WorkingDirectory=/home/jose/%i
 Environment=PYTHONUNBUFFERED=1
-ExecStart=%h/%i/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8010
+ExecStart=/home/jose/%i/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8010
 Restart=on-failure
 User=jose
 Group=jose
