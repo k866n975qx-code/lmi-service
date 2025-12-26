@@ -1,0 +1,10 @@
+[Unit]
+Description=Hourly sync-all trigger for lmi-service
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+Unit=lmi-sync@%i.service
+
+[Install]
+WantedBy=timers.target

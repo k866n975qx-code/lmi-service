@@ -1,0 +1,703 @@
+{
+  "comparison": {
+    "left_date": "2025-12-24",
+    "right_date": "2025-12-25",
+    "days_apart": 1,
+    "mode": "adjacent"
+  },
+  "left": {
+    "date": "2025-12-24",
+    "file": "snapshot-317631-2025-12-24.json"
+  },
+  "right": {
+    "date": "2025-12-25",
+    "file": "snapshot-317631-2025-12-25.json"
+  },
+  "summary": {
+    "direction": "negative",
+    "primary_driver": "income_change",
+    "headline": "Over 1 day, small drawdown with higher income.",
+    "highlights": [
+      "Market value -$2.75 (-0.02%) vs 1 day ago",
+      "Forward 12m income +$0.23",
+      "1M TWR +5.16%",
+      "No holdings added or removed"
+    ],
+    "period_type": "daily"
+  },
+  "range_metrics": {
+    "simple_return_pct": -0.02,
+    "simple_pnl": -2.75,
+    "per_day_return_pct": -0.02
+  },
+  "portfolio_metrics": {
+    "totals": {
+      "market_value": {
+        "left": 15826.17,
+        "right": 15823.42,
+        "delta": -2.75
+      },
+      "net_liquidation_value": {
+        "left": 8670.43,
+        "right": 8667.68,
+        "delta": -2.75
+      },
+      "cost_basis": {
+        "left": 15605.1,
+        "right": 15617.4,
+        "delta": 12.3
+      },
+      "unrealized_pnl": {
+        "left": 221.07,
+        "right": 206.02,
+        "delta": -15.05
+      },
+      "unrealized_pct": {
+        "left": 1.417,
+        "right": 1.319,
+        "delta": -0.098
+      },
+      "margin_loan_balance": {
+        "left": 7155.74,
+        "right": 7155.74,
+        "delta": 0.0
+      },
+      "margin_to_portfolio_pct": {
+        "left": 45.2146,
+        "right": 45.222,
+        "delta": 0.007
+      }
+    },
+    "income": {
+      "projected_monthly_income": {
+        "left": 170.27,
+        "right": 170.29,
+        "delta": 0.02
+      },
+      "forward_12m_total": {
+        "left": 2043.21,
+        "right": 2043.44,
+        "delta": 0.23
+      },
+      "portfolio_current_yield_pct": {
+        "left": 12.91,
+        "right": 12.914,
+        "delta": 0.004
+      },
+      "portfolio_yield_on_cost_pct": {
+        "left": 13.093,
+        "right": 13.084,
+        "delta": -0.009
+      }
+    },
+    "rollups": {
+      "performance": {
+        "twr_1m_pct": {
+          "left": 3.638,
+          "right": 5.158,
+          "delta": 1.52
+        },
+        "twr_3m_pct": {
+          "left": 4.705,
+          "right": 4.669,
+          "delta": -0.036
+        },
+        "twr_6m_pct": {
+          "left": 12.388,
+          "right": 12.109,
+          "delta": -0.279
+        },
+        "twr_12m_pct": {
+          "left": 13.997,
+          "right": 12.505,
+          "delta": -1.492
+        }
+      },
+      "risk": {
+        "vol_30d_pct": {
+          "left": 13.614,
+          "right": 7.052,
+          "delta": -6.562
+        },
+        "vol_90d_pct": {
+          "left": 14.595,
+          "right": 10.937,
+          "delta": -3.658
+        },
+        "sharpe_1y": {
+          "left": 0.623,
+          "right": 0.719,
+          "delta": 0.096
+        },
+        "calmar_1y": {
+          "left": 0.781,
+          "right": 0.643,
+          "delta": -0.138
+        },
+        "max_drawdown_1y_pct": {
+          "left": -20.003,
+          "right": -19.435,
+          "delta": 0.568
+        }
+      }
+    },
+    "goal_progress": {
+      "progress_pct": {
+        "left": 8.51,
+        "right": 8.514,
+        "delta": 0.004
+      },
+      "current_projected_monthly": {
+        "left": 170.27,
+        "right": 170.29,
+        "delta": 0.02
+      },
+      "months_to_goal": {
+        "left": 999,
+        "right": 999,
+        "delta": 0.0
+      }
+    },
+    "goal_progress_net": {
+      "progress_pct": {
+        "left": 7.28,
+        "right": 7.277,
+        "delta": -0.003
+      },
+      "current_projected_monthly_net": {
+        "left": 145.518,
+        "right": 145.54,
+        "delta": 0.022
+      }
+    },
+    "margin": {
+      "margin_loan_balance": {
+        "left": 7155.74,
+        "right": 7155.74,
+        "delta": 0.0
+      },
+      "margin_to_portfolio_pct": {
+        "left": 45.2146,
+        "right": 45.222,
+        "delta": 0.007
+      },
+      "ltv_pct": {
+        "left": 45.2146,
+        "right": 45.222,
+        "delta": 0.007
+      }
+    }
+  },
+  "dividends": {
+    "forward_12m_total": {
+      "left": 2043.21,
+      "right": 2043.44,
+      "delta": 0.23
+    },
+    "realized_mtd_total": {
+      "left": 115.92,
+      "right": 95.29,
+      "delta": -20.63
+    },
+    "next_30d_total": {
+      "left": 89.04,
+      "right": 158.74,
+      "delta": 69.7
+    }
+  },
+  "coverage": {
+    "derived_pct": {
+      "left": 76.43,
+      "right": 100.0,
+      "delta": 23.57
+    },
+    "missing_pct": {
+      "left": 0.96,
+      "right": 0.0,
+      "delta": -0.96
+    },
+    "note": "Data quality slightly improved (fewer missing fields)."
+  },
+  "macro": {
+    "snapshot": {
+      "unemployment_rate": {
+        "left": 4.6,
+        "right": 4.6,
+        "delta": 0.0
+      },
+      "yield_spread_10y_2y": {
+        "left": 0.66,
+        "right": 0.73,
+        "delta": 0.07
+      },
+      "macro_stress_score": {
+        "left": 1.0339,
+        "right": -0.821,
+        "delta": -1.855
+      },
+      "gdp_nowcast": {
+        "left": 23770.976,
+        "right": 31095.09,
+        "delta": 7324.114
+      },
+      "real_10y_yield": {
+        "left": 1.12,
+        "right": 1.17,
+        "delta": 0.05
+      },
+      "two_year_yield": {
+        "left": 3.46,
+        "right": 3.44,
+        "delta": -0.02
+      },
+      "liquidity_index": {
+        "left": -0.2848,
+        "right": -0.672,
+        "delta": -0.387
+      },
+      "vix": {
+        "left": 14.91,
+        "right": 14.0,
+        "delta": -0.91
+      },
+      "cpi_yoy": {
+        "left": 3.0,
+        "right": 3.0,
+        "delta": 0.0
+      },
+      "fed_funds_rate": {
+        "left": 3.64,
+        "right": 3.88,
+        "delta": 0.24
+      },
+      "hy_spread_bps": {
+        "left": 659.0,
+        "right": 283.0,
+        "delta": -376.0
+      },
+      "m2_money_supply_bn": {
+        "left": 22303.8,
+        "right": 22322.4,
+        "delta": 18.6
+      },
+      "ten_year_yield": {
+        "left": 4.12,
+        "right": 4.17,
+        "delta": 0.05
+      },
+      "valuation_heat_index": {
+        "left": 0.9865,
+        "right": 0.324,
+        "delta": -0.663
+      },
+      "curve_inversion_depth": {
+        "left": 0.66,
+        "right": 0.0,
+        "delta": -0.66
+      }
+    },
+    "trends": {
+      "trends": {
+        "macro_stress_score": {
+          "delta_30d": {
+            "left": 0.0,
+            "right": -0.287,
+            "delta": -0.287
+          },
+          "sma_7d": {
+            "left": 1.034,
+            "right": -0.689,
+            "delta": -1.723
+          },
+          "sma_30d": {
+            "left": 1.034,
+            "right": -0.534,
+            "delta": -1.568
+          },
+          "delta_7d": {
+            "left": 0.0,
+            "right": -0.132,
+            "delta": -0.132
+          }
+        },
+        "valuation_heat_index": {
+          "delta_30d": {
+            "left": 0.0,
+            "right": -0.022,
+            "delta": -0.022
+          },
+          "sma_7d": {
+            "left": 0.987,
+            "right": 0.328,
+            "delta": -0.659
+          },
+          "sma_30d": {
+            "left": 0.987,
+            "right": 0.346,
+            "delta": -0.641
+          },
+          "delta_7d": {
+            "left": 0.0,
+            "right": -0.003,
+            "delta": -0.003
+          }
+        },
+        "liquidity_index": {
+          "delta_30d": {
+            "left": 0.0,
+            "right": 0.807,
+            "delta": 0.807
+          },
+          "sma_7d": {
+            "left": -0.285,
+            "right": -0.648,
+            "delta": -0.363
+          },
+          "sma_30d": {
+            "left": -0.285,
+            "right": -1.479,
+            "delta": -1.194
+          },
+          "delta_7d": {
+            "left": 0.0,
+            "right": -0.024,
+            "delta": -0.024
+          }
+        }
+      },
+      "meta": {
+        "window_days": {
+          "left": 1,
+          "right": 30,
+          "delta": 29.0
+        }
+      }
+    }
+  },
+  "holdings": {
+    "added": [],
+    "removed": [],
+    "changed": [
+      {
+        "symbol": "SVOL",
+        "change_type": "price_move",
+        "impact_on_income_monthly": 0.0,
+        "fields": {
+          "shares": {
+            "left": 167.989,
+            "right": 167.98872999999998,
+            "delta": -0.00027
+          },
+          "market_value": {
+            "left": 2965.001,
+            "right": 2961.64,
+            "delta": -3.361
+          },
+          "weight_pct": {
+            "left": 18.735,
+            "right": 18.717,
+            "delta": -0.018
+          },
+          "last_price": {
+            "left": 17.65,
+            "right": 17.63,
+            "delta": -0.02
+          },
+          "unrealized_pnl": {
+            "left": 14.151,
+            "right": 10.79,
+            "delta": -3.361
+          }
+        }
+      },
+      {
+        "symbol": "NLY",
+        "change_type": "price_move",
+        "impact_on_income_monthly": 0.0,
+        "fields": {
+          "shares": {
+            "left": 64.621,
+            "right": 64.62098,
+            "delta": -2e-05
+          },
+          "market_value": {
+            "left": 1498.561,
+            "right": 1501.15,
+            "delta": 2.589
+          },
+          "weight_pct": {
+            "left": 9.469,
+            "right": 9.487,
+            "delta": 0.018
+          },
+          "last_price": {
+            "left": 23.19,
+            "right": 23.23,
+            "delta": 0.04
+          },
+          "unrealized_pnl": {
+            "left": 43.671,
+            "right": 45.78,
+            "delta": 2.109
+          }
+        }
+      },
+      {
+        "symbol": "AMLP",
+        "change_type": "price_move",
+        "impact_on_income_monthly": 0.0,
+        "fields": {
+          "shares": {
+            "left": 10.021,
+            "right": 10.02078,
+            "delta": -0.00022
+          },
+          "market_value": {
+            "left": 473.772,
+            "right": 472.78,
+            "delta": -0.992
+          },
+          "weight_pct": {
+            "left": 2.994,
+            "right": 2.988,
+            "delta": -0.006
+          },
+          "last_price": {
+            "left": 47.279,
+            "right": 47.18,
+            "delta": -0.099
+          },
+          "unrealized_pnl": {
+            "left": 2.062,
+            "right": 0.32,
+            "delta": -1.742
+          }
+        }
+      },
+      {
+        "symbol": "JEPI",
+        "change_type": "price_move",
+        "impact_on_income_monthly": 0.0,
+        "fields": {
+          "shares": {
+            "left": 38.379,
+            "right": 38.37863,
+            "delta": -0.00037
+          },
+          "market_value": {
+            "left": 2225.492,
+            "right": 2224.81,
+            "delta": -0.682
+          },
+          "weight_pct": {
+            "left": 14.062,
+            "right": 14.06,
+            "delta": -0.002
+          },
+          "last_price": {
+            "left": 57.988,
+            "right": 57.97,
+            "delta": -0.018
+          },
+          "unrealized_pnl": {
+            "left": 46.102,
+            "right": 39.99,
+            "delta": -6.112
+          }
+        }
+      },
+      {
+        "symbol": "RYLD",
+        "change_type": "price_move",
+        "impact_on_income_monthly": 0.0,
+        "fields": {
+          "shares": {
+            "left": 51.199,
+            "right": 51.19919000000001,
+            "delta": 0.00019
+          },
+          "market_value": {
+            "left": 792.794,
+            "right": 792.56,
+            "delta": -0.234
+          },
+          "weight_pct": {
+            "left": 5.009,
+            "right": 5.009,
+            "delta": 0.0
+          },
+          "last_price": {
+            "left": 15.484,
+            "right": 15.48,
+            "delta": -0.004
+          },
+          "unrealized_pnl": {
+            "left": 9.804,
+            "right": 10.13,
+            "delta": 0.326
+          }
+        }
+      },
+      {
+        "symbol": "SPYI",
+        "change_type": "price_move",
+        "impact_on_income_monthly": 0.02,
+        "fields": {
+          "shares": {
+            "left": 13.904,
+            "right": 13.90449,
+            "delta": 0.00049
+          },
+          "market_value": {
+            "left": 736.729,
+            "right": 736.66,
+            "delta": -0.069
+          },
+          "weight_pct": {
+            "left": 4.655,
+            "right": 4.656,
+            "delta": 0.001
+          },
+          "last_price": {
+            "left": 52.985,
+            "right": 52.98,
+            "delta": -0.005
+          },
+          "unrealized_pnl": {
+            "left": 8.159,
+            "right": 3.26,
+            "delta": -4.899
+          }
+        }
+      },
+      {
+        "symbol": "JEPQ",
+        "change_type": "price_move",
+        "impact_on_income_monthly": 0.0,
+        "fields": {
+          "shares": {
+            "left": 38.06,
+            "right": 38.05996,
+            "delta": -4e-05
+          },
+          "market_value": {
+            "left": 2256.575,
+            "right": 2256.58,
+            "delta": 0.005
+          },
+          "weight_pct": {
+            "left": 14.259,
+            "right": 14.261,
+            "delta": 0.002
+          },
+          "last_price": {
+            "left": 59.29,
+            "right": 59.29,
+            "delta": 0.0
+          },
+          "unrealized_pnl": {
+            "left": 46.585,
+            "right": 46.95,
+            "delta": 0.365
+          }
+        }
+      },
+      {
+        "symbol": "TRIN",
+        "change_type": "price_move",
+        "impact_on_income_monthly": 0.0,
+        "fields": {
+          "shares": {
+            "left": 194.642,
+            "right": 194.64233,
+            "delta": 0.00033
+          },
+          "market_value": {
+            "left": 2946.885,
+            "right": 2946.88,
+            "delta": -0.005
+          },
+          "weight_pct": {
+            "left": 18.62,
+            "right": 18.624,
+            "delta": 0.004
+          },
+          "last_price": {
+            "left": 15.14,
+            "right": 15.14,
+            "delta": 0.0
+          },
+          "unrealized_pnl": {
+            "left": 33.965,
+            "right": 32.56,
+            "delta": -1.405
+          }
+        }
+      },
+      {
+        "symbol": "QYLD",
+        "change_type": "price_move",
+        "impact_on_income_monthly": 0.0,
+        "fields": {
+          "shares": {
+            "left": 83.756,
+            "right": 83.75612,
+            "delta": 0.00012
+          },
+          "market_value": {
+            "left": 1484.996,
+            "right": 1485.0,
+            "delta": 0.004
+          },
+          "weight_pct": {
+            "left": 9.383,
+            "right": 9.385,
+            "delta": 0.002
+          },
+          "last_price": {
+            "left": 17.73,
+            "right": 17.73,
+            "delta": 0.0
+          },
+          "unrealized_pnl": {
+            "left": 17.516,
+            "right": 17.19,
+            "delta": -0.326
+          }
+        }
+      },
+      {
+        "symbol": "GAIN",
+        "change_type": "price_move",
+        "impact_on_income_monthly": 0.0,
+        "fields": {
+          "shares": {
+            "left": 32.556,
+            "right": 32.55616,
+            "delta": 0.00016
+          },
+          "market_value": {
+            "left": 445.368,
+            "right": 445.37,
+            "delta": 0.002
+          },
+          "weight_pct": {
+            "left": 2.814,
+            "right": 2.815,
+            "delta": 0.001
+          },
+          "last_price": {
+            "left": 13.68,
+            "right": 13.68,
+            "delta": 0.0
+          },
+          "unrealized_pnl": {
+            "left": -0.942,
+            "right": -0.94,
+            "delta": 0.002
+          }
+        }
+      }
+    ]
+  }
+}

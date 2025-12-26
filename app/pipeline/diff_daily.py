@@ -1,0 +1,408 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+from datetime import date
+
+
+def _load_daily_snapshot(conn: sqlite3.Connection, as_of_date_local: str):
+    cur = conn.cursor()
+    row = cur.execute(
+        "SELECT payload_json FROM snapshot_daily_current WHERE as_of_date_local=?",
+        (as_of_date_local,),
+    ).fetchone()
+    if not row:
+        return None
+    try:
+        return json.loads(row[0])
+    except Exception:
+        return None
+
+
+def _delta(left, right, precision=3):
+    if left is None or right is None:
+        return None
+    try:
+        return round(float(right) - float(left), precision)
+    except (TypeError, ValueError):
+        return None
+
+
+def _section_diff(left: dict, right: dict, keys: list[str], precision=3):
+    out = {}
+    for key in keys:
+        out[key] = {
+            "left": left.get(key) if left else None,
+            "right": right.get(key) if right else None,
+            "delta": _delta(left.get(key) if left else None, right.get(key) if right else None, precision),
+        }
+    return out
+
+
+def _is_number(val):
+    return isinstance(val, (int, float)) and not isinstance(val, bool)
+
+
+def _safe_divide(a, b):
+    if a is None or b in (None, 0, 0.0):
+        return None
+    return float(a / b)
+
+
+def _format_money(val):
+    if val is None:
+        return "n/a"
+    sign = "-" if val < 0 else "+"
+    return f"{sign}${abs(val):.2f}"
+
+
+def _format_pct(val):
+    if val is None:
+        return "n/a"
+    sign = "-" if val < 0 else "+"
+    return f"{sign}{abs(val):.2f}%"
+
+
+def _numeric_tree(left, right, precision=3):
+    if _is_number(left) or _is_number(right):
+        return {
+            "left": left if _is_number(left) else None,
+            "right": right if _is_number(right) else None,
+            "delta": _delta(left if _is_number(left) else None, right if _is_number(right) else None, precision),
+        }
+    if isinstance(left, dict) or isinstance(right, dict):
+        out = {}
+        keys = set(left.keys() if isinstance(left, dict) else []) | set(right.keys() if isinstance(right, dict) else [])
+        for key in keys:
+            sub = _numeric_tree(
+                left.get(key) if isinstance(left, dict) else None,
+                right.get(key) if isinstance(right, dict) else None,
+                precision,
+            )
+            if sub:
+                out[key] = sub
+        return out or None
+    return None
+
+
+def _holdings_map(snapshot: dict):
+    holdings = snapshot.get("holdings") or []
+    out = {}
+    for holding in holdings:
+        sym = holding.get("symbol")
+        if not sym:
+            continue
+        out[sym] = holding
+    return out
+
+
+def _holding_fields_diff(left: dict, right: dict, fields: list[str], missing_note: str | None = None):
+    out = {}
+    for field in fields:
+        lval = left.get(field) if left else None
+        rval = right.get(field) if right else None
+        precision = 6 if field == "shares" else 3
+        if _is_number(lval) or _is_number(rval):
+            if missing_note and lval is None and _is_number(rval):
+                lval = 0.0
+                delta = _delta(lval, rval, precision)
+                out[field] = {"left": lval, "right": rval, "delta": delta, "note": missing_note}
+                continue
+            if missing_note and rval is None and _is_number(lval):
+                rval = 0.0
+                delta = _delta(lval, rval, precision)
+                out[field] = {"left": lval, "right": rval, "delta": delta, "note": missing_note}
+                continue
+            delta = _delta(lval, rval, precision)
+            out[field] = {"left": lval, "right": rval, "delta": delta}
+    return out
+
+
+def _holdings_weight_shift(left: dict, right: dict):
+    left_map = _holdings_map(left)
+    right_map = _holdings_map(right)
+    symbols = set(left_map.keys()) | set(right_map.keys())
+    total = 0.0
+    for sym in symbols:
+        lval = left_map.get(sym, {}).get("weight_pct") or 0.0
+        rval = right_map.get(sym, {}).get("weight_pct") or 0.0
+        if _is_number(lval) and _is_number(rval):
+            total += abs(rval - lval)
+    return round(total, 3)
+
+
+def _holding_income_delta(left: dict, right: dict):
+    lval = left.get("projected_monthly_dividend")
+    rval = right.get("projected_monthly_dividend")
+    return _delta(lval, rval, 3)
+
+
+def _holdings_diff(left: dict, right: dict):
+    left_map = _holdings_map(left)
+    right_map = _holdings_map(right)
+    symbols = sorted(set(left_map.keys()) | set(right_map.keys()))
+    added = []
+    removed = []
+    changed = []
+    fields = ["shares", "market_value", "weight_pct", "last_price", "unrealized_pnl"]
+    for sym in symbols:
+        lval = left_map.get(sym, {})
+        rval = right_map.get(sym, {})
+        if sym not in left_map:
+            added.append({"symbol": sym, "fields": _holding_fields_diff({}, rval, fields, missing_note="not owned on left")})
+        elif sym not in right_map:
+            removed.append({"symbol": sym, "fields": _holding_fields_diff(lval, {}, fields, missing_note="not owned on right")})
+        else:
+            fields_diff = _holding_fields_diff(lval, rval, fields)
+            if any(v.get("delta") not in (None, 0.0) for v in fields_diff.values()):
+                shares_delta = fields_diff.get("shares", {}).get("delta")
+                mv_delta = fields_diff.get("market_value", {}).get("delta")
+                shares_delta = 0.0 if shares_delta is not None and abs(shares_delta) < 1e-3 else shares_delta
+                mv_delta = 0.0 if mv_delta is not None and abs(mv_delta) < 0.01 else mv_delta
+                if shares_delta not in (None, 0.0) and mv_delta not in (None, 0.0):
+                    change_type = "mixed"
+                elif shares_delta not in (None, 0.0):
+                    change_type = "size_change"
+                else:
+                    change_type = "price_move"
+                changed.append(
+                    {
+                        "symbol": sym,
+                        "change_type": change_type,
+                        "impact_on_income_monthly": _holding_income_delta(lval, rval),
+                        "fields": fields_diff,
+                    }
+                )
+    changed.sort(key=lambda d: abs(d["fields"].get("market_value", {}).get("delta") or 0.0), reverse=True)
+    return {"added": added, "removed": removed, "changed": changed}
+
+
+def _summary_block(left: dict, right: dict, holdings_diff: dict, days_apart: int | None = None):
+    left_totals = left.get("totals", {}) if left else {}
+    right_totals = right.get("totals", {}) if right else {}
+    mv_left = left_totals.get("market_value")
+    mv_right = right_totals.get("market_value")
+    mv_delta = _delta(mv_left, mv_right, 2)
+    mv_pct = _safe_divide(mv_delta, mv_left) * 100 if mv_left else None
+
+    unreal_left = left_totals.get("unrealized_pnl")
+    unreal_right = right_totals.get("unrealized_pnl")
+    unreal_delta = _delta(unreal_left, unreal_right, 2)
+
+    income_left = (left.get("income") or {}).get("forward_12m_total")
+    income_right = (right.get("income") or {}).get("forward_12m_total")
+    income_delta = _delta(income_left, income_right, 2)
+
+    if mv_delta is None or unreal_delta is None:
+        direction = "mixed"
+    else:
+        if abs(mv_delta) < 1 and abs(unreal_delta) < 1:
+            direction = "neutral"
+        elif mv_delta > 0 and unreal_delta > 0:
+            direction = "positive"
+        elif mv_delta < 0 and unreal_delta < 0:
+            direction = "negative"
+        else:
+            direction = "mixed"
+
+    weight_shift = _holdings_weight_shift(left, right)
+    if weight_shift >= 1.0:
+        primary_driver = "allocation_change"
+    elif income_delta is not None and abs(income_delta) >= 0.01:
+        primary_driver = "income_change"
+    else:
+        primary_driver = "price_move"
+
+    if days_apart is None:
+        days_apart = 0
+        try:
+            left_date = left.get("as_of")
+            right_date = right.get("as_of")
+            if left_date and right_date:
+                days_apart = abs((date.fromisoformat(right_date) - date.fromisoformat(left_date)).days)
+        except Exception:
+            days_apart = 0
+
+    if mv_delta is None:
+        headline = "Mixed change with incomplete data."
+    else:
+        magnitude = "small" if abs(mv_delta) < 10 else "modest" if abs(mv_delta) < 100 else "large"
+        move = "drawdown" if mv_delta < 0 else "gain" if mv_delta > 0 else "flat move"
+        income_desc = "flat income" if income_delta is None or abs(income_delta) < 0.01 else ("higher income" if income_delta > 0 else "lower income")
+        if days_apart:
+            day_word = "day" if days_apart == 1 else "days"
+            days_phrase = f"Over {days_apart} {day_word}, "
+        else:
+            days_phrase = ""
+        headline = f"{days_phrase}{magnitude} {move} with {income_desc}."
+
+    highlights = []
+    if mv_delta is not None:
+        if days_apart:
+            day_word = "day" if days_apart == 1 else "days"
+            days_tag = f" vs {days_apart} {day_word} ago"
+        else:
+            days_tag = ""
+        highlights.append(f"Market value {_format_money(mv_delta)} ({_format_pct(mv_pct)}){days_tag}")
+    if income_delta is not None:
+        highlights.append(f"Forward 12m income {_format_money(income_delta)}")
+    twr_1m = (right.get("portfolio_rollups") or {}).get("performance", {}).get("twr_1m_pct")
+    if _is_number(twr_1m):
+        highlights.append(f"1M TWR {_format_pct(twr_1m)}")
+    added = len(holdings_diff.get("added") or [])
+    removed = len(holdings_diff.get("removed") or [])
+    if added == 0 and removed == 0:
+        highlights.append("No holdings added or removed")
+    else:
+        highlights.append(f"Holdings added {added}, removed {removed}")
+
+    return {
+        "direction": direction,
+        "primary_driver": primary_driver,
+        "headline": headline,
+        "highlights": highlights,
+    }
+
+
+def build_daily_diff(left: dict, right: dict, left_date: str, right_date: str, left_ref: str | None = None, right_ref: str | None = None):
+    totals = _section_diff(
+        left.get("totals", {}),
+        right.get("totals", {}),
+        ["market_value", "net_liquidation_value", "cost_basis", "unrealized_pnl", "unrealized_pct", "margin_loan_balance", "margin_to_portfolio_pct"],
+    )
+    income = _section_diff(
+        left.get("income", {}),
+        right.get("income", {}),
+        ["projected_monthly_income", "forward_12m_total", "portfolio_current_yield_pct", "portfolio_yield_on_cost_pct"],
+    )
+    rollup_perf = _section_diff(
+        left.get("portfolio_rollups", {}).get("performance", {}),
+        right.get("portfolio_rollups", {}).get("performance", {}),
+        ["twr_1m_pct", "twr_3m_pct", "twr_6m_pct", "twr_12m_pct"],
+    )
+    rollup_risk = _section_diff(
+        left.get("portfolio_rollups", {}).get("risk", {}),
+        right.get("portfolio_rollups", {}).get("risk", {}),
+        ["vol_30d_pct", "vol_90d_pct", "sharpe_1y", "calmar_1y", "max_drawdown_1y_pct"],
+    )
+
+    goal_progress = _section_diff(
+        left.get("goal_progress", {}) or {},
+        right.get("goal_progress", {}) or {},
+        ["progress_pct", "current_projected_monthly", "months_to_goal"],
+    )
+    goal_progress_net = _section_diff(
+        left.get("goal_progress_net", {}) or {},
+        right.get("goal_progress_net", {}) or {},
+        ["progress_pct", "current_projected_monthly_net"],
+    )
+
+    margin_left = {
+        "margin_loan_balance": (left.get("totals") or {}).get("margin_loan_balance"),
+        "margin_to_portfolio_pct": (left.get("totals") or {}).get("margin_to_portfolio_pct"),
+        "ltv_pct": (left.get("totals") or {}).get("margin_to_portfolio_pct"),
+    }
+    margin_right = {
+        "margin_loan_balance": (right.get("totals") or {}).get("margin_loan_balance"),
+        "margin_to_portfolio_pct": (right.get("totals") or {}).get("margin_to_portfolio_pct"),
+        "ltv_pct": (right.get("totals") or {}).get("margin_to_portfolio_pct"),
+    }
+    margin = _section_diff(margin_left, margin_right, ["margin_loan_balance", "margin_to_portfolio_pct", "ltv_pct"])
+
+    dividends_compact = _section_diff(
+        {
+            "forward_12m_total": (left.get("income") or {}).get("forward_12m_total"),
+            "realized_mtd_total": (left.get("dividends") or {}).get("realized_mtd", {}).get("total_dividends"),
+            "next_30d_total": (left.get("dividends_upcoming") or {}).get("projected"),
+        },
+        {
+            "forward_12m_total": (right.get("income") or {}).get("forward_12m_total"),
+            "realized_mtd_total": (right.get("dividends") or {}).get("realized_mtd", {}).get("total_dividends"),
+            "next_30d_total": (right.get("dividends_upcoming") or {}).get("projected"),
+        },
+        ["forward_12m_total", "realized_mtd_total", "next_30d_total"],
+    )
+
+    coverage_left = left.get("coverage") or {}
+    coverage_right = right.get("coverage") or {}
+    coverage = _section_diff(coverage_left, coverage_right, ["derived_pct", "missing_pct"])
+    note = "Data quality unchanged."
+    if coverage.get("derived_pct", {}).get("delta") is not None or coverage.get("missing_pct", {}).get("delta") is not None:
+        derived_delta = coverage.get("derived_pct", {}).get("delta") or 0.0
+        missing_delta = coverage.get("missing_pct", {}).get("delta") or 0.0
+        if derived_delta > 0 and missing_delta < 0:
+            note = "Data quality slightly improved (fewer missing fields)."
+        elif derived_delta < 0 and missing_delta > 0:
+            note = "Data quality worsened (more missing fields)."
+    coverage["note"] = note
+
+    holdings_diff = _holdings_diff(left, right)
+
+    days_apart = None
+    try:
+        days_apart = abs((date.fromisoformat(right_date) - date.fromisoformat(left_date)).days)
+    except Exception:
+        days_apart = None
+    comparison = {
+        "left_date": left_date,
+        "right_date": right_date,
+        "days_apart": days_apart,
+        "mode": "adjacent" if days_apart == 1 else "non_adjacent",
+    }
+
+    range_metrics = None
+    if days_apart and days_apart > 0:
+        left_mv = (left.get("totals") or {}).get("market_value")
+        right_mv = (right.get("totals") or {}).get("market_value")
+        if _is_number(left_mv) and _is_number(right_mv) and left_mv:
+            simple_pnl = right_mv - left_mv
+            simple_return_pct = (right_mv / left_mv - 1.0) * 100
+            range_metrics = {
+                "simple_return_pct": round(simple_return_pct, 2),
+                "simple_pnl": round(simple_pnl, 2),
+                "per_day_return_pct": round(simple_return_pct / days_apart, 2),
+            }
+
+    diff = {
+        "comparison": comparison,
+        "left": {"date": left_date},
+        "right": {"date": right_date},
+        "summary": _summary_block(left, right, holdings_diff, days_apart),
+        "range_metrics": range_metrics,
+        "portfolio_metrics": {
+            "totals": totals,
+            "income": income,
+            "rollups": {"performance": rollup_perf, "risk": rollup_risk},
+            "goal_progress": goal_progress,
+            "goal_progress_net": goal_progress_net,
+            "margin": margin,
+        },
+        "dividends": dividends_compact,
+        "coverage": coverage,
+        "macro": {
+            "snapshot": _numeric_tree(left.get("macro", {}).get("snapshot", {}), right.get("macro", {}).get("snapshot", {})),
+            "trends": _numeric_tree(left.get("macro", {}).get("trends", {}), right.get("macro", {}).get("trends", {})),
+        },
+        "holdings": holdings_diff,
+    }
+    diff["summary"]["period_type"] = "daily"
+
+    if left_ref:
+        diff["left"]["file"] = left_ref
+    if right_ref:
+        diff["right"]["file"] = right_ref
+
+    return diff
+
+
+def diff_daily_from_db(conn: sqlite3.Connection, left_date: str, right_date: str):
+    left = _load_daily_snapshot(conn, left_date)
+    right = _load_daily_snapshot(conn, right_date)
+    if not left or not right:
+        missing = []
+        if not left:
+            missing.append(left_date)
+        if not right:
+            missing.append(right_date)
+        raise ValueError(f"missing daily snapshot(s): {', '.join(missing)}")
+    return build_daily_diff(left, right, left_date, right_date)

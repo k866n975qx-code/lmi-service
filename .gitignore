@@ -1,0 +1,59 @@
+# Environments
+.venv/
+.venv*/
+env/
+venv/
+ENV/
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Packaging/build
+build/
+dist/
+*.egg
+*.egg-info/
+.eggs/
+.build/
+
+# Caches/tests
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+coverage.xml
+htmlcov/
+.pytype/
+.pyre/
+.hypothesis/
+
+# Databases
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Project data
+data/
+TASKS.md
+blueprint.md

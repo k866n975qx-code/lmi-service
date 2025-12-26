@@ -1,0 +1,1959 @@
+{
+  "summary_id": "weekly_2025-12-24",
+  "snapshot_type": "weekly",
+  "snapshot_mode": "to_date",
+  "as_of": "2025-12-24",
+  "period": {
+    "label": "2025-W52",
+    "start_date": "2025-12-24",
+    "end_date": "2025-12-24",
+    "expected_days": 1,
+    "observed_days": 1,
+    "coverage_pct": 100.0,
+    "is_complete": true,
+    "missing_dates": []
+  },
+  "benchmark": {
+    "symbol": "^GSPC",
+    "period_return_pct": 0.0,
+    "twr_1y_pct_start": 13.997,
+    "twr_1y_pct_end": 13.997,
+    "twr_1y_pct_delta": 0.0
+  },
+  "period_summary": {
+    "totals": {
+      "start": {
+        "total_market_value": 15826.17,
+        "unrealized_pct": 1.417,
+        "unrealized_pnl": 221.07,
+        "cost_basis": 15605.1,
+        "net_liquidation_value": 8670.43
+      },
+      "end": {
+        "total_market_value": 15826.17,
+        "unrealized_pct": 1.417,
+        "unrealized_pnl": 221.07,
+        "cost_basis": 15605.1,
+        "net_liquidation_value": 8670.43
+      },
+      "delta": {
+        "total_market_value": 0.0,
+        "unrealized_pct": 0.0,
+        "unrealized_pnl": 0.0,
+        "cost_basis": 0.0,
+        "net_liquidation_value": 0.0
+      }
+    },
+    "income": {
+      "start": {
+        "projected_monthly_income": 170.27,
+        "forward_12m_total": 2043.21,
+        "portfolio_current_yield_pct": 12.91,
+        "portfolio_yield_on_cost_pct": 13.093
+      },
+      "end": {
+        "projected_monthly_income": 170.27,
+        "forward_12m_total": 2043.21,
+        "portfolio_current_yield_pct": 12.91,
+        "portfolio_yield_on_cost_pct": 13.093
+      },
+      "delta": {
+        "projected_monthly_income": 0.0,
+        "forward_12m_total": 0.0,
+        "portfolio_current_yield_pct": 0.0,
+        "portfolio_yield_on_cost_pct": 0.0
+      }
+    },
+    "performance": {
+      "period": {
+        "twr_period_pct": 0.0,
+        "pnl_dollar_period": 0.0,
+        "pnl_pct_period": 0.0
+      },
+      "twr_windows": {
+        "twr_1m_pct_start": 3.638,
+        "twr_1m_pct_end": 3.638,
+        "twr_1m_pct_delta": 0.0,
+        "twr_3m_pct_start": 4.705,
+        "twr_3m_pct_end": 4.705,
+        "twr_3m_pct_delta": 0.0,
+        "twr_12m_pct_start": 13.997,
+        "twr_12m_pct_end": 13.997,
+        "twr_12m_pct_delta": 0.0,
+        "twr_6m_pct_start": 12.388,
+        "twr_6m_pct_end": 12.388,
+        "twr_6m_pct_delta": 0.0
+      }
+    },
+    "risk": {
+      "start": {
+        "sharpe_1y": 0.623,
+        "cvar_95_1d_pct": -3.283,
+        "drawdown_duration_1y_days": 142,
+        "calmar_1y": 0.781,
+        "max_drawdown_1y_pct": -20.003,
+        "vol_30d_pct": 13.614,
+        "vol_90d_pct": 14.595
+      },
+      "end": {
+        "sharpe_1y": 0.623,
+        "cvar_95_1d_pct": -3.283,
+        "drawdown_duration_1y_days": 142,
+        "calmar_1y": 0.781,
+        "max_drawdown_1y_pct": -20.003,
+        "vol_30d_pct": 13.614,
+        "vol_90d_pct": 14.595
+      },
+      "delta": {
+        "sharpe_1y": 0.0,
+        "cvar_95_1d_pct": 0.0,
+        "drawdown_duration_1y_days": 0,
+        "calmar_1y": 0.0,
+        "max_drawdown_1y_pct": 0.0,
+        "vol_30d_pct": 0.0,
+        "vol_90d_pct": 0.0
+      }
+    },
+    "goal_progress": {
+      "start": {
+        "progress_pct": 8.51,
+        "current_projected_monthly": 170.27,
+        "target_monthly": 2000.0,
+        "months_to_goal": 480,
+        "estimated_goal_date": "2065-12-24"
+      },
+      "end": {
+        "progress_pct": 8.51,
+        "current_projected_monthly": 170.27,
+        "target_monthly": 2000.0,
+        "months_to_goal": 480,
+        "estimated_goal_date": "2065-12-24"
+      },
+      "delta": {
+        "progress_pct": 0.0,
+        "current_projected_monthly": 0.0,
+        "months_to_goal": 0
+      }
+    },
+    "goal_progress_net": {
+      "start": {
+        "progress_pct": 7.28,
+        "current_projected_monthly_net": 145.518,
+        "target_monthly": 2000.0,
+        "monthly_interest_now": 24.75
+      },
+      "end": {
+        "progress_pct": 7.28,
+        "current_projected_monthly_net": 145.518,
+        "target_monthly": 2000.0,
+        "monthly_interest_now": 24.75
+      },
+      "delta": {
+        "progress_pct": 0.0,
+        "current_projected_monthly_net": 0.0
+      }
+    },
+    "composition": {
+      "start": {
+        "holding_count": 10,
+        "concentration_top5_pct": 75.145
+      },
+      "end": {
+        "holding_count": 10,
+        "concentration_top5_pct": 75.145
+      },
+      "delta": {
+        "holding_count": 0,
+        "concentration_top5_pct": 0.0
+      }
+    },
+    "macro": {
+      "start": {
+        "ten_year_yield": 4.12,
+        "two_year_yield": 3.46,
+        "vix": 14.91,
+        "cpi_yoy": 3.0
+      },
+      "end": {
+        "ten_year_yield": 4.12,
+        "two_year_yield": 3.46,
+        "vix": 14.91,
+        "cpi_yoy": 3.0
+      },
+      "avg": {
+        "ten_year_yield": 4.12,
+        "two_year_yield": 3.46,
+        "vix": 14.91,
+        "cpi_yoy": 3.0
+      },
+      "delta": {
+        "ten_year_yield": 0.0,
+        "two_year_yield": 0.0,
+        "vix": 0.0,
+        "cpi_yoy": 0.0
+      }
+    }
+  },
+  "portfolio_changes": {
+    "holdings_added": [],
+    "holdings_removed": [],
+    "weight_increases": [],
+    "weight_decreases": [],
+    "top_gainers": [],
+    "top_losers": []
+  },
+  "intervals": [
+    {
+      "interval_label": "2025-12-24",
+      "start_date": "2025-12-24",
+      "end_date": "2025-12-24",
+      "totals": {
+        "total_market_value": 15826.17,
+        "cost_basis": 15605.1,
+        "net_liquidation_value": 8670.43,
+        "unrealized_pct": 1.417,
+        "unrealized_pnl": 221.07
+      },
+      "income": {
+        "projected_monthly_income": 170.27,
+        "forward_12m_total": 2043.21,
+        "portfolio_current_yield_pct": 12.91,
+        "portfolio_yield_on_cost_pct": 13.093
+      },
+      "performance": {
+        "pnl_dollar_period": 0.0,
+        "pnl_pct_period": 0.0,
+        "twr_1m_pct": 3.638,
+        "twr_3m_pct": 4.705,
+        "twr_12m_pct": 13.997
+      },
+      "risk": {
+        "sharpe_1y": 0.623,
+        "cvar_95_1d_pct": -3.283,
+        "max_drawdown_1y_pct": -20.003,
+        "drawdown_duration_1y_days": 142,
+        "calmar_1y": 0.781
+      },
+      "margin": {
+        "margin_loan_balance": 7155.74,
+        "margin_to_portfolio_pct": 45.2146,
+        "ltv_pct": 45.2146,
+        "available_to_withdraw": 0.0
+      },
+      "goal_progress": {
+        "progress_pct": 8.51,
+        "current_projected_monthly": 170.27,
+        "target_monthly": 2000.0,
+        "months_to_goal": 480,
+        "estimated_goal_date": "2065-12-24"
+      },
+      "goal_progress_net": {
+        "progress_pct": 7.28,
+        "current_projected_monthly_net": 145.518,
+        "target_monthly": 2000.0,
+        "monthly_interest_now": 24.75
+      },
+      "holdings": [
+        {
+          "symbol": "AMLP",
+          "weight_pct": 2.994,
+          "market_value": 473.772,
+          "pnl_pct": 0.437,
+          "pnl_dollar": 2.062,
+          "projected_monthly_dividend": 3.28,
+          "current_yield_pct": 8.312,
+          "yield_on_cost_pct": 8.348
+        },
+        {
+          "symbol": "GAIN",
+          "weight_pct": 2.814,
+          "market_value": 445.368,
+          "pnl_pct": -0.211,
+          "pnl_dollar": -0.942,
+          "projected_monthly_dividend": 4.07,
+          "current_yield_pct": 10.964,
+          "yield_on_cost_pct": 10.941
+        },
+        {
+          "symbol": "JEPI",
+          "weight_pct": 14.062,
+          "market_value": 2225.492,
+          "pnl_pct": 2.115,
+          "pnl_dollar": 46.102,
+          "projected_monthly_dividend": 15.0,
+          "current_yield_pct": 8.086,
+          "yield_on_cost_pct": 8.257
+        },
+        {
+          "symbol": "JEPQ",
+          "weight_pct": 14.259,
+          "market_value": 2256.575,
+          "pnl_pct": 2.108,
+          "pnl_dollar": 46.585,
+          "projected_monthly_dividend": 19.04,
+          "current_yield_pct": 10.125,
+          "yield_on_cost_pct": 10.338
+        },
+        {
+          "symbol": "NLY",
+          "weight_pct": 9.469,
+          "market_value": 1498.561,
+          "pnl_pct": 3.002,
+          "pnl_dollar": 43.671,
+          "projected_monthly_dividend": 14.81,
+          "current_yield_pct": 11.859,
+          "yield_on_cost_pct": 12.215
+        },
+        {
+          "symbol": "QYLD",
+          "weight_pct": 9.383,
+          "market_value": 1484.996,
+          "pnl_pct": 1.194,
+          "pnl_dollar": 17.516,
+          "projected_monthly_dividend": 16.61,
+          "current_yield_pct": 13.424,
+          "yield_on_cost_pct": 13.584
+        },
+        {
+          "symbol": "RYLD",
+          "weight_pct": 5.009,
+          "market_value": 792.794,
+          "pnl_pct": 1.252,
+          "pnl_dollar": 9.804,
+          "projected_monthly_dividend": 8.55,
+          "current_yield_pct": 12.942,
+          "yield_on_cost_pct": 13.104
+        },
+        {
+          "symbol": "SPYI",
+          "weight_pct": 4.655,
+          "market_value": 736.729,
+          "pnl_pct": 1.12,
+          "pnl_dollar": 8.159,
+          "projected_monthly_dividend": 7.1,
+          "current_yield_pct": 11.571,
+          "yield_on_cost_pct": 11.701
+        },
+        {
+          "symbol": "SVOL",
+          "weight_pct": 18.735,
+          "market_value": 2965.001,
+          "pnl_pct": 0.48,
+          "pnl_dollar": 14.151,
+          "projected_monthly_dividend": 48.72,
+          "current_yield_pct": 19.717,
+          "yield_on_cost_pct": 19.811
+        },
+        {
+          "symbol": "TRIN",
+          "weight_pct": 18.62,
+          "market_value": 2946.885,
+          "pnl_pct": 1.166,
+          "pnl_dollar": 33.965,
+          "projected_monthly_dividend": 33.09,
+          "current_yield_pct": 13.474,
+          "yield_on_cost_pct": 13.631
+        }
+      ],
+      "daily_snapshot": {
+        "portfolio_rollups": {
+          "performance": {
+            "twr_3m_pct": 4.705,
+            "twr_12m_pct": 13.997,
+            "twr_1m_pct": 3.638,
+            "twr_6m_pct": 12.388
+          },
+          "benchmark": "^GSPC",
+          "risk": {
+            "calmar_1y": 0.781,
+            "cvar_95_1d_pct": -3.283,
+            "sharpe_1y": 0.623,
+            "drawdown_duration_1y_days": 142,
+            "income_stability_score": 0.0,
+            "vol_30d_pct": 13.614,
+            "beta_portfolio": 0.825,
+            "downside_dev_1y_pct": 18.11,
+            "corr_1y": 0.781,
+            "max_drawdown_1y_pct": -20.003,
+            "var_95_1d_pct": -2.016,
+            "vol_90d_pct": 14.595
+          },
+          "meta": {
+            "version": "v2025-12-24.recomputed",
+            "note": "Restored after temporary omission."
+          }
+        },
+        "dividends": {
+          "projected_vs_received": {
+            "pct_of_projection": 55.96,
+            "projected": 170.268,
+            "received": 95.29,
+            "difference": 74.978,
+            "window": {
+              "start": "2025-12-01",
+              "label": "month_to_date",
+              "end": "2025-12-24"
+            },
+            "alt": {
+              "projected": 0.0,
+              "mode": "paydate",
+              "window": {
+                "start": "2025-12-01",
+                "end": "2025-12-24"
+              },
+              "expected_events": []
+            }
+          },
+          "windows": {
+            "30d": {
+              "by_date": {
+                "2025-12-03": 31.39,
+                "2025-11-28": 20.63,
+                "2025-12-02": 20.45,
+                "2025-12-15": 3.04,
+                "2025-12-17": 40.41
+              },
+              "total_dividends": 115.92,
+              "by_month": {
+                "2025-12": 95.29,
+                "2025-11": 20.63
+              },
+              "start": "2025-11-24",
+              "by_symbol": {
+                "NLY": {
+                  "amount": 0.0,
+                  "status": "active"
+                },
+                "RYLD": {
+                  "amount": 7.68,
+                  "status": "active"
+                },
+                "JEPI": {
+                  "amount": 12.56,
+                  "status": "active"
+                },
+                "GAIN": {
+                  "amount": 0.0,
+                  "status": "active"
+                },
+                "O": {
+                  "amount": 3.04,
+                  "status": "inactive"
+                },
+                "AMLP": {
+                  "amount": 0.0,
+                  "status": "active"
+                },
+                "XYLD": {
+                  "amount": 3.83,
+                  "status": "inactive"
+                },
+                "JEPQ": {
+                  "amount": 18.83,
+                  "status": "active"
+                },
+                "QYLD": {
+                  "amount": 8.94,
+                  "status": "active"
+                },
+                "TRIN": {
+                  "amount": 0.0,
+                  "status": "active"
+                },
+                "SVOL": {
+                  "amount": 12.85,
+                  "status": "active"
+                },
+                "SPYI": {
+                  "amount": 7.78,
+                  "status": "active"
+                },
+                "FSK": {
+                  "amount": 40.41,
+                  "status": "inactive"
+                }
+              },
+              "end": "2025-12-24"
+            },
+            "ytd": {
+              "by_date": {
+                "2025-12-03": 31.39,
+                "2025-11-17": 4.52,
+                "2025-11-28": 20.63,
+                "2025-11-14": 0.38,
+                "2025-12-02": 20.45,
+                "2025-11-05": 4.71,
+                "2025-12-15": 3.04,
+                "2025-12-17": 40.41
+              },
+              "total_dividends": 125.53,
+              "by_month": {
+                "2025-12": 95.29,
+                "2025-11": 30.24
+              },
+              "start": "2025-01-01",
+              "by_symbol": {
+                "NLY": {
+                  "amount": 0.0,
+                  "status": "active"
+                },
+                "RYLD": {
+                  "amount": 7.68,
+                  "status": "active"
+                },
+                "JEPI": {
+                  "amount": 17.27,
+                  "status": "active"
+                },
+                "GAIN": {
+                  "amount": 0.0,
+                  "status": "active"
+                },
+                "MAIN": {
+                  "amount": 0.38,
+                  "status": "inactive"
+                },
+                "AMLP": {
+                  "amount": 4.52,
+                  "status": "active"
+                },
+                "O": {
+                  "amount": 3.04,
+                  "status": "inactive"
+                },
+                "XYLD": {
+                  "amount": 3.83,
+                  "status": "inactive"
+                },
+                "JEPQ": {
+                  "amount": 18.83,
+                  "status": "active"
+                },
+                "QYLD": {
+                  "amount": 8.94,
+                  "status": "active"
+                },
+                "TRIN": {
+                  "amount": 0.0,
+                  "status": "active"
+                },
+                "SVOL": {
+                  "amount": 12.85,
+                  "status": "active"
+                },
+                "SPYI": {
+                  "amount": 7.78,
+                  "status": "active"
+                },
+                "FSK": {
+                  "amount": 40.41,
+                  "status": "inactive"
+                }
+              },
+              "end": "2025-12-24"
+            },
+            "qtd": {
+              "by_date": {
+                "2025-12-03": 31.39,
+                "2025-11-17": 4.52,
+                "2025-11-28": 20.63,
+                "2025-11-14": 0.38,
+                "2025-12-02": 20.45,
+                "2025-11-05": 4.71,
+                "2025-12-15": 3.04,
+                "2025-12-17": 40.41
+              },
+              "total_dividends": 125.53,
+              "by_month": {
+                "2025-12": 95.29,
+                "2025-11": 30.24
+              },
+              "start": "2025-10-01",
+              "by_symbol": {
+                "NLY": {
+                  "amount": 0.0,
+                  "status": "active"
+                },
+                "RYLD": {
+                  "amount": 7.68,
+                  "status": "active"
+                },
+                "JEPI": {
+                  "amount": 17.27,
+                  "status": "active"
+                },
+                "GAIN": {
+                  "amount": 0.0,
+                  "status": "active"
+                },
+                "MAIN": {
+                  "amount": 0.38,
+                  "status": "inactive"
+                },
+                "AMLP": {
+                  "amount": 4.52,
+                  "status": "active"
+                },
+                "O": {
+                  "amount": 3.04,
+                  "status": "inactive"
+                },
+                "XYLD": {
+                  "amount": 3.83,
+                  "status": "inactive"
+                },
+                "JEPQ": {
+                  "amount": 18.83,
+                  "status": "active"
+                },
+                "QYLD": {
+                  "amount": 8.94,
+                  "status": "active"
+                },
+                "TRIN": {
+                  "amount": 0.0,
+                  "status": "active"
+                },
+                "SVOL": {
+                  "amount": 12.85,
+                  "status": "active"
+                },
+                "SPYI": {
+                  "amount": 7.78,
+                  "status": "active"
+                },
+                "FSK": {
+                  "amount": 40.41,
+                  "status": "inactive"
+                }
+              },
+              "end": "2025-12-24"
+            }
+          },
+          "realized_mtd": {
+            "by_date": {
+              "2025-12-03": 31.39,
+              "2025-12-02": 20.45,
+              "2025-12-15": 3.04,
+              "2025-12-17": 40.41
+            },
+            "total_dividends": 115.92,
+            "by_month": {
+              "2025-12": 95.29
+            },
+            "start": "2025-12-01",
+            "by_symbol": {
+              "NLY": {
+                "amount": 0.0,
+                "status": "active"
+              },
+              "RYLD": {
+                "amount": 7.68,
+                "status": "active"
+              },
+              "JEPI": {
+                "amount": 12.56,
+                "status": "active"
+              },
+              "GAIN": {
+                "amount": 0.0,
+                "status": "active"
+              },
+              "O": {
+                "amount": 3.04,
+                "status": "inactive"
+              },
+              "AMLP": {
+                "amount": 0.0,
+                "status": "active"
+              },
+              "XYLD": {
+                "amount": 3.83,
+                "status": "inactive"
+              },
+              "JEPQ": {
+                "amount": 18.83,
+                "status": "active"
+              },
+              "QYLD": {
+                "amount": 8.94,
+                "status": "active"
+              },
+              "TRIN": {
+                "amount": 0.0,
+                "status": "active"
+              },
+              "SVOL": {
+                "amount": 0.0,
+                "status": "active"
+              },
+              "SPYI": {
+                "amount": 0.0,
+                "status": "active"
+              },
+              "FSK": {
+                "amount": 40.41,
+                "status": "inactive"
+              }
+            },
+            "end": "2025-12-24"
+          }
+        },
+        "coverage": {
+          "derived_pct": 76.43,
+          "validated_pct": 0.32,
+          "pulled_pct": 22.29,
+          "missing_paths": [
+            "holdings[1].ultimate.category",
+            "holdings[4].ultimate.category",
+            "holdings[9].ultimate.category"
+          ],
+          "filled_pct": 99.04,
+          "missing_pct": 0.96,
+          "conflict_paths": []
+        },
+        "goal_progress_net": {
+          "portfolio_yield_pct": 12.91,
+          "current_projected_monthly_net": 145.518,
+          "required_portfolio_value_at_goal_now": 188202.94,
+          "assumptions": "same_yield_structure; loan unchanged",
+          "additional_investment_needed_now": 172376.77,
+          "progress_pct": 7.28,
+          "monthly_interest_now": 24.75,
+          "future_rate_sensitivity": {
+            "apr_future_pct": 5.65,
+            "progress_pct_future": 6.83,
+            "additional_investment_needed_future": 173207.75,
+            "required_portfolio_value_at_goal_future": 189033.93,
+            "monthly_interest_future": 33.69
+          },
+          "target_monthly": 2000.0
+        },
+        "goal_progress": {
+          "portfolio_yield_pct": 12.91,
+          "required_portfolio_value_at_goal": 185902.4,
+          "additional_investment_needed": 170076.23,
+          "target_monthly": 2000.0,
+          "assumptions": "based_on_last_3_full_months_realized",
+          "months_to_goal": 480,
+          "progress_pct": 8.51,
+          "growth_window_months": 3,
+          "shortfall": 1829.73,
+          "estimated_goal_date": "2065-05-28",
+          "current_projected_monthly": 170.27
+        },
+        "macro": {
+          "trends": {
+            "trends": {
+              "macro_stress_score": {
+                "sma_30d": 1.034,
+                "delta_30d": 0.0,
+                "delta_7d": 0.0,
+                "sma_7d": 1.034
+              },
+              "valuation_heat_index": {
+                "sma_30d": 0.987,
+                "delta_30d": 0.0,
+                "delta_7d": 0.0,
+                "sma_7d": 0.987
+              },
+              "liquidity_index": {
+                "sma_30d": -0.285,
+                "delta_30d": 0.0,
+                "delta_7d": 0.0,
+                "sma_7d": -0.285
+              }
+            },
+            "date": "2025-12-20",
+            "meta": {
+              "computed_at": "2025-12-21T05:34:22.973440Z",
+              "window_days": 1,
+              "schema_version": "1.2"
+            }
+          },
+          "snapshot": {
+            "m2_money_supply_bn": 22303.8,
+            "vix": 14.91,
+            "unemployment_rate": 4.6,
+            "date": "2025-12-20",
+            "meta": {
+              "fetched_at": "2025-12-21T05:34:14.055821Z",
+              "cpi_yoy_source": "fred",
+              "schema_version": "1.2"
+            },
+            "macro_stress_score": 1.0339,
+            "valuation_heat_index": 0.9865,
+            "gdp_nowcast": 23770.976,
+            "yield_spread_10y_2y": 0.66,
+            "ten_year_yield": 4.12,
+            "hy_spread_bps": 659.0,
+            "cpi_yoy": 3.0,
+            "curve_inversion_depth": 0.66,
+            "fed_funds_rate": 3.64,
+            "two_year_yield": 3.46,
+            "real_10y_yield": 1.12,
+            "liquidity_index": -0.2848
+          },
+          "history": {
+            "records": [
+              {
+                "date": "2025-12-20",
+                "valuation_heat_index": 0.9865,
+                "real_10y_yield": 1.12,
+                "curve_inversion_depth": 0.66,
+                "macro_stress_score": 1.0339,
+                "liquidity_index": -0.2848
+              }
+            ],
+            "meta": {
+              "updated_at": "2025-12-21T05:34:22.971451Z",
+              "count": 1
+            }
+          }
+        },
+        "dividends_upcoming": {
+          "projected": 89.04,
+          "events": [
+            {
+              "symbol": "SPYI",
+              "ex_date_est": "2025-12-26",
+              "amount_est": 7.1
+            },
+            {
+              "symbol": "NLY",
+              "ex_date_est": "2025-12-29",
+              "amount_est": 14.81
+            },
+            {
+              "symbol": "TRIN",
+              "ex_date_est": "2025-12-29",
+              "amount_est": 33.09
+            },
+            {
+              "symbol": "JEPI",
+              "ex_date_est": "2025-12-31",
+              "amount_est": 15.0
+            },
+            {
+              "symbol": "JEPQ",
+              "ex_date_est": "2025-12-31",
+              "amount_est": 19.04
+            }
+          ],
+          "window": {
+            "start": "2025-12-25",
+            "mode": "exdate",
+            "end": "2025-12-31"
+          },
+          "meta": {
+            "matches_projected": true,
+            "sum_of_events": 89.04
+          }
+        },
+        "total_market_value": 15826.17,
+        "margin_guidance": {
+          "modes": [
+            {
+              "mode": "conservative",
+              "action": "repay",
+              "amount": 5256.6,
+              "ltv_now_pct": 45.215,
+              "ltv_stress_pct": 75.358,
+              "monthly_interest_now": 24.75,
+              "income_interest_coverage_now": 6.88,
+              "monthly_interest_future": 33.69,
+              "income_interest_coverage_future": 5.054,
+              "after_action": {
+                "new_loan_balance": 1899.14,
+                "ltv_after_action_pct": 12.0,
+                "monthly_interest_now": 6.57,
+                "income_interest_coverage_now": 25.916
+              },
+              "constraints": {
+                "max_margin_pct": 20.0,
+                "stress_drawdown_pct": 40.0,
+                "min_income_coverage": 2.0
+              }
+            },
+            {
+              "mode": "balanced",
+              "action": "repay",
+              "amount": 4386.16,
+              "ltv_now_pct": 45.215,
+              "ltv_stress_pct": 64.592,
+              "monthly_interest_now": 24.75,
+              "income_interest_coverage_now": 6.88,
+              "monthly_interest_future": 33.69,
+              "income_interest_coverage_future": 5.054,
+              "after_action": {
+                "new_loan_balance": 2769.58,
+                "ltv_after_action_pct": 17.5,
+                "monthly_interest_now": 9.58,
+                "income_interest_coverage_now": 17.773
+              },
+              "constraints": {
+                "max_margin_pct": 25.0,
+                "stress_drawdown_pct": 30.0,
+                "min_income_coverage": 1.5
+              }
+            },
+            {
+              "mode": "aggressive",
+              "action": "repay",
+              "amount": 3357.46,
+              "ltv_now_pct": 45.215,
+              "ltv_stress_pct": 56.518,
+              "monthly_interest_now": 24.75,
+              "income_interest_coverage_now": 6.88,
+              "monthly_interest_future": 33.69,
+              "income_interest_coverage_future": 5.054,
+              "after_action": {
+                "new_loan_balance": 3798.28,
+                "ltv_after_action_pct": 24.0,
+                "monthly_interest_now": 13.14,
+                "income_interest_coverage_now": 12.958
+              },
+              "constraints": {
+                "max_margin_pct": 30.0,
+                "stress_drawdown_pct": 20.0,
+                "min_income_coverage": 1.2
+              }
+            }
+          ],
+          "rates": {
+            "apr_future_date": "2026-11-01",
+            "apr_future_pct": 5.65,
+            "apr_current_pct": 4.15
+          },
+          "selected_mode": "balanced"
+        },
+        "plaid_account_id": 317631,
+        "missing_prices": [],
+        "as_of": "2025-12-24",
+        "holdings": [
+          {
+            "symbol": "AMLP",
+            "shares": 10.021,
+            "cost_basis": 471.71,
+            "avg_cost": 47.073,
+            "trades": 13,
+            "last_price": 47.279,
+            "market_value": 473.772,
+            "unrealized_pnl": 2.062,
+            "unrealized_pct": 0.437,
+            "weight_pct": 2.994,
+            "forward_12m_dividend": 39.38,
+            "last_ex_date": "2025-11-12",
+            "forward_method": "t12m",
+            "projected_monthly_dividend": 3.28,
+            "current_yield_pct": 8.312,
+            "yield_on_cost_pct": 8.348,
+            "ultimate": {
+              "name": "Alerian MLP ETF",
+              "exchange": "PCX",
+              "currency": "USD",
+              "category": "Energy Limited Partnership",
+              "asset_class": "ETF",
+              "vol_30d_pct": 12.756,
+              "vol_90d_pct": 11.885,
+              "beta_3y": 0.561,
+              "max_drawdown_1y_pct": -14.267,
+              "sortino_1y": 0.513,
+              "downside_dev_1y_pct": 14.525,
+              "sharpe_1y": 0.386,
+              "calmar_1y": 0.481,
+              "drawdown_duration_1y_days": 184,
+              "var_95_1d_pct": -1.571,
+              "cvar_95_1d_pct": -2.538,
+              "corr_1y": 0.613,
+              "trailing_12m_div_ps": 3.93,
+              "trailing_12m_yield_pct": 8.312,
+              "forward_yield_pct": 8.312,
+              "forward_yield_method": "t12m",
+              "derived_fields": [
+                "distribution_frequency",
+                "forward_12m_div_ps",
+                "forward_yield_pct",
+                "next_ex_date_est",
+                "trailing_12m_yield_pct"
+              ],
+              "distribution_frequency": "quarterly",
+              "next_ex_date_est": "2026-02-10",
+              "twr_1m_pct": 0.744,
+              "twr_3m_pct": 1.891,
+              "twr_6m_pct": 0.949,
+              "twr_12m_pct": 7.726,
+              "top_holdings": [
+                {
+                  "symbol": "MPLX",
+                  "name": "MPLX LP Partnership Units",
+                  "weight_pct": 13.44
+                },
+                {
+                  "symbol": "SUN",
+                  "name": "Sunoco LP",
+                  "weight_pct": 12.918
+                },
+                {
+                  "symbol": "WES",
+                  "name": "Western Midstream Partners LP",
+                  "weight_pct": 12.896
+                },
+                {
+                  "symbol": "EPD",
+                  "name": "Enterprise Products Partners LP",
+                  "weight_pct": 12.888
+                },
+                {
+                  "symbol": "PAA",
+                  "name": "Plains All American Pipeline LP",
+                  "weight_pct": 12.626
+                },
+                {
+                  "symbol": "ET",
+                  "name": "Energy Transfer LP",
+                  "weight_pct": 12.0
+                },
+                {
+                  "symbol": "HESM",
+                  "name": "Hess Midstream LP Class A",
+                  "weight_pct": 9.294
+                },
+                {
+                  "symbol": "CQP",
+                  "name": "Cheniere Energy Partners LP",
+                  "weight_pct": 4.677
+                },
+                {
+                  "symbol": "USAC",
+                  "name": "USA Compression Partners LP",
+                  "weight_pct": 4.12
+                },
+                {
+                  "symbol": "GEL",
+                  "name": "Genesis Energy LP",
+                  "weight_pct": 3.545
+                }
+              ],
+              "sector_weights": {
+                "realestate": 0.0,
+                "consumer_cyclical": 0.0,
+                "basic_materials": 0.0,
+                "consumer_defensive": 0.0,
+                "technology": 0.0,
+                "communication_services": 0.0,
+                "financial_services": 0.0,
+                "utilities": 2.54,
+                "industrials": 0.0,
+                "energy": 97.46,
+                "healthcare": 0.0
+              },
+              "last_ex_date": "2025-11-12",
+              "forward_12m_div_ps": 3.93
+            },
+            "dividends_30d": 0.0,
+            "dividends_qtd": 4.52,
+            "dividends_ytd": 4.52
+          },
+          {
+            "symbol": "GAIN",
+            "shares": 32.556,
+            "cost_basis": 446.31,
+            "avg_cost": 13.709,
+            "trades": 2,
+            "last_price": 13.68,
+            "market_value": 445.368,
+            "unrealized_pnl": -0.942,
+            "unrealized_pct": -0.211,
+            "weight_pct": 2.814,
+            "forward_12m_dividend": 48.83,
+            "last_ex_date": "2025-12-22",
+            "forward_method": "t12m",
+            "projected_monthly_dividend": 4.07,
+            "current_yield_pct": 10.964,
+            "yield_on_cost_pct": 10.941,
+            "ultimate": {
+              "name": "Gladstone Investment Corporation",
+              "exchange": "NMS",
+              "currency": "USD",
+              "sector": "Financial Services",
+              "industry": "Asset Management",
+              "asset_class": "Financial Services",
+              "aum_usd": 542363456.0,
+              "vol_30d_pct": 11.706,
+              "vol_90d_pct": 13.629,
+              "beta_3y": 0.696,
+              "max_drawdown_1y_pct": -14.76,
+              "sortino_1y": 1.115,
+              "downside_dev_1y_pct": 13.605,
+              "sharpe_1y": 0.694,
+              "calmar_1y": 1.07,
+              "drawdown_duration_1y_days": 143,
+              "var_95_1d_pct": -1.536,
+              "cvar_95_1d_pct": -2.575,
+              "corr_1y": 0.62,
+              "trailing_12m_div_ps": 1.5,
+              "indicated_div_ps": 0.96,
+              "trailing_12m_yield_pct": 10.965,
+              "forward_yield_pct": 7.018,
+              "forward_yield_method": "indicated",
+              "distribution_frequency": "monthly",
+              "next_ex_date_est": "2026-01-21",
+              "twr_1m_pct": -0.223,
+              "twr_3m_pct": 0.644,
+              "twr_6m_pct": 0.341,
+              "twr_12m_pct": 12.894,
+              "pb": 1.0108,
+              "derived_fields": [
+                "distribution_frequency",
+                "forward_yield_pct",
+                "next_ex_date_est",
+                "trailing_12m_yield_pct"
+              ],
+              "last_ex_date": "2025-12-22",
+              "forward_12m_div_ps": 0.96
+            },
+            "dividends_30d": 0.0,
+            "dividends_qtd": 0.0,
+            "dividends_ytd": 0.0
+          },
+          {
+            "symbol": "JEPI",
+            "shares": 38.379,
+            "cost_basis": 2179.39,
+            "avg_cost": 56.787,
+            "trades": 12,
+            "last_price": 57.988,
+            "market_value": 2225.492,
+            "unrealized_pnl": 46.102,
+            "unrealized_pct": 2.115,
+            "weight_pct": 14.062,
+            "forward_12m_dividend": 179.96,
+            "last_ex_date": "2025-12-01",
+            "forward_method": "t12m",
+            "projected_monthly_dividend": 15.0,
+            "current_yield_pct": 8.086,
+            "yield_on_cost_pct": 8.257,
+            "ultimate": {
+              "name": "JPMorgan Equity Premium Income ETF",
+              "exchange": "PCX",
+              "currency": "USD",
+              "category": "Derivative Income",
+              "asset_class": "ETF",
+              "vol_30d_pct": 8.783,
+              "vol_90d_pct": 7.605,
+              "beta_3y": 0.589,
+              "max_drawdown_1y_pct": -13.258,
+              "sortino_1y": 0.814,
+              "downside_dev_1y_pct": 11.324,
+              "sharpe_1y": 0.569,
+              "calmar_1y": 0.593,
+              "drawdown_duration_1y_days": 126,
+              "var_95_1d_pct": -1.033,
+              "cvar_95_1d_pct": -1.932,
+              "corr_1y": 0.896,
+              "trailing_12m_div_ps": 4.689,
+              "trailing_12m_yield_pct": 8.086,
+              "forward_yield_pct": 8.086,
+              "forward_yield_method": "t12m",
+              "derived_fields": [
+                "distribution_frequency",
+                "forward_12m_div_ps",
+                "forward_yield_pct",
+                "next_ex_date_est",
+                "trailing_12m_yield_pct"
+              ],
+              "distribution_frequency": "monthly",
+              "next_ex_date_est": "2025-12-31",
+              "twr_1m_pct": 2.677,
+              "twr_3m_pct": 4.312,
+              "twr_6m_pct": 6.878,
+              "twr_12m_pct": 8.185,
+              "top_holdings": [
+                {
+                  "symbol": "GOOGL",
+                  "name": "Alphabet Inc Class A",
+                  "weight_pct": 1.863
+                },
+                {
+                  "symbol": "JNJ",
+                  "name": "Johnson & Johnson",
+                  "weight_pct": 1.644
+                },
+                {
+                  "symbol": "ABBV",
+                  "name": "AbbVie Inc",
+                  "weight_pct": 1.618
+                },
+                {
+                  "symbol": "AMZN",
+                  "name": "Amazon.com Inc",
+                  "weight_pct": 1.56
+                },
+                {
+                  "symbol": "ROST",
+                  "name": "Ross Stores Inc",
+                  "weight_pct": 1.541
+                },
+                {
+                  "symbol": "AAPL",
+                  "name": "Apple Inc",
+                  "weight_pct": 1.515
+                },
+                {
+                  "symbol": "MSFT",
+                  "name": "Microsoft Corp",
+                  "weight_pct": 1.514
+                },
+                {
+                  "symbol": "NEE",
+                  "name": "NextEra Energy Inc",
+                  "weight_pct": 1.512
+                },
+                {
+                  "symbol": "ADI",
+                  "name": "Analog Devices Inc",
+                  "weight_pct": 1.501
+                },
+                {
+                  "symbol": "MA",
+                  "name": "Mastercard Inc Class A",
+                  "weight_pct": 1.479
+                }
+              ],
+              "sector_weights": {
+                "realestate": 3.3,
+                "consumer_cyclical": 11.84,
+                "basic_materials": 2.03,
+                "consumer_defensive": 8.2,
+                "technology": 19.32,
+                "communication_services": 7.19,
+                "financial_services": 13.03,
+                "utilities": 5.17,
+                "industrials": 13.11,
+                "energy": 2.14,
+                "healthcare": 14.66
+              },
+              "last_ex_date": "2025-12-01",
+              "forward_12m_div_ps": 4.689
+            },
+            "dividends_30d": 12.56,
+            "dividends_qtd": 17.27,
+            "dividends_ytd": 17.27
+          },
+          {
+            "symbol": "JEPQ",
+            "shares": 38.06,
+            "cost_basis": 2209.99,
+            "avg_cost": 58.066,
+            "trades": 15,
+            "last_price": 59.29,
+            "market_value": 2256.575,
+            "unrealized_pnl": 46.585,
+            "unrealized_pct": 2.108,
+            "weight_pct": 14.259,
+            "forward_12m_dividend": 228.47,
+            "last_ex_date": "2025-12-01",
+            "forward_method": "t12m",
+            "projected_monthly_dividend": 19.04,
+            "current_yield_pct": 10.125,
+            "yield_on_cost_pct": 10.338,
+            "ultimate": {
+              "name": "JPMorgan Nasdaq Equity Premium Income ETF",
+              "exchange": "NGM",
+              "currency": "USD",
+              "category": "Derivative Income",
+              "asset_class": "ETF",
+              "vol_30d_pct": 15.627,
+              "vol_90d_pct": 12.553,
+              "beta_3y": 0.921,
+              "max_drawdown_1y_pct": -20.07,
+              "sortino_1y": 1.035,
+              "downside_dev_1y_pct": 16.857,
+              "sharpe_1y": 0.72,
+              "calmar_1y": 0.734,
+              "drawdown_duration_1y_days": 117,
+              "var_95_1d_pct": -1.896,
+              "cvar_95_1d_pct": -2.929,
+              "corr_1y": 0.951,
+              "trailing_12m_div_ps": 6.003,
+              "trailing_12m_yield_pct": 10.125,
+              "forward_yield_pct": 10.125,
+              "forward_yield_method": "t12m",
+              "derived_fields": [
+                "distribution_frequency",
+                "forward_12m_div_ps",
+                "forward_yield_pct",
+                "next_ex_date_est",
+                "trailing_12m_yield_pct"
+              ],
+              "distribution_frequency": "monthly",
+              "next_ex_date_est": "2025-12-31",
+              "twr_1m_pct": 3.929,
+              "twr_3m_pct": 6.498,
+              "twr_6m_pct": 15.206,
+              "twr_12m_pct": 15.602,
+              "top_holdings": [
+                {
+                  "symbol": "NVDA",
+                  "name": "NVIDIA Corp",
+                  "weight_pct": 7.888
+                },
+                {
+                  "symbol": "AAPL",
+                  "name": "Apple Inc",
+                  "weight_pct": 7.448
+                },
+                {
+                  "symbol": "MSFT",
+                  "name": "Microsoft Corp",
+                  "weight_pct": 6.561
+                },
+                {
+                  "symbol": "GOOG",
+                  "name": "Alphabet Inc Class C",
+                  "weight_pct": 6.004
+                },
+                {
+                  "symbol": "AVGO",
+                  "name": "Broadcom Inc",
+                  "weight_pct": 5.269
+                },
+                {
+                  "symbol": "AMZN",
+                  "name": "Amazon.com Inc",
+                  "weight_pct": 4.582
+                },
+                {
+                  "symbol": "META",
+                  "name": "Meta Platforms Inc Class A",
+                  "weight_pct": 2.765
+                },
+                {
+                  "symbol": "TSLA",
+                  "name": "Tesla Inc",
+                  "weight_pct": 2.643
+                },
+                {
+                  "symbol": "NFLX",
+                  "name": "Netflix Inc",
+                  "weight_pct": 2.213
+                },
+                {
+                  "symbol": "AMD",
+                  "name": "Advanced Micro Devices Inc",
+                  "weight_pct": 1.706
+                }
+              ],
+              "sector_weights": {
+                "realestate": 0.22,
+                "consumer_cyclical": 13.6,
+                "basic_materials": 0.84,
+                "consumer_defensive": 4.21,
+                "technology": 54.71,
+                "communication_services": 16.41,
+                "financial_services": 0.51,
+                "utilities": 1.29,
+                "industrials": 2.95,
+                "energy": 0.29,
+                "healthcare": 4.96
+              },
+              "last_ex_date": "2025-12-01",
+              "forward_12m_div_ps": 6.003
+            },
+            "dividends_30d": 18.83,
+            "dividends_qtd": 18.83,
+            "dividends_ytd": 18.83
+          },
+          {
+            "symbol": "NLY",
+            "shares": 64.621,
+            "cost_basis": 1454.89,
+            "avg_cost": 22.514,
+            "trades": 13,
+            "last_price": 23.19,
+            "market_value": 1498.561,
+            "unrealized_pnl": 43.671,
+            "unrealized_pct": 3.002,
+            "weight_pct": 9.469,
+            "forward_12m_dividend": 177.71,
+            "last_ex_date": "2025-09-30",
+            "forward_method": "t12m",
+            "projected_monthly_dividend": 14.81,
+            "current_yield_pct": 11.859,
+            "yield_on_cost_pct": 12.215,
+            "ultimate": {
+              "name": "Annaly Capital Management, Inc.",
+              "exchange": "NYQ",
+              "currency": "USD",
+              "sector": "Real Estate",
+              "industry": "REIT - Mortgage",
+              "asset_class": "Real Estate",
+              "aum_usd": 15839494144.0,
+              "vol_30d_pct": 15.851,
+              "vol_90d_pct": 18.315,
+              "beta_3y": 0.844,
+              "max_drawdown_1y_pct": -18.458,
+              "sortino_1y": 2.224,
+              "downside_dev_1y_pct": 17.256,
+              "sharpe_1y": 1.577,
+              "calmar_1y": 2.227,
+              "drawdown_duration_1y_days": 99,
+              "var_95_1d_pct": -1.761,
+              "cvar_95_1d_pct": -3.067,
+              "corr_1y": 0.584,
+              "trailing_12m_div_ps": 2.75,
+              "indicated_div_ps": 2.8,
+              "trailing_12m_yield_pct": 11.859,
+              "forward_yield_pct": 12.074,
+              "forward_yield_method": "indicated",
+              "distribution_frequency": "quarterly",
+              "next_ex_date_est": "2025-12-29",
+              "twr_1m_pct": 5.794,
+              "twr_3m_pct": 15.239,
+              "twr_6m_pct": 27.906,
+              "twr_12m_pct": 40.329,
+              "pb": 1.2049,
+              "derived_fields": [
+                "distribution_frequency",
+                "forward_yield_pct",
+                "next_ex_date_est",
+                "trailing_12m_yield_pct"
+              ],
+              "last_ex_date": "2025-09-30",
+              "forward_12m_div_ps": 2.8
+            },
+            "dividends_30d": 0.0,
+            "dividends_qtd": 0.0,
+            "dividends_ytd": 0.0
+          },
+          {
+            "symbol": "QYLD",
+            "shares": 83.756,
+            "cost_basis": 1467.48,
+            "avg_cost": 17.521,
+            "trades": 15,
+            "last_price": 17.73,
+            "market_value": 1484.996,
+            "unrealized_pnl": 17.516,
+            "unrealized_pct": 1.194,
+            "weight_pct": 9.383,
+            "forward_12m_dividend": 199.34,
+            "last_ex_date": "2025-12-22",
+            "forward_method": "t12m",
+            "projected_monthly_dividend": 16.61,
+            "current_yield_pct": 13.424,
+            "yield_on_cost_pct": 13.584,
+            "ultimate": {
+              "name": "Global X NASDAQ 100 Covered Call ETF",
+              "exchange": "NGM",
+              "currency": "USD",
+              "category": "Derivative Income",
+              "asset_class": "ETF",
+              "vol_30d_pct": 7.215,
+              "vol_90d_pct": 7.249,
+              "beta_3y": 0.724,
+              "max_drawdown_1y_pct": -19.059,
+              "sortino_1y": 0.731,
+              "downside_dev_1y_pct": 17.275,
+              "sharpe_1y": 0.502,
+              "calmar_1y": 0.474,
+              "drawdown_duration_1y_days": 166,
+              "var_95_1d_pct": -1.563,
+              "cvar_95_1d_pct": -2.749,
+              "corr_1y": 0.891,
+              "trailing_12m_div_ps": 2.38,
+              "trailing_12m_yield_pct": 13.424,
+              "forward_yield_pct": 13.424,
+              "forward_yield_method": "t12m",
+              "derived_fields": [
+                "distribution_frequency",
+                "forward_12m_div_ps",
+                "forward_yield_pct",
+                "next_ex_date_est",
+                "trailing_12m_yield_pct"
+              ],
+              "distribution_frequency": "monthly",
+              "next_ex_date_est": "2026-01-21",
+              "twr_1m_pct": 3.344,
+              "twr_3m_pct": 8.382,
+              "twr_6m_pct": 12.945,
+              "twr_12m_pct": 9.693,
+              "top_holdings": [
+                {
+                  "symbol": "NVDA",
+                  "name": "NVIDIA Corp",
+                  "weight_pct": 9.624
+                },
+                {
+                  "symbol": "AAPL",
+                  "name": "Apple Inc",
+                  "weight_pct": 9.259
+                },
+                {
+                  "symbol": "MSFT",
+                  "name": "Microsoft Corp",
+                  "weight_pct": 8.183
+                },
+                {
+                  "symbol": "AVGO",
+                  "name": "Broadcom Inc",
+                  "weight_pct": 7.014
+                },
+                {
+                  "symbol": "AMZN",
+                  "name": "Amazon.com Inc",
+                  "weight_pct": 5.565
+                },
+                {
+                  "symbol": "GOOGL",
+                  "name": "Alphabet Inc Class A",
+                  "weight_pct": 4.167
+                },
+                {
+                  "symbol": "GOOG",
+                  "name": "Alphabet Inc Class C",
+                  "weight_pct": 3.889
+                },
+                {
+                  "symbol": "TSLA",
+                  "name": "Tesla Inc",
+                  "weight_pct": 3.508
+                },
+                {
+                  "symbol": "META",
+                  "name": "Meta Platforms Inc Class A",
+                  "weight_pct": 3.145
+                }
+              ],
+              "sector_weights": {
+                "realestate": 0.15,
+                "consumer_cyclical": 12.83,
+                "basic_materials": 1.0,
+                "consumer_defensive": 4.51,
+                "technology": 54.7,
+                "communication_services": 16.72,
+                "financial_services": 0.31,
+                "utilities": 1.44,
+                "industrials": 2.95,
+                "energy": 0.49,
+                "healthcare": 4.9
+              },
+              "last_ex_date": "2025-12-22",
+              "forward_12m_div_ps": 2.38
+            },
+            "dividends_30d": 8.94,
+            "dividends_qtd": 8.94,
+            "dividends_ytd": 8.94
+          },
+          {
+            "symbol": "RYLD",
+            "shares": 51.199,
+            "cost_basis": 782.99,
+            "avg_cost": 15.293,
+            "trades": 13,
+            "last_price": 15.484,
+            "market_value": 792.794,
+            "unrealized_pnl": 9.804,
+            "unrealized_pct": 1.252,
+            "weight_pct": 5.009,
+            "forward_12m_dividend": 102.6,
+            "last_ex_date": "2025-12-22",
+            "forward_method": "t12m",
+            "projected_monthly_dividend": 8.55,
+            "current_yield_pct": 12.942,
+            "yield_on_cost_pct": 13.104,
+            "ultimate": {
+              "name": "Global X Russell 2000 Covered Call ETF",
+              "exchange": "PCX",
+              "currency": "USD",
+              "category": "Derivative Income",
+              "asset_class": "ETF",
+              "vol_30d_pct": 12.68,
+              "vol_90d_pct": 10.377,
+              "beta_3y": 0.698,
+              "max_drawdown_1y_pct": -19.045,
+              "sortino_1y": 0.619,
+              "downside_dev_1y_pct": 14.358,
+              "sharpe_1y": 0.43,
+              "calmar_1y": 0.385,
+              "drawdown_duration_1y_days": 171,
+              "var_95_1d_pct": -1.574,
+              "cvar_95_1d_pct": -2.568,
+              "corr_1y": 0.867,
+              "trailing_12m_div_ps": 2.004,
+              "trailing_12m_yield_pct": 12.942,
+              "forward_yield_pct": 12.942,
+              "forward_yield_method": "t12m",
+              "derived_fields": [
+                "distribution_frequency",
+                "forward_12m_div_ps",
+                "forward_yield_pct",
+                "next_ex_date_est",
+                "trailing_12m_yield_pct"
+              ],
+              "distribution_frequency": "monthly",
+              "next_ex_date_est": "2026-01-21",
+              "twr_1m_pct": 3.169,
+              "twr_3m_pct": 7.098,
+              "twr_6m_pct": 10.62,
+              "twr_12m_pct": 7.494,
+              "top_holdings": [
+                {
+                  "symbol": "RSSL",
+                  "name": "Global X Russell 2000 ETF",
+                  "weight_pct": 106.58
+                }
+              ],
+              "sector_weights": {
+                "realestate": 6.81,
+                "consumer_cyclical": 9.5,
+                "basic_materials": 4.39,
+                "consumer_defensive": 2.5,
+                "technology": 15.49,
+                "communication_services": 2.5,
+                "financial_services": 16.68,
+                "utilities": 3.3,
+                "industrials": 15.52,
+                "energy": 4.66,
+                "healthcare": 18.64
+              },
+              "last_ex_date": "2025-12-22",
+              "forward_12m_div_ps": 2.004
+            },
+            "dividends_30d": 7.68,
+            "dividends_qtd": 7.68,
+            "dividends_ytd": 7.68
+          },
+          {
+            "symbol": "SPYI",
+            "shares": 13.904,
+            "cost_basis": 728.57,
+            "avg_cost": 52.398,
+            "trades": 16,
+            "last_price": 52.985,
+            "market_value": 736.729,
+            "unrealized_pnl": 8.159,
+            "unrealized_pct": 1.12,
+            "weight_pct": 4.655,
+            "forward_12m_dividend": 85.25,
+            "last_ex_date": "2025-11-26",
+            "forward_method": "t12m",
+            "projected_monthly_dividend": 7.1,
+            "current_yield_pct": 11.571,
+            "yield_on_cost_pct": 11.701,
+            "ultimate": {
+              "name": "Neos S&P 500(R) High Income ETF",
+              "exchange": "BTS",
+              "currency": "USD",
+              "category": "Derivative Income",
+              "asset_class": "ETF",
+              "vol_30d_pct": 11.077,
+              "vol_90d_pct": 10.12,
+              "beta_3y": 0.788,
+              "max_drawdown_1y_pct": -16.475,
+              "sortino_1y": 1.233,
+              "downside_dev_1y_pct": 14.329,
+              "sharpe_1y": 0.85,
+              "calmar_1y": 0.911,
+              "drawdown_duration_1y_days": 86,
+              "var_95_1d_pct": -1.366,
+              "cvar_95_1d_pct": -2.421,
+              "corr_1y": 0.971,
+              "trailing_12m_div_ps": 6.131,
+              "trailing_12m_yield_pct": 11.571,
+              "forward_yield_pct": 11.571,
+              "forward_yield_method": "t12m",
+              "derived_fields": [
+                "distribution_frequency",
+                "forward_12m_div_ps",
+                "forward_yield_pct",
+                "next_ex_date_est",
+                "trailing_12m_yield_pct"
+              ],
+              "distribution_frequency": "monthly",
+              "next_ex_date_est": "2025-12-26",
+              "twr_1m_pct": 2.62,
+              "twr_3m_pct": 4.196,
+              "twr_6m_pct": 11.229,
+              "twr_12m_pct": 15.719,
+              "top_holdings": [
+                {
+                  "symbol": "NVDA",
+                  "name": "NVIDIA Corp",
+                  "weight_pct": 7.492
+                },
+                {
+                  "symbol": "AAPL",
+                  "name": "Apple Inc",
+                  "weight_pct": 7.157
+                },
+                {
+                  "symbol": "MSFT",
+                  "name": "Microsoft Corp",
+                  "weight_pct": 6.334
+                },
+                {
+                  "symbol": "AMZN",
+                  "name": "Amazon.com Inc",
+                  "weight_pct": 3.895
+                },
+                {
+                  "symbol": "AVGO",
+                  "name": "Broadcom Inc",
+                  "weight_pct": 3.268
+                },
+                {
+                  "symbol": "GOOGL",
+                  "name": "Alphabet Inc Class A",
+                  "weight_pct": 3.198
+                },
+                {
+                  "symbol": "GOOG",
+                  "name": "Alphabet Inc Class C",
+                  "weight_pct": 2.567
+                },
+                {
+                  "symbol": "META",
+                  "name": "Meta Platforms Inc Class A",
+                  "weight_pct": 2.441
+                },
+                {
+                  "symbol": "TSLA",
+                  "name": "Tesla Inc",
+                  "weight_pct": 2.091
+                },
+                {
+                  "symbol": "BRK-B",
+                  "name": "Berkshire Hathaway Inc Class B",
+                  "weight_pct": 1.64
+                }
+              ],
+              "sector_weights": {
+                "realestate": 1.86,
+                "consumer_cyclical": 10.22,
+                "basic_materials": 1.45,
+                "consumer_defensive": 5.0,
+                "technology": 35.35,
+                "communication_services": 11.03,
+                "financial_services": 12.95,
+                "utilities": 2.54,
+                "industrials": 7.04,
+                "energy": 2.96,
+                "healthcare": 9.61
+              },
+              "last_ex_date": "2025-11-26",
+              "forward_12m_div_ps": 6.131
+            },
+            "dividends_30d": 7.78,
+            "dividends_qtd": 7.78,
+            "dividends_ytd": 7.78
+          },
+          {
+            "symbol": "SVOL",
+            "shares": 167.989,
+            "cost_basis": 2950.85,
+            "avg_cost": 17.566,
+            "trades": 14,
+            "last_price": 17.65,
+            "market_value": 2965.001,
+            "unrealized_pnl": 14.151,
+            "unrealized_pct": 0.48,
+            "weight_pct": 18.735,
+            "forward_12m_dividend": 584.6,
+            "last_ex_date": "2025-12-23",
+            "forward_method": "t12m",
+            "projected_monthly_dividend": 48.72,
+            "current_yield_pct": 19.717,
+            "yield_on_cost_pct": 19.811,
+            "ultimate": {
+              "name": "Simplify Volatility Premium ETF",
+              "exchange": "PCX",
+              "currency": "USD",
+              "category": "Derivative Income",
+              "asset_class": "ETF",
+              "vol_30d_pct": 17.228,
+              "vol_90d_pct": 21.309,
+              "beta_3y": 1.238,
+              "max_drawdown_1y_pct": -33.502,
+              "sortino_1y": 0.061,
+              "downside_dev_1y_pct": 29.268,
+              "sharpe_1y": 0.041,
+              "calmar_1y": 0.048,
+              "drawdown_duration_1y_days": 214,
+              "var_95_1d_pct": -3.716,
+              "cvar_95_1d_pct": -5.732,
+              "corr_1y": 0.885,
+              "trailing_12m_div_ps": 3.48,
+              "trailing_12m_yield_pct": 19.717,
+              "forward_yield_pct": 19.717,
+              "forward_yield_method": "t12m",
+              "derived_fields": [
+                "distribution_frequency",
+                "forward_12m_div_ps",
+                "forward_yield_pct",
+                "next_ex_date_est",
+                "trailing_12m_yield_pct"
+              ],
+              "distribution_frequency": "monthly",
+              "next_ex_date_est": "2026-01-22",
+              "twr_1m_pct": 4.061,
+              "twr_3m_pct": 4.572,
+              "twr_6m_pct": 11.331,
+              "twr_12m_pct": 2.787,
+              "top_holdings": [
+                {
+                  "symbol": "SVOL",
+                  "name": "Simplify Volatility Premium ETF",
+                  "weight_pct": 50.652
+                },
+                {
+                  "symbol": "SPUC",
+                  "name": "Simplify US Equity PLUS Upsd Cnvxty ETF",
+                  "weight_pct": 12.096
+                },
+                {
+                  "symbol": "AGGH",
+                  "name": "Simplify Aggregate Bond ETF",
+                  "weight_pct": 11.149
+                },
+                {
+                  "symbol": "QIS",
+                  "name": "Simplify Multi-QIS Alternative ETF",
+                  "weight_pct": 10.538
+                },
+                {
+                  "symbol": "NMB",
+                  "name": "Simplify National Muni Bond ETF",
+                  "weight_pct": 5.787
+                },
+                {
+                  "symbol": "NXTI",
+                  "name": "Simplify Next Intangible Core Index ETF",
+                  "weight_pct": 3.908
+                },
+                {
+                  "symbol": "XV",
+                  "name": "Simplify Target 15 Distribution ETF",
+                  "weight_pct": 2.417
+                }
+              ],
+              "sector_weights": {
+                "realestate": 1.49,
+                "consumer_cyclical": 9.5,
+                "basic_materials": 1.39,
+                "consumer_defensive": 5.68,
+                "technology": 38.31,
+                "communication_services": 9.52,
+                "financial_services": 12.18,
+                "utilities": 1.98,
+                "industrials": 7.47,
+                "energy": 3.08,
+                "healthcare": 9.39
+              },
+              "last_ex_date": "2025-12-23",
+              "forward_12m_div_ps": 3.48
+            },
+            "dividends_30d": 12.85,
+            "dividends_qtd": 12.85,
+            "dividends_ytd": 12.85
+          },
+          {
+            "symbol": "TRIN",
+            "shares": 194.642,
+            "cost_basis": 2912.92,
+            "avg_cost": 14.966,
+            "trades": 11,
+            "last_price": 15.14,
+            "market_value": 2946.885,
+            "unrealized_pnl": 33.965,
+            "unrealized_pct": 1.166,
+            "weight_pct": 18.62,
+            "forward_12m_dividend": 397.07,
+            "last_ex_date": "2025-09-30",
+            "forward_method": "t12m",
+            "projected_monthly_dividend": 33.09,
+            "current_yield_pct": 13.474,
+            "yield_on_cost_pct": 13.631,
+            "ultimate": {
+              "name": "Trinity Capital Inc.",
+              "exchange": "NMS",
+              "currency": "USD",
+              "sector": "Financial Services",
+              "industry": "Asset Management",
+              "asset_class": "Financial Services",
+              "aum_usd": 1145846016.0,
+              "vol_30d_pct": 15.481,
+              "vol_90d_pct": 19.33,
+              "beta_3y": 0.66,
+              "max_drawdown_1y_pct": -15.577,
+              "sortino_1y": 1.078,
+              "downside_dev_1y_pct": 17.035,
+              "sharpe_1y": 0.774,
+              "calmar_1y": 1.192,
+              "drawdown_duration_1y_days": 109,
+              "var_95_1d_pct": -1.925,
+              "cvar_95_1d_pct": -3.126,
+              "corr_1y": 0.485,
+              "trailing_12m_div_ps": 2.04,
+              "indicated_div_ps": 2.55,
+              "trailing_12m_yield_pct": 13.474,
+              "forward_yield_pct": 16.843,
+              "forward_yield_method": "indicated",
+              "distribution_frequency": "quarterly",
+              "next_ex_date_est": "2025-12-29",
+              "twr_1m_pct": 4.198,
+              "twr_3m_pct": -2.899,
+              "twr_6m_pct": 11.707,
+              "twr_12m_pct": 19.707,
+              "pb": 1.1373,
+              "derived_fields": [
+                "distribution_frequency",
+                "forward_yield_pct",
+                "next_ex_date_est",
+                "trailing_12m_yield_pct"
+              ],
+              "last_ex_date": "2025-09-30",
+              "forward_12m_div_ps": 2.55
+            },
+            "dividends_30d": 0.0,
+            "dividends_qtd": 0.0,
+            "dividends_ytd": 0.0
+          }
+        ],
+        "meta": {
+          "snapshot_created_at": "2025-12-24T18:39:53Z",
+          "price_partial": false,
+          "last_transaction_sync_at": "2025-12-24T18:22:00.209121-08:00",
+          "served_from": "db",
+          "snapshot_age_days": 0,
+          "schema_version": "2.4",
+          "filled_from_existing": true
+        },
+        "cached": false,
+        "count": 10,
+        "prices_as_of": "2025-12-24",
+        "totals": {
+          "cost_basis": 15605.1,
+          "margin_loan_balance": 7155.74,
+          "market_value": 15826.17,
+          "margin_to_portfolio_pct": 45.2146,
+          "unrealized_pnl": 221.07,
+          "unrealized_pct": 1.417
+        },
+        "income": {
+          "projected_monthly_income": 170.27,
+          "portfolio_yield_on_cost_pct": 13.093,
+          "forward_12m_total": 2043.21,
+          "portfolio_current_yield_pct": 12.91
+        },
+        "as_of_date_local": "2025-12-24",
+        "as_of_utc": "2025-12-24T18:39:53Z"
+      }
+    }
+  ],
+  "summary": {
+    "derived_pct": 100.0,
+    "pulled_pct": 0.0
+  }
+}
