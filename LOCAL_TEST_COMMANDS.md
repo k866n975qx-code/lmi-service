@@ -20,16 +20,16 @@ python scripts/sync_all.py
 
 ## Run API
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+uvicorn app.main:app --host 0.0.0.0 --port 8010 --reload
 ```
 
 ## Smoke endpoints
 ```bash
-curl -s http://127.0.0.1:8080/health | python3 -m json.tool
-curl -s http://127.0.0.1:8080/snapshots/available | python3 -m json.tool
-curl -s "http://127.0.0.1:8080/period/weekly/2025-12-25/to_date?slim=true" | python3 -m json.tool
-curl -s http://127.0.0.1:8080/diff/daily/2025-12-24/2025-12-25 | python3 -m json.tool
-curl -s -X POST http://127.0.0.1:8080/sync-all | python3 -m json.tool
+curl -s http://127.0.0.1:8010/health | python3 -m json.tool
+curl -s http://127.0.0.1:8010/snapshots/available | python3 -m json.tool
+curl -s "http://127.0.0.1:8010/period/weekly/2025-12-25/to_date?slim=true" | python3 -m json.tool
+curl -s http://127.0.0.1:8010/diff/daily/2025-12-24/2025-12-25 | python3 -m json.tool
+curl -s -X POST http://127.0.0.1:8010/sync-all | python3 -m json.tool
 ```
 
 ## Quick validation
