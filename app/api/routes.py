@@ -1,4 +1,8 @@
+from collections import deque
+import json
 from datetime import date
+from pathlib import Path
+import os
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from .schemas import SyncRun, DiffRequest, StatusResponse
 from ..pipeline.orchestrator import trigger_sync, get_status, get_snapshot, diff_snapshots
@@ -19,7 +23,12 @@ _PERIOD_MAP = {
     "yearly": "YEAR",
 }
 
-@router.get('/health')
+@router.get(
+    '/health',
+    summary="Health check",
+    description="Returns service and DB connectivity plus last run metadata.",
+    tags=["Health"],
+)
 def health():
     try:
         conn = get_conn(settings.db_path)
@@ -34,7 +43,12 @@ def health():
     except Exception as e:
         raise HTTPException(503, f'db_error: {e}')
 
-@router.post('/cache/{action}')
+@router.post(
+    '/cache/{action}',
+    summary="Cache admin",
+    description="Invalidate or backfill the local cache.",
+    tags=["Admin"],
+)
 def cache_admin(action: str):
     if action not in ('invalidate', 'backfill'):
         raise HTTPException(400, 'action must be invalidate|backfill')
@@ -44,29 +58,62 @@ def cache_admin(action: str):
         return {'ok': True, 'cleared': True}
     return {'ok': True, 'backfill': 'noop'}
 
-@router.post('/sync-all', response_model=SyncRun, status_code=202)
+@router.post(
+    '/sync-all',
+    response_model=SyncRun,
+    status_code=202,
+    summary="Trigger sync",
+    description="Starts the sync pipeline in the background and returns the run_id.",
+    tags=["Sync"],
+)
 def sync_all(background: BackgroundTasks):
     run_id = trigger_sync(background)
     return SyncRun(run_id=run_id)
 
-@router.get('/status/{run_id}', response_model=StatusResponse)
+@router.get(
+    '/status/{run_id}',
+    response_model=StatusResponse,
+    summary="Get sync status",
+    description="Return status for a given run_id.",
+    tags=["Sync"],
+)
 def status(run_id: str):
     st = get_status(run_id)
     if not st:
         raise HTTPException(404, 'run not found')
     return st
 
-@router.get('/snapshots/{period}/{start}/{end}')
-def snapshots(period: str, start: str, end: str, slim: bool = False):
+@router.get(
+    '/snapshots/{period}/{start}/{end}',
+    summary="Get stored period snapshot by range",
+    description=(
+        "Returns a persisted weekly/monthly/quarterly/yearly snapshot. "
+        "Schema: samples/period.json. "
+        "Use slim=false for full payload."
+    ),
+    tags=["Snapshots"],
+)
+def snapshots(period: str, start: str, end: str, slim: bool = True):
     snap = get_snapshot(period.upper(), start, end)
     if not snap:
         raise HTTPException(404, 'snapshot not found')
     return slim_snapshot(snap) if slim else snap
 
-@router.get('/snapshots/available')
-def snapshots_available():
+@router.get(
+    '/snapshots/available',
+    summary="List available snapshots",
+    description=(
+        "Lists stored daily dates and period snapshots. "
+        "Optional snapshot_type filter: daily|weekly|monthly|quarterly|yearly."
+    ),
+    tags=["Snapshots"],
+)
+def snapshots_available(snapshot_type: str | None = None):
     conn = get_conn(settings.db_path)
     cur = conn.cursor()
+    snapshot_type = snapshot_type.lower() if snapshot_type else None
+    if snapshot_type and snapshot_type not in {"daily", "weekly", "monthly", "quarterly", "yearly"}:
+        raise HTTPException(400, 'snapshot_type must be daily|weekly|monthly|quarterly|yearly')
     daily_rows = cur.execute(
         "SELECT as_of_date_local FROM snapshot_daily_current ORDER BY as_of_date_local DESC"
     ).fetchall()
@@ -77,6 +124,12 @@ def snapshots_available():
         ORDER BY period_end_date DESC
         """
     ).fetchall()
+    if snapshot_type == "daily":
+        period_rows = []
+    elif snapshot_type:
+        target = _PERIOD_MAP[snapshot_type]
+        period_rows = [row for row in period_rows if row[0] == target]
+        daily_rows = []
     return {
         "daily": [row[0] for row in daily_rows],
         "period": [
@@ -91,8 +144,60 @@ def snapshots_available():
         ],
     }
 
-@router.get('/period/{snapshot_type}/{as_of}')
-def period_snapshot_stored(snapshot_type: str, as_of: str, slim: bool = False):
+@router.get(
+    '/snapshots/daily/latest',
+    summary="Get latest daily snapshot",
+    description=(
+        "Returns the most recent daily snapshot. "
+        "Schema: samples/daily.json. "
+        "Use slim=false for full payload."
+    ),
+    tags=["Snapshots"],
+)
+def daily_snapshot_latest(slim: bool = True):
+    conn = get_conn(settings.db_path)
+    cur = conn.cursor()
+    row = cur.execute(
+        "SELECT payload_json FROM snapshot_daily_current ORDER BY as_of_date_local DESC LIMIT 1"
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, 'daily snapshot not found')
+    payload = json.loads(row[0])
+    return slim_snapshot(payload) if slim else payload
+
+@router.get(
+    '/snapshots/daily/{as_of}',
+    summary="Get daily snapshot by date",
+    description=(
+        "Returns a daily snapshot for the given date. "
+        "Schema: samples/daily.json. "
+        "Use slim=false for full payload."
+    ),
+    tags=["Snapshots"],
+)
+def daily_snapshot_by_date(as_of: str, slim: bool = True):
+    conn = get_conn(settings.db_path)
+    cur = conn.cursor()
+    row = cur.execute(
+        "SELECT payload_json FROM snapshot_daily_current WHERE as_of_date_local=?",
+        (as_of,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, 'daily snapshot not found')
+    payload = json.loads(row[0])
+    return slim_snapshot(payload) if slim else payload
+
+@router.get(
+    '/period/{snapshot_type}/{as_of}',
+    summary="Get stored period snapshot by as-of date",
+    description=(
+        "Returns a persisted period snapshot. "
+        "Schema: samples/period.json. "
+        "Use slim=false for full payload."
+    ),
+    tags=["Periods"],
+)
+def period_snapshot_stored(snapshot_type: str, as_of: str, slim: bool = True):
     snapshot_type = snapshot_type.lower()
     if snapshot_type not in _PERIOD_MAP:
         raise HTTPException(400, 'snapshot_type must be weekly|monthly|quarterly|yearly')
@@ -106,8 +211,17 @@ def period_snapshot_stored(snapshot_type: str, as_of: str, slim: bool = False):
         raise HTTPException(404, 'snapshot not found')
     return slim_snapshot(snap) if slim else snap
 
-@router.get('/period/{snapshot_type}/{as_of}/{mode}')
-def period_snapshot(snapshot_type: str, as_of: str, mode: str, slim: bool = False):
+@router.get(
+    '/period/{snapshot_type}/{as_of}/{mode}',
+    summary="Get period snapshot (final or to-date)",
+    description=(
+        "Returns a period snapshot in final or to_date mode. "
+        "Schema: samples/period.json. "
+        "Use slim=false for full payload."
+    ),
+    tags=["Periods"],
+)
+def period_snapshot(snapshot_type: str, as_of: str, mode: str, slim: bool = True):
     snapshot_type = snapshot_type.lower()
     mode = mode.lower()
     if snapshot_type not in ('weekly', 'monthly', 'quarterly', 'yearly'):
@@ -130,13 +244,23 @@ def period_snapshot(snapshot_type: str, as_of: str, mode: str, slim: bool = Fals
     except ValueError as e:
         raise HTTPException(404, str(e))
 
-@router.post('/diff')
+@router.post(
+    '/diff',
+    summary="Diff two snapshot IDs",
+    description="Diffs two persisted snapshot IDs. Schema: samples/diff_period.json.",
+    tags=["Diffs"],
+)
 def diff(req: DiffRequest):
     if not req.left_id or not req.right_id:
         raise HTTPException(400, 'left_id and right_id required')
     return diff_snapshots(req)
 
-@router.get('/diff/daily/{left_date}/{right_date}')
+@router.get(
+    '/diff/daily/{left_date}/{right_date}',
+    summary="Diff two daily snapshots",
+    description="Returns a daily diff. Schema: samples/diff_daily.json.",
+    tags=["Diffs"],
+)
 def diff_daily(left_date: str, right_date: str):
     conn = get_conn(settings.db_path)
     try:
@@ -144,7 +268,12 @@ def diff_daily(left_date: str, right_date: str):
     except ValueError as e:
         raise HTTPException(404, str(e))
 
-@router.get('/diff/period/{snapshot_type}/{left_as_of}/{right_as_of}')
+@router.get(
+    '/diff/period/{snapshot_type}/{left_as_of}/{right_as_of}',
+    summary="Diff two period snapshots",
+    description="Returns a period diff. Schema: samples/diff_period.json.",
+    tags=["Diffs"],
+)
 def diff_period(snapshot_type: str, left_as_of: str, right_as_of: str):
     snapshot_type = snapshot_type.lower()
     conn = get_conn(settings.db_path)
@@ -152,3 +281,24 @@ def diff_period(snapshot_type: str, left_as_of: str, right_as_of: str):
         return diff_periods_from_db(conn, snapshot_type, left_as_of, right_as_of)
     except ValueError as e:
         raise HTTPException(404, str(e))
+
+@router.get(
+    '/logs',
+    summary="Read error logs",
+    description="Returns the last N lines from the error log file.",
+    tags=["Admin"],
+)
+def read_logs(lines: int = 200):
+    if lines < 1:
+        raise HTTPException(400, 'lines must be >= 1')
+    if lines > 2000:
+        lines = 2000
+    log_path = os.getenv("LOG_ERROR_FILE", "./data/logs/error.log")
+    path = Path(log_path)
+    if not path.exists():
+        raise HTTPException(404, 'log file not found')
+    tail = deque(maxlen=lines)
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            tail.append(line.rstrip("\n"))
+    return {"path": str(path), "lines": list(tail)}
