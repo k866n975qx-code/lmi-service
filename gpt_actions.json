@@ -15,13 +15,73 @@
       "get": {
         "operationId": "getHealth",
         "summary": "Health check",
+        "description": "Returns service and DB connectivity plus last run metadata.",
         "responses": {
           "200": {
             "description": "Health status",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cache/{action}": {
+      "post": {
+        "operationId": "cacheAdmin",
+        "summary": "Cache admin",
+        "description": "Invalidate or backfill the local cache.",
+        "parameters": [
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["invalidate", "backfill"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cache admin result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheAdminResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sync-all": {
+      "post": {
+        "operationId": "syncAll",
+        "summary": "Trigger sync",
+        "description": "Starts the sync pipeline in the background and returns the run_id.",
+        "responses": {
+          "202": {
+            "description": "Sync run created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncRun"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Sync run created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncRun"
                 }
               }
             }
@@ -32,7 +92,8 @@
     "/status/{run_id}": {
       "get": {
         "operationId": "getRunStatus",
-        "summary": "Get sync run status by run ID",
+        "summary": "Get sync status",
+        "description": "Return status for a given run_id.",
         "parameters": [
           {
             "name": "run_id",
@@ -49,25 +110,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/snapshots/available": {
-      "get": {
-        "operationId": "listSnapshots",
-        "summary": "List available persisted snapshots",
-        "responses": {
-          "200": {
-            "description": "Available snapshots",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/StatusResponse"
                 }
               }
             }
@@ -78,7 +121,8 @@
     "/snapshots/{period}/{start}/{end}": {
       "get": {
         "operationId": "getSnapshotRange",
-        "summary": "Get persisted snapshot for a period range",
+        "summary": "Get stored period snapshot by range",
+        "description": "Returns a persisted weekly/monthly/quarterly/yearly snapshot.",
         "parameters": [
           {
             "name": "period",
@@ -113,7 +157,7 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "default": false
+              "default": true
             }
           }
         ],
@@ -123,7 +167,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/SnapshotResponse"
                 }
               }
             }
@@ -131,13 +175,113 @@
         }
       }
     },
-    "/period/{type}/{as_of}": {
+    "/snapshots/available": {
       "get": {
-        "operationId": "getPeriodSnapshot",
-        "summary": "Get persisted period snapshot by as-of date",
+        "operationId": "listSnapshots",
+        "summary": "List available snapshots",
+        "description": "Lists stored daily dates and period snapshots.",
         "parameters": [
           {
-            "name": "type",
+            "name": "snapshot_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["daily", "weekly", "monthly", "quarterly", "yearly"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Available snapshots",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotsAvailableResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/snapshots/daily/latest": {
+      "get": {
+        "operationId": "getLatestDailySnapshot",
+        "summary": "Get latest daily snapshot",
+        "description": "Returns the most recent daily snapshot.",
+        "parameters": [
+          {
+            "name": "slim",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Daily snapshot payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/snapshots/daily/{as_of}": {
+      "get": {
+        "operationId": "getDailySnapshot",
+        "summary": "Get daily snapshot by date",
+        "description": "Returns a daily snapshot for the given date.",
+        "parameters": [
+          {
+            "name": "as_of",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "slim",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Daily snapshot payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/period/{snapshot_type}/{as_of}": {
+      "get": {
+        "operationId": "getPeriodSnapshot",
+        "summary": "Get stored period snapshot by as-of date",
+        "description": "Returns a persisted period snapshot.",
+        "parameters": [
+          {
+            "name": "snapshot_type",
             "in": "path",
             "required": true,
             "schema": {
@@ -160,7 +304,7 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "default": false
+              "default": true
             }
           }
         ],
@@ -170,7 +314,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/SnapshotResponse"
                 }
               }
             }
@@ -178,13 +322,14 @@
         }
       }
     },
-    "/period/{type}/{as_of}/{mode}": {
+    "/period/{snapshot_type}/{as_of}/{mode}": {
       "get": {
         "operationId": "getPeriodSnapshotMode",
-        "summary": "Get period snapshot in final or to-date mode",
+        "summary": "Get period snapshot (final or to-date)",
+        "description": "Returns a period snapshot in final or to_date mode.",
         "parameters": [
           {
-            "name": "type",
+            "name": "snapshot_type",
             "in": "path",
             "required": true,
             "schema": {
@@ -216,7 +361,7 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "default": false
+              "default": true
             }
           }
         ],
@@ -226,7 +371,36 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/SnapshotResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/diff": {
+      "post": {
+        "operationId": "diffSnapshotIds",
+        "summary": "Diff two snapshot IDs",
+        "description": "Diffs two persisted snapshot IDs.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiffRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Diff payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiffResponse"
                 }
               }
             }
@@ -237,7 +411,8 @@
     "/diff/daily/{left_date}/{right_date}": {
       "get": {
         "operationId": "getDailyDiff",
-        "summary": "Diff two daily snapshots by date",
+        "summary": "Diff two daily snapshots",
+        "description": "Returns a daily diff.",
         "parameters": [
           {
             "name": "left_date",
@@ -264,7 +439,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/DiffResponse"
                 }
               }
             }
@@ -272,13 +447,14 @@
         }
       }
     },
-    "/diff/period/{type}/{left_as_of}/{right_as_of}": {
+    "/diff/period/{snapshot_type}/{left_as_of}/{right_as_of}": {
       "get": {
         "operationId": "getPeriodDiff",
-        "summary": "Diff two period snapshots by as-of date",
+        "summary": "Diff two period snapshots",
+        "description": "Returns a period diff.",
         "parameters": [
           {
-            "name": "type",
+            "name": "snapshot_type",
             "in": "path",
             "required": true,
             "schema": {
@@ -311,7 +487,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/DiffResponse"
                 }
               }
             }
@@ -319,37 +495,211 @@
         }
       }
     },
-    "/diff": {
-      "post": {
-        "operationId": "diffSnapshotIds",
-        "summary": "Diff two persisted snapshot IDs",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "left_id": { "type": "string" },
-                  "right_id": { "type": "string" }
-                },
-                "required": ["left_id", "right_id"]
-              }
+    "/logs": {
+      "get": {
+        "operationId": "readLogs",
+        "summary": "Read error logs",
+        "description": "Returns the last N lines from the error log file.",
+        "parameters": [
+          {
+            "name": "lines",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2000,
+              "default": 200
             }
           }
-        },
+        ],
         "responses": {
           "200": {
-            "description": "Diff payload",
+            "description": "Log lines",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/LogsResponse"
                 }
               }
             }
           }
         }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "db": {
+            "type": "string"
+          },
+          "last_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LastRun"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["ok", "db"]
+      },
+      "LastRun": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "started_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at_utc": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          }
+        },
+        "required": ["run_id", "status", "started_at_utc"]
+      },
+      "CacheAdminResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "cleared": {
+            "type": "boolean"
+          },
+          "backfill": {
+            "type": "string"
+          }
+        },
+        "required": ["ok"]
+      },
+      "SyncRun": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string"
+          }
+        },
+        "required": ["run_id"]
+      },
+      "StatusResponse": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["running", "succeeded", "failed"]
+          },
+          "started_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at_utc": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "error_message": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["run_id", "status", "started_at_utc"]
+      },
+      "SnapshotsAvailableResponse": {
+        "type": "object",
+        "properties": {
+          "daily": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          "period": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PeriodSnapshotSummary"
+            }
+          }
+        },
+        "required": ["daily", "period"]
+      },
+      "PeriodSnapshotSummary": {
+        "type": "object",
+        "properties": {
+          "period_type": {
+            "type": "string",
+            "enum": ["WEEK", "MONTH", "QUARTER", "YEAR"]
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "snapshot_id": {
+            "type": "string"
+          },
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["period_type", "start_date", "end_date", "snapshot_id", "created_at_utc"]
+      },
+      "SnapshotResponse": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      },
+      "DiffRequest": {
+        "type": "object",
+        "properties": {
+          "left_id": {
+            "type": "string"
+          },
+          "right_id": {
+            "type": "string"
+          }
+        },
+        "required": ["left_id", "right_id"]
+      },
+      "DiffResponse": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      },
+      "LogsResponse": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["path", "lines"]
       }
     }
   }
