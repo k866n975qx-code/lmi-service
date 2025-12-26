@@ -14,7 +14,12 @@ from app.pipeline.utils import ensure_cusip_map
 
 if __name__ == '__main__':
     conn = get_conn(settings.db_path)
-    migrate(conn)
+    migration_path = ROOT / "migrations" / "001_init.sql"
+    if migration_path.exists():
+        conn.executescript(migration_path.read_text())
+        migrate(conn)  # apply incremental column additions if any
+    else:
+        migrate(conn)
     ensure_cusip_map(conn)
     cusip_count = conn.execute("SELECT COUNT(*) FROM cusip_map").fetchone()[0]
     print('DB ready at', settings.db_path, '| CUSIP rows:', cusip_count)

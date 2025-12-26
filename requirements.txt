@@ -13,5 +13,5 @@ yahooquery>=2.3.0,<3.0.0
 pandas-datareader>=0.10.0,<1.0.0
 pyfredapi>=0.6.0,<1.0.0
 yfinance>=0.2.36,<1.0.0
-# Optional (heavy); leave installed if you plan to use it:
-openbb>=4.5.0,<5.0.0
+# Optional (heavy); openbb doesn't publish wheels for 3.12+
+openbb; python_version < "3.12"

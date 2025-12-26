@@ -1,0 +1,356 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "mira-service API",
+    "version": "1.0.0",
+    "description": "Actions schema for snapshot retrieval, diffs, and status."
+  },
+  "servers": [
+    {
+      "url": "https://mira.joseai.dev"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Health check",
+        "responses": {
+          "200": {
+            "description": "Health status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/status/{run_id}": {
+      "get": {
+        "operationId": "getRunStatus",
+        "summary": "Get sync run status by run ID",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Run status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/snapshots/available": {
+      "get": {
+        "operationId": "listSnapshots",
+        "summary": "List available persisted snapshots",
+        "responses": {
+          "200": {
+            "description": "Available snapshots",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/snapshots/{period}/{start}/{end}": {
+      "get": {
+        "operationId": "getSnapshotRange",
+        "summary": "Get persisted snapshot for a period range",
+        "parameters": [
+          {
+            "name": "period",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["WEEK", "MONTH", "QUARTER", "YEAR"]
+            }
+          },
+          {
+            "name": "start",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "end",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "slim",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Snapshot payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/period/{type}/{as_of}": {
+      "get": {
+        "operationId": "getPeriodSnapshot",
+        "summary": "Get persisted period snapshot by as-of date",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["weekly", "monthly", "quarterly", "yearly"]
+            }
+          },
+          {
+            "name": "as_of",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "slim",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Period snapshot payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/period/{type}/{as_of}/{mode}": {
+      "get": {
+        "operationId": "getPeriodSnapshotMode",
+        "summary": "Get period snapshot in final or to-date mode",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["weekly", "monthly", "quarterly", "yearly"]
+            }
+          },
+          {
+            "name": "as_of",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["to_date", "final"]
+            }
+          },
+          {
+            "name": "slim",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Period snapshot payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/diff/daily/{left_date}/{right_date}": {
+      "get": {
+        "operationId": "getDailyDiff",
+        "summary": "Diff two daily snapshots by date",
+        "parameters": [
+          {
+            "name": "left_date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "right_date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Daily diff payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/diff/period/{type}/{left_as_of}/{right_as_of}": {
+      "get": {
+        "operationId": "getPeriodDiff",
+        "summary": "Diff two period snapshots by as-of date",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["weekly", "monthly", "quarterly", "yearly"]
+            }
+          },
+          {
+            "name": "left_as_of",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "right_as_of",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Period diff payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/diff": {
+      "post": {
+        "operationId": "diffSnapshotIds",
+        "summary": "Diff two persisted snapshot IDs",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "left_id": { "type": "string" },
+                  "right_id": { "type": "string" }
+                },
+                "required": ["left_id", "right_id"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Diff payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

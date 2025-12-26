@@ -4,8 +4,8 @@ After=network.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=%h/lmi-service
+WorkingDirectory=%h/%i
 Environment=PYTHONUNBUFFERED=1
-ExecStart=%h/lmi-service/.venv/bin/python scripts/sync_all.py
-User=%i
-Group=%i
+ExecStart=%h/%i/.venv/bin/python scripts/sync_all.py
+User=jose
+Group=jose
