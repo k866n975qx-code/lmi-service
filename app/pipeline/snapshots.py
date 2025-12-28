@@ -1201,7 +1201,14 @@ def maybe_persist_periodic(conn: sqlite3.Connection, run_id: str, daily: dict):
             continue
         try:
             from .periods import build_period_snapshot
-            snapshot_type = period.lower()
+            snapshot_type = {
+                "WEEK": "weekly",
+                "MONTH": "monthly",
+                "QUARTER": "quarterly",
+                "YEAR": "yearly",
+            }.get(period)
+            if not snapshot_type:
+                raise ValueError(f"unknown period {period}")
             snapshot = build_period_snapshot(conn, snapshot_type=snapshot_type, as_of=str(end), mode="final")
         except Exception as exc:
             log.error("period_snapshot_build_failed", run_id=run_id, period=period, err=str(exc))

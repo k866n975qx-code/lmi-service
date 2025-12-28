@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     lm_base_url: str = Field(default="https://dev.lunchmoney.app", alias="LM_BASE_URL")
     lm_plaid_account_ids: str | None = Field(default=None, alias="LM_PLAID_ACCOUNT_IDS")
     lm_start_date: str | None = Field(default=None, alias="LM_START_DATE")
+    lm_lookback_days: int = Field(default=7, alias="LM_LOOKBACK_DAYS")
     yf_enable: int = Field(default=1, alias="YF_ENABLE")
     nasdaq_enable: int = Field(default=1, alias="NASDAQ_ENABLE")
     providers_openbb: int = Field(default=1, alias="PROVIDERS_OPENBB")

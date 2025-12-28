@@ -19,7 +19,12 @@ def trigger_sync(background) -> str:
     background.add_task(_sync_impl, run_id)
     return run_id
 
-def _sync_impl(run_id: str):
+def trigger_sync_window(background, start_date: str, end_date: str) -> str:
+    run_id = str(uuid.uuid4())
+    background.add_task(_sync_impl, run_id, lm_start=start_date, lm_end=end_date)
+    return run_id
+
+def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = None):
     conn = get_conn(settings.db_path)
     migrate(conn)
     cur = conn.cursor()
@@ -68,7 +73,14 @@ def _sync_impl(run_id: str):
         # 1) Pull Lunch Money (append-only raw)
         started = _step_start("lunchmoney_pull")
         _check_deadline("before_lm_pull")
-        lm_result = append_lm_raw(conn, run_id, deadline=deadline)
+        lm_result = append_lm_raw(
+            conn,
+            run_id,
+            deadline=deadline,
+            start_date=lm_start,
+            end_date=lm_end,
+            append_only=True,
+        )
         _step_done("lunchmoney_pull", started)
         _log_detail("lunchmoney_pull_detail", **(lm_result or {}))
 

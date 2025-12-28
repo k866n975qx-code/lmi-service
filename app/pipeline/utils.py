@@ -1,5 +1,5 @@
 import sqlite3, json, hashlib, os, time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 import httpx, structlog
 from ..config import settings
 from ..utils import now_utc_iso, to_local_date, retry_call
@@ -153,19 +153,41 @@ def _lm_get(client: httpx.Client, path: str, params: dict, deadline: float | Non
         deadline=deadline,
     )
 
-def append_lm_raw(conn: sqlite3.Connection, run_id: str, deadline: float | None = None):
+def append_lm_raw(
+    conn: sqlite3.Connection,
+    run_id: str,
+    deadline: float | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    append_only: bool = True,
+):
     # Pull transactions using date windows & pagination; append to lm_raw.
     cur = conn.cursor()
     last = cur.execute(
         "SELECT lm_window_end FROM runs WHERE status='succeeded' AND lm_window_end IS NOT NULL ORDER BY finished_at_utc DESC LIMIT 1"
     ).fetchone()
-    if not last or not last[0]:
-        start_date = settings.lm_start_date or (datetime.now(timezone.utc) - timedelta(days=90)).date().isoformat()
-    else:
-        start_date = last[0]
-    end_date = datetime.now(timezone.utc).date().isoformat()
+    if not end_date:
+        end_date = datetime.now(timezone.utc).date().isoformat()
+    if not start_date:
+        if not last or not last[0]:
+            start_date = settings.lm_start_date or (datetime.now(timezone.utc) - timedelta(days=90)).date().isoformat()
+        else:
+            start_dt = date.fromisoformat(last[0])
+            lookback_days = max(0, int(settings.lm_lookback_days or 0))
+            if lookback_days:
+                start_dt = start_dt - timedelta(days=lookback_days)
+            if settings.lm_start_date:
+                start_dt = max(start_dt, date.fromisoformat(settings.lm_start_date))
+            start_date = start_dt.isoformat()
 
     total = 0
+    seen_tx_ids = None
+    if append_only:
+        seen_tx_ids = {
+            str(row[0])
+            for row in cur.execute("SELECT lm_transaction_id FROM investment_transactions").fetchall()
+            if row[0] is not None
+        }
     with httpx.Client() as client:
         limit = 500
         offset = 0
@@ -179,6 +201,20 @@ def append_lm_raw(conn: sqlite3.Connection, run_id: str, deadline: float | None 
                 items = []
             raw_count = len(items)
             items = _filter_by_plaid_ids(items, ["plaid_account_id"])
+            if append_only and seen_tx_ids is not None:
+                filtered = []
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    tx_id = item.get("id")
+                    if tx_id is None:
+                        continue
+                    tx_id = str(tx_id)
+                    if tx_id in seen_tx_ids:
+                        continue
+                    seen_tx_ids.add(tx_id)
+                    filtered.append(item)
+                items = filtered
             _append_payloads(conn, run_id, "transactions", items, "id")
             total += len(items)
             if raw_count < limit:

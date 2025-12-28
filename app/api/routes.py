@@ -4,8 +4,8 @@ from datetime import date
 from pathlib import Path
 import os
 from fastapi import APIRouter, BackgroundTasks, HTTPException
-from .schemas import SyncRun, DiffRequest, StatusResponse
-from ..pipeline.orchestrator import trigger_sync, get_status, get_snapshot, diff_snapshots
+from .schemas import SyncRun, DiffRequest, StatusResponse, SyncWindowRequest
+from ..pipeline.orchestrator import trigger_sync, trigger_sync_window, get_status, get_snapshot, diff_snapshots
 from ..pipeline.periods import build_period_snapshot, _period_bounds
 from ..pipeline.diff_daily import diff_daily_from_db
 from ..pipeline.diff_periods import diff_periods_from_db
@@ -68,6 +68,28 @@ def cache_admin(action: str):
 )
 def sync_all(background: BackgroundTasks):
     run_id = trigger_sync(background)
+    return SyncRun(run_id=run_id)
+
+@router.post(
+    '/sync-window',
+    response_model=SyncRun,
+    status_code=202,
+    summary="Trigger sync for LM window",
+    description="Pulls LM transactions for a date window (append-only) and runs the pipeline.",
+    tags=["Sync"],
+)
+def sync_window(req: SyncWindowRequest, background: BackgroundTasks):
+    try:
+        start = date.fromisoformat(req.start_date)
+    except ValueError:
+        raise HTTPException(400, 'start_date must be YYYY-MM-DD')
+    try:
+        end = date.fromisoformat(req.end_date)
+    except ValueError:
+        raise HTTPException(400, 'end_date must be YYYY-MM-DD')
+    if start > end:
+        raise HTTPException(400, 'start_date must be <= end_date')
+    run_id = trigger_sync_window(background, req.start_date, req.end_date)
     return SyncRun(run_id=run_id)
 
 @router.get(

@@ -83,9 +83,15 @@ sudo systemctl list-timers | rg lmi-sync
 curl -s http://127.0.0.1:8010/health | python3 -m json.tool
 ```
 
-Logs:
+Logs (API):
 ```bash
-journalctl -u lmi@lmi-service.service -f
+sudo journalctl -u lmi@lmi-service.service -f --no-pager
+```
+
+Logs (hourly sync):
+```bash
+sudo journalctl -u lmi-sync@lmi-service.service -f --no-pager
+sudo journalctl -u lmi-sync@lmi-service.timer -f --no-pager
 ```
 
 ## 10) Common fixes

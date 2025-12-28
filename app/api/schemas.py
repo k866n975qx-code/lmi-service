@@ -4,6 +4,10 @@ from typing import Optional, Literal
 class SyncRun(BaseModel):
     run_id: str
 
+class SyncWindowRequest(BaseModel):
+    start_date: str
+    end_date: str
+
 class DiffRequest(BaseModel):
     left_id: Optional[str] = None
     right_id: Optional[str] = None

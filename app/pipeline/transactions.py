@@ -142,7 +142,7 @@ def normalize_investment_transactions(conn: sqlite3.Connection, run_id: str) -> 
 
         cur.execute(
             """
-            INSERT OR REPLACE INTO investment_transactions (
+            INSERT OR IGNORE INTO investment_transactions (
               lm_transaction_id, plaid_account_id, date, transaction_datetime,
               amount, currency, name, category_name, transaction_type,
               quantity, price, fees, security_id, cusip, symbol,
@@ -173,7 +173,8 @@ def normalize_investment_transactions(conn: sqlite3.Connection, run_id: str) -> 
                 pulled_at_utc,
             ),
         )
-        inserted += 1
+        if cur.rowcount and cur.rowcount > 0:
+            inserted += cur.rowcount
 
     conn.commit()
     after_count = cur.execute("SELECT COUNT(*) FROM investment_transactions").fetchone()[0] or 0
