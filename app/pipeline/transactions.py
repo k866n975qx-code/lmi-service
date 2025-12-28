@@ -92,14 +92,16 @@ def _load_cusip_map(conn: sqlite3.Connection):
     return {cusip: symbol for cusip, symbol in rows}
 
 
-def normalize_investment_transactions(conn: sqlite3.Connection, run_id: str):
+def normalize_investment_transactions(conn: sqlite3.Connection, run_id: str) -> tuple[int, int]:
     cur = conn.cursor()
     rows = cur.execute(
         "SELECT pulled_at_utc, payload_json FROM lm_raw WHERE run_id=? AND endpoint='transactions'",
         (run_id,),
     ).fetchall()
     if not rows:
-        return 0
+        return 0, 0
+
+    before_count = cur.execute("SELECT COUNT(*) FROM investment_transactions").fetchone()[0] or 0
 
     allowed = _allowed_plaid_ids()
     cusip_map = _load_cusip_map(conn)
@@ -174,4 +176,6 @@ def normalize_investment_transactions(conn: sqlite3.Connection, run_id: str):
         inserted += 1
 
     conn.commit()
-    return inserted
+    after_count = cur.execute("SELECT COUNT(*) FROM investment_transactions").fetchone()[0] or 0
+    new_rows = max(0, after_count - before_count)
+    return inserted, new_rows

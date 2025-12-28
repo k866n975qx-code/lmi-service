@@ -74,8 +74,8 @@ def _sync_impl(run_id: str):
 
         started = _step_start("normalize_transactions")
         ensure_cusip_map(conn)
-        tx_inserted = normalize_investment_transactions(conn, run_id)
-        _step_done("normalize_transactions", started, inserted=tx_inserted)
+        tx_upserted, new_tx_count = normalize_investment_transactions(conn, run_id)
+        _step_done("normalize_transactions", started, inserted=tx_upserted, new=new_tx_count)
 
         started = _step_start("lm_dividends_upsert")
         lm_div_count = upsert_lm_dividend_events(conn, run_id)
@@ -122,17 +122,42 @@ def _sync_impl(run_id: str):
         daily, sources = build_daily_snapshot(conn, holdings, md)
         _step_done("build_daily_snapshot", started, sources_count=len(sources))
 
-        ok, reasons = validate_daily_snapshot(daily)
-        if not ok:
-            log.error("daily_validation_failed", run_id=run_id, reasons=reasons)
-            finish_run_fail(conn, run_id, "daily_validation_failed")
-            return
-
         started = _step_start("persist_daily_snapshot")
-        wrote_daily = persist_daily_snapshot(conn, daily, run_id)
-        _step_done("persist_daily_snapshot", started, wrote_daily=wrote_daily)
-        if wrote_daily:
-            upsert_facts_from_sources(conn, run_id, daily, sources)
+        as_of_date_local = daily.get("as_of_date_local") or daily["as_of"][:10]
+        existing_daily = cur.execute(
+            "SELECT 1 FROM snapshot_daily_current WHERE as_of_date_local=?",
+            (as_of_date_local,),
+        ).fetchone()
+        has_daily = existing_daily is not None
+        force_daily = bool(has_daily and new_tx_count > 0)
+        should_persist_daily = force_daily or not has_daily
+
+        if should_persist_daily:
+            ok, reasons = validate_daily_snapshot(daily)
+            if not ok:
+                log.error("daily_validation_failed", run_id=run_id, reasons=reasons)
+                finish_run_fail(conn, run_id, "daily_validation_failed")
+                return
+            wrote_daily = persist_daily_snapshot(conn, daily, run_id, force=force_daily)
+            _step_done(
+                "persist_daily_snapshot",
+                started,
+                wrote_daily=wrote_daily,
+                forced=force_daily,
+                new_transactions=new_tx_count,
+                existing_daily=has_daily,
+            )
+            if wrote_daily:
+                upsert_facts_from_sources(conn, run_id, daily, sources)
+        else:
+            _step_done(
+                "persist_daily_snapshot",
+                started,
+                wrote_daily=False,
+                skipped=True,
+                new_transactions=new_tx_count,
+                existing_daily=has_daily,
+            )
 
         # 6) Persist periodic snapshots if boundary can be closed
         started = _step_start("persist_periodic_snapshots")

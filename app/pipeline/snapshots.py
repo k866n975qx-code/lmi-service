@@ -1150,16 +1150,17 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
     return daily, sources
 
 
-def persist_daily_snapshot(conn: sqlite3.Connection, daily: dict, run_id: str) -> bool:
+def persist_daily_snapshot(conn: sqlite3.Connection, daily: dict, run_id: str, force: bool = False) -> bool:
     as_of_date_local = daily.get("as_of_date_local") or daily["as_of"][:10]
     payload_sha = sha256_json(daily)
     cur = conn.cursor()
-    existing = cur.execute(
-        "SELECT payload_sha256 FROM snapshot_daily_current WHERE as_of_date_local=?",
-        (as_of_date_local,),
-    ).fetchone()
-    if existing and existing[0] == payload_sha:
-        return False
+    if not force:
+        existing = cur.execute(
+            "SELECT payload_sha256 FROM snapshot_daily_current WHERE as_of_date_local=?",
+            (as_of_date_local,),
+        ).fetchone()
+        if existing and existing[0] == payload_sha:
+            return False
     cur.execute(
         """
         INSERT OR REPLACE INTO snapshot_daily_current(as_of_date_local, built_from_run_id, payload_json, payload_sha256, updated_at_utc)
