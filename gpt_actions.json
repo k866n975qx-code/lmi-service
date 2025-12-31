@@ -118,63 +118,6 @@
         }
       }
     },
-    "/snapshots/{period}/{start}/{end}": {
-      "get": {
-        "operationId": "getSnapshotRange",
-        "summary": "Get stored period snapshot by range",
-        "description": "Returns a persisted weekly/monthly/quarterly/yearly snapshot.",
-        "parameters": [
-          {
-            "name": "period",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "enum": ["WEEK", "MONTH", "QUARTER", "YEAR"]
-            }
-          },
-          {
-            "name": "start",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "date"
-            }
-          },
-          {
-            "name": "end",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "date"
-            }
-          },
-          {
-            "name": "slim",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": true
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Snapshot payload",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SnapshotResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/snapshots/available": {
       "get": {
         "operationId": "listSnapshots",
@@ -372,35 +315,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SnapshotResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/diff": {
-      "post": {
-        "operationId": "diffSnapshotIds",
-        "summary": "Diff two snapshot IDs",
-        "description": "Diffs two persisted snapshot IDs.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DiffRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Diff payload",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DiffResponse"
                 }
               }
             }
@@ -668,18 +582,6 @@
         "type": "object",
         "properties": {},
         "additionalProperties": true
-      },
-      "DiffRequest": {
-        "type": "object",
-        "properties": {
-          "left_id": {
-            "type": "string"
-          },
-          "right_id": {
-            "type": "string"
-          }
-        },
-        "required": ["left_id", "right_id"]
       },
       "DiffResponse": {
         "type": "object",

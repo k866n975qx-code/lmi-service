@@ -8,10 +8,6 @@ class SyncWindowRequest(BaseModel):
     start_date: str
     end_date: str
 
-class DiffRequest(BaseModel):
-    left_id: Optional[str] = None
-    right_id: Optional[str] = None
-
 class StatusResponse(BaseModel):
     run_id: str
     status: Literal['running','succeeded','failed']

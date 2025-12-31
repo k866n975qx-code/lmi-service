@@ -59,12 +59,10 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080
 - `GET /status/{run_id}` → run status.
 - `GET /health` → DB connectivity + last run.
 - `GET /snapshots/available` → list stored daily + period snapshots.
-- `GET /snapshots/{period}/{start}/{end}?slim=true` → persisted WEEK/MONTH/QUARTER/YEAR snapshots.
 - `GET /period/{type}/{as_of}?slim=true` → stored period snapshot (weekly|monthly|quarterly|yearly).
 - `GET /period/{type}/{as_of}/{mode}?slim=true` → to-date or final (`mode=to_date|final`).
 - `GET /diff/daily/{left_date}/{right_date}` → daily diff (on demand).
 - `GET /diff/period/{type}/{left_as_of}/{right_as_of}` → period diff (on demand).
-- `POST /diff` → diff two persisted snapshot IDs.
 
 `slim=true` removes provenance + cache noise; notes only appear when missing data is significant.
 

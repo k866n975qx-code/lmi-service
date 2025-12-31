@@ -76,6 +76,12 @@ sudo systemctl enable --now lmi@lmi-service.service
 sudo systemctl enable --now lmi-sync@lmi-service.timer
 ```
 
+Restart services (after config changes):
+```bash
+sudo systemctl restart lmi@lmi-service.service
+sudo systemctl restart lmi-sync@lmi-service.service
+```
+
 ## 9) Verify
 ```bash
 sudo systemctl status lmi@lmi-service.service

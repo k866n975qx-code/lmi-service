@@ -4,8 +4,8 @@ from datetime import date
 from pathlib import Path
 import os
 from fastapi import APIRouter, BackgroundTasks, HTTPException
-from .schemas import SyncRun, DiffRequest, StatusResponse, SyncWindowRequest
-from ..pipeline.orchestrator import trigger_sync, trigger_sync_window, get_status, get_snapshot, diff_snapshots
+from .schemas import SyncRun, StatusResponse, SyncWindowRequest
+from ..pipeline.orchestrator import trigger_sync, trigger_sync_window, get_status, get_snapshot
 from ..pipeline.periods import build_period_snapshot, _period_bounds
 from ..pipeline.diff_daily import diff_daily_from_db
 from ..pipeline.diff_periods import diff_periods_from_db
@@ -104,22 +104,6 @@ def status(run_id: str):
     if not st:
         raise HTTPException(404, 'run not found')
     return st
-
-@router.get(
-    '/snapshots/{period}/{start}/{end}',
-    summary="Get stored period snapshot by range",
-    description=(
-        "Returns a persisted weekly/monthly/quarterly/yearly snapshot. "
-        "Schema: samples/period.json. "
-        "Use slim=false for full payload."
-    ),
-    tags=["Snapshots"],
-)
-def snapshots(period: str, start: str, end: str, slim: bool = True):
-    snap = get_snapshot(period.upper(), start, end)
-    if not snap:
-        raise HTTPException(404, 'snapshot not found')
-    return slim_snapshot(snap) if slim else snap
 
 @router.get(
     '/snapshots/available',
@@ -265,17 +249,6 @@ def period_snapshot(snapshot_type: str, as_of: str, mode: str, slim: bool = True
         return slim_snapshot(snap) if slim else snap
     except ValueError as e:
         raise HTTPException(404, str(e))
-
-@router.post(
-    '/diff',
-    summary="Diff two snapshot IDs",
-    description="Diffs two persisted snapshot IDs. Schema: samples/diff_period.json.",
-    tags=["Diffs"],
-)
-def diff(req: DiffRequest):
-    if not req.left_id or not req.right_id:
-        raise HTTPException(400, 'left_id and right_id required')
-    return diff_snapshots(req)
 
 @router.get(
     '/diff/daily/{left_date}/{right_date}',

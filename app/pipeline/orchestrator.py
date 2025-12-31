@@ -4,7 +4,7 @@ from ..db import get_conn, migrate
 from ..config import settings
 from .holdings import reconstruct_holdings
 from .market import MarketData
-from .snapshots import build_daily_snapshot, persist_daily_snapshot, maybe_persist_periodic, diff_payloads
+from .snapshots import build_daily_snapshot, persist_daily_snapshot, maybe_persist_periodic
 from .facts import upsert_facts_from_sources
 from .utils import append_lm_raw, start_run, finish_run_ok, finish_run_fail, get_run_status, ensure_cusip_map
 from .transactions import normalize_investment_transactions
@@ -197,12 +197,3 @@ def get_snapshot(period: str, start: str, end: str):
     cur.execute("SELECT payload_json FROM snapshots WHERE period_type=? AND period_start_date=? AND period_end_date=?", (period, start, end))
     row = cur.fetchone()
     return json.loads(row[0]) if row else None
-
-def diff_snapshots(req):
-    conn = get_conn(settings.db_path)
-    cur = conn.cursor()
-    left = cur.execute("SELECT payload_json FROM snapshots WHERE snapshot_id=?", (req.left_id,)).fetchone()
-    right = cur.execute("SELECT payload_json FROM snapshots WHERE snapshot_id=?", (req.right_id,)).fetchone()
-    if not left or not right:
-        return {"error": "snapshot not found"}
-    return diff_payloads(json.loads(left[0]), json.loads(right[0]))
