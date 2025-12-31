@@ -118,11 +118,11 @@
         }
       }
     },
-    "/snapshots/available": {
+    "/summaries/available": {
       "get": {
-        "operationId": "listSnapshots",
-        "summary": "List available snapshots",
-        "description": "Lists stored daily dates and period snapshots.",
+        "operationId": "listAvailablePeriodSummaries",
+        "summary": "List available summaries",
+        "description": "Lists stored daily dates and period summaries.",
         "parameters": [
           {
             "name": "snapshot_type",
@@ -136,7 +136,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Available snapshots",
+            "description": "Available summaries",
             "content": {
               "application/json": {
                 "schema": {
@@ -148,11 +148,11 @@
         }
       }
     },
-    "/snapshots/daily/latest": {
+    "/portfolio/daily/latest": {
       "get": {
-        "operationId": "getLatestDailySnapshot",
-        "summary": "Get latest daily snapshot",
-        "description": "Returns the most recent daily snapshot.",
+        "operationId": "getLatestDailyPortfolio",
+        "summary": "Get latest daily portfolio",
+        "description": "Returns the most recent daily portfolio snapshot.",
         "parameters": [
           {
             "name": "slim",
@@ -166,7 +166,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Daily snapshot payload",
+            "description": "Daily portfolio payload",
             "content": {
               "application/json": {
                 "schema": {
@@ -178,11 +178,11 @@
         }
       }
     },
-    "/snapshots/daily/{as_of}": {
+    "/portfolio/daily/{as_of}": {
       "get": {
-        "operationId": "getDailySnapshot",
-        "summary": "Get daily snapshot by date",
-        "description": "Returns a daily snapshot for the given date.",
+        "operationId": "getDailyPortfolio",
+        "summary": "Get daily portfolio by date",
+        "description": "Returns a daily portfolio snapshot for the given date.",
         "parameters": [
           {
             "name": "as_of",
@@ -205,7 +205,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Daily snapshot payload",
+            "description": "Daily portfolio payload",
             "content": {
               "application/json": {
                 "schema": {
@@ -217,14 +217,14 @@
         }
       }
     },
-    "/period/{snapshot_type}/{as_of}": {
+    "/period-summary/{kind}/{as_of}": {
       "get": {
-        "operationId": "getPeriodSnapshot",
-        "summary": "Get stored period snapshot by as-of date",
-        "description": "Returns a persisted period snapshot.",
+        "operationId": "getPeriodSummary",
+        "summary": "Get stored period summary by as-of date",
+        "description": "Returns a persisted period summary.",
         "parameters": [
           {
-            "name": "snapshot_type",
+            "name": "kind",
             "in": "path",
             "required": true,
             "schema": {
@@ -253,7 +253,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Period snapshot payload",
+            "description": "Period summary payload",
             "content": {
               "application/json": {
                 "schema": {
@@ -265,14 +265,14 @@
         }
       }
     },
-    "/period/{snapshot_type}/{as_of}/{mode}": {
+    "/period-summary/{kind}/{as_of}/{mode}": {
       "get": {
-        "operationId": "getPeriodSnapshotMode",
-        "summary": "Get period snapshot (final or to-date)",
-        "description": "Returns a period snapshot in final or to_date mode.",
+        "operationId": "getPeriodSummaryMode",
+        "summary": "Get period summary (final or to-date)",
+        "description": "Returns a period summary in final or to_date mode.",
         "parameters": [
           {
-            "name": "snapshot_type",
+            "name": "kind",
             "in": "path",
             "required": true,
             "schema": {
@@ -310,7 +310,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Period snapshot payload",
+            "description": "Period summary payload",
             "content": {
               "application/json": {
                 "schema": {
@@ -322,11 +322,11 @@
         }
       }
     },
-    "/diff/daily/{left_date}/{right_date}": {
+    "/compare/daily/{left_date}/{right_date}": {
       "get": {
-        "operationId": "getDailyDiff",
-        "summary": "Diff two daily snapshots",
-        "description": "Returns a daily diff.",
+        "operationId": "compareDailyPortfolios",
+        "summary": "Compare two daily portfolios",
+        "description": "Returns a daily comparison.",
         "parameters": [
           {
             "name": "left_date",
@@ -349,7 +349,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Daily diff payload",
+            "description": "Daily comparison payload",
             "content": {
               "application/json": {
                 "schema": {
@@ -361,14 +361,14 @@
         }
       }
     },
-    "/diff/period/{snapshot_type}/{left_as_of}/{right_as_of}": {
+    "/compare/period/{kind}/{left_as_of}/{right_as_of}": {
       "get": {
-        "operationId": "getPeriodDiff",
-        "summary": "Diff two period snapshots",
-        "description": "Returns a period diff.",
+        "operationId": "comparePeriodSummaries",
+        "summary": "Compare two period summaries",
+        "description": "Returns a period comparison.",
         "parameters": [
           {
-            "name": "snapshot_type",
+            "name": "kind",
             "in": "path",
             "required": true,
             "schema": {
@@ -397,7 +397,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Period diff payload",
+            "description": "Period comparison payload",
             "content": {
               "application/json": {
                 "schema": {

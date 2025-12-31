@@ -106,15 +106,15 @@ def status(run_id: str):
     return st
 
 @router.get(
-    '/snapshots/available',
-    summary="List available snapshots",
+    '/summaries/available',
+    summary="List available summaries",
     description=(
-        "Lists stored daily dates and period snapshots. "
+        "Lists stored daily dates and period summaries. "
         "Optional snapshot_type filter: daily|weekly|monthly|quarterly|yearly."
     ),
     tags=["Snapshots"],
 )
-def snapshots_available(snapshot_type: str | None = None):
+def list_available_period_summaries(snapshot_type: str | None = None):
     conn = get_conn(settings.db_path)
     cur = conn.cursor()
     snapshot_type = snapshot_type.lower() if snapshot_type else None
@@ -151,16 +151,16 @@ def snapshots_available(snapshot_type: str | None = None):
     }
 
 @router.get(
-    '/snapshots/daily/latest',
-    summary="Get latest daily snapshot",
+    '/portfolio/daily/latest',
+    summary="Get latest daily portfolio",
     description=(
-        "Returns the most recent daily snapshot. "
+        "Returns the most recent daily portfolio snapshot. "
         "Schema: samples/daily.json. "
         "Use slim=false for full payload."
     ),
     tags=["Snapshots"],
 )
-def daily_snapshot_latest(slim: bool = True):
+def get_latest_daily_portfolio(slim: bool = True):
     conn = get_conn(settings.db_path)
     cur = conn.cursor()
     row = cur.execute(
@@ -172,16 +172,16 @@ def daily_snapshot_latest(slim: bool = True):
     return slim_snapshot(payload) if slim else payload
 
 @router.get(
-    '/snapshots/daily/{as_of}',
-    summary="Get daily snapshot by date",
+    '/portfolio/daily/{as_of}',
+    summary="Get daily portfolio by date",
     description=(
-        "Returns a daily snapshot for the given date. "
+        "Returns a daily portfolio snapshot for the given date. "
         "Schema: samples/daily.json. "
         "Use slim=false for full payload."
     ),
     tags=["Snapshots"],
 )
-def daily_snapshot_by_date(as_of: str, slim: bool = True):
+def get_daily_portfolio(as_of: str, slim: bool = True):
     conn = get_conn(settings.db_path)
     cur = conn.cursor()
     row = cur.execute(
@@ -194,44 +194,44 @@ def daily_snapshot_by_date(as_of: str, slim: bool = True):
     return slim_snapshot(payload) if slim else payload
 
 @router.get(
-    '/period/{snapshot_type}/{as_of}',
-    summary="Get stored period snapshot by as-of date",
+    '/period-summary/{kind}/{as_of}',
+    summary="Get stored period summary by as-of date",
     description=(
-        "Returns a persisted period snapshot. "
+        "Returns a persisted period summary. "
         "Schema: samples/period.json. "
         "Use slim=false for full payload."
     ),
     tags=["Periods"],
 )
-def period_snapshot_stored(snapshot_type: str, as_of: str, slim: bool = True):
-    snapshot_type = snapshot_type.lower()
-    if snapshot_type not in _PERIOD_MAP:
-        raise HTTPException(400, 'snapshot_type must be weekly|monthly|quarterly|yearly')
+def get_period_summary(kind: str, as_of: str, slim: bool = True):
+    kind = kind.lower()
+    if kind not in _PERIOD_MAP:
+        raise HTTPException(400, 'kind must be weekly|monthly|quarterly|yearly')
     try:
         as_of_date = date.fromisoformat(as_of)
     except ValueError:
         raise HTTPException(400, 'as_of must be YYYY-MM-DD')
-    start, end = _period_bounds(snapshot_type, as_of_date)
-    snap = get_snapshot(_PERIOD_MAP[snapshot_type], start.isoformat(), end.isoformat())
+    start, end = _period_bounds(kind, as_of_date)
+    snap = get_snapshot(_PERIOD_MAP[kind], start.isoformat(), end.isoformat())
     if not snap:
         raise HTTPException(404, 'snapshot not found')
     return slim_snapshot(snap) if slim else snap
 
 @router.get(
-    '/period/{snapshot_type}/{as_of}/{mode}',
-    summary="Get period snapshot (final or to-date)",
+    '/period-summary/{kind}/{as_of}/{mode}',
+    summary="Get period summary (final or to-date)",
     description=(
-        "Returns a period snapshot in final or to_date mode. "
+        "Returns a period summary in final or to_date mode. "
         "Schema: samples/period.json. "
         "Use slim=false for full payload."
     ),
     tags=["Periods"],
 )
-def period_snapshot(snapshot_type: str, as_of: str, mode: str, slim: bool = True):
-    snapshot_type = snapshot_type.lower()
+def get_period_summary_mode(kind: str, as_of: str, mode: str, slim: bool = True):
+    kind = kind.lower()
     mode = mode.lower()
-    if snapshot_type not in ('weekly', 'monthly', 'quarterly', 'yearly'):
-        raise HTTPException(400, 'snapshot_type must be weekly|monthly|quarterly|yearly')
+    if kind not in ('weekly', 'monthly', 'quarterly', 'yearly'):
+        raise HTTPException(400, 'kind must be weekly|monthly|quarterly|yearly')
     if mode not in ('to_date', 'final'):
         raise HTTPException(400, 'mode must be to_date|final')
     conn = get_conn(settings.db_path)
@@ -241,22 +241,22 @@ def period_snapshot(snapshot_type: str, as_of: str, mode: str, slim: bool = True
                 as_of_date = date.fromisoformat(as_of)
             except ValueError:
                 raise HTTPException(400, 'as_of must be YYYY-MM-DD')
-            start, end = _period_bounds(snapshot_type, as_of_date)
-            snap = get_snapshot(_PERIOD_MAP[snapshot_type], start.isoformat(), end.isoformat())
+            start, end = _period_bounds(kind, as_of_date)
+            snap = get_snapshot(_PERIOD_MAP[kind], start.isoformat(), end.isoformat())
             if snap:
                 return slim_snapshot(snap) if slim else snap
-        snap = build_period_snapshot(conn, snapshot_type=snapshot_type, as_of=as_of, mode=mode)
+        snap = build_period_snapshot(conn, snapshot_type=kind, as_of=as_of, mode=mode)
         return slim_snapshot(snap) if slim else snap
     except ValueError as e:
         raise HTTPException(404, str(e))
 
 @router.get(
-    '/diff/daily/{left_date}/{right_date}',
-    summary="Diff two daily snapshots",
-    description="Returns a daily diff. Schema: samples/diff_daily.json.",
+    '/compare/daily/{left_date}/{right_date}',
+    summary="Compare two daily portfolios",
+    description="Returns a daily comparison. Schema: samples/diff_daily.json.",
     tags=["Diffs"],
 )
-def diff_daily(left_date: str, right_date: str):
+def compare_daily_portfolios(left_date: str, right_date: str):
     conn = get_conn(settings.db_path)
     try:
         return diff_daily_from_db(conn, left_date, right_date)
@@ -264,16 +264,16 @@ def diff_daily(left_date: str, right_date: str):
         raise HTTPException(404, str(e))
 
 @router.get(
-    '/diff/period/{snapshot_type}/{left_as_of}/{right_as_of}',
-    summary="Diff two period snapshots",
-    description="Returns a period diff. Schema: samples/diff_period.json.",
+    '/compare/period/{kind}/{left_as_of}/{right_as_of}',
+    summary="Compare two period summaries",
+    description="Returns a period comparison. Schema: samples/diff_period.json.",
     tags=["Diffs"],
 )
-def diff_period(snapshot_type: str, left_as_of: str, right_as_of: str):
-    snapshot_type = snapshot_type.lower()
+def compare_period_summaries(kind: str, left_as_of: str, right_as_of: str):
+    kind = kind.lower()
     conn = get_conn(settings.db_path)
     try:
-        return diff_periods_from_db(conn, snapshot_type, left_as_of, right_as_of)
+        return diff_periods_from_db(conn, kind, left_as_of, right_as_of)
     except ValueError as e:
         raise HTTPException(404, str(e))
 
