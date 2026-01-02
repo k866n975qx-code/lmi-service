@@ -41,7 +41,8 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
         verbose=verbose,
     )
     lock_acquired = False
-    if not acquire_lock(conn, "sync", run_id):
+    lock_ttl = max(300, int(settings.sync_time_budget_seconds or 0) + 300)
+    if not acquire_lock(conn, "sync", run_id, ttl_seconds=lock_ttl, stale_after_seconds=lock_ttl):
         finish_run_fail(conn, run_id, "lock_held")
         return
     lock_acquired = True
@@ -136,13 +137,37 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
 
         started = _step_start("persist_daily_snapshot")
         as_of_date_local = daily.get("as_of_date_local") or daily["as_of"][:10]
-        existing_daily = cur.execute(
-            "SELECT 1 FROM snapshot_daily_current WHERE as_of_date_local=?",
+
+        def _market_value(payload: dict | None):
+            if not isinstance(payload, dict):
+                return None
+            try:
+                return round(float((payload.get("totals") or {}).get("market_value")), 2)
+            except (TypeError, ValueError):
+                return None
+
+        existing_row = cur.execute(
+            "SELECT payload_json FROM snapshot_daily_current WHERE as_of_date_local=?",
             (as_of_date_local,),
         ).fetchone()
-        has_daily = existing_daily is not None
+        existing_payload = None
+        if existing_row and existing_row[0]:
+            try:
+                existing_payload = json.loads(existing_row[0])
+            except json.JSONDecodeError:
+                existing_payload = None
+        has_daily = existing_payload is not None
         force_daily = bool(has_daily and new_tx_count > 0)
-        should_persist_daily = force_daily or not has_daily
+        current_mv = _market_value(daily)
+        existing_mv = _market_value(existing_payload)
+        market_value_changed = False
+        if has_daily:
+            if existing_mv is None or current_mv is None:
+                market_value_changed = True
+            else:
+                market_value_changed = existing_mv != current_mv
+
+        should_persist_daily = force_daily or not has_daily or market_value_changed
 
         if should_persist_daily:
             ok, reasons = validate_daily_snapshot(daily)
@@ -158,6 +183,7 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
                 forced=force_daily,
                 new_transactions=new_tx_count,
                 existing_daily=has_daily,
+                market_value_changed=market_value_changed,
             )
             if wrote_daily:
                 upsert_facts_from_sources(conn, run_id, daily, sources)

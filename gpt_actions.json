@@ -3,7 +3,7 @@
   "info": {
     "title": "mira-service API",
     "version": "1.0.0",
-    "description": "Actions schema for snapshot retrieval, diffs, and status."
+    "description": "Actions schema for snapshot retrieval and comparisons."
   },
   "servers": [
     {
@@ -23,94 +23,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HealthResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/cache/{action}": {
-      "post": {
-        "operationId": "cacheAdmin",
-        "summary": "Cache admin",
-        "description": "Invalidate or backfill the local cache.",
-        "parameters": [
-          {
-            "name": "action",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "enum": ["invalidate", "backfill"]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Cache admin result",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CacheAdminResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/sync-all": {
-      "post": {
-        "operationId": "syncAll",
-        "summary": "Trigger sync",
-        "description": "Starts the sync pipeline in the background and returns the run_id.",
-        "responses": {
-          "202": {
-            "description": "Sync run created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SyncRun"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Sync run created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SyncRun"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/status/{run_id}": {
-      "get": {
-        "operationId": "getRunStatus",
-        "summary": "Get sync status",
-        "description": "Return status for a given run_id.",
-        "parameters": [
-          {
-            "name": "run_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Run status",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StatusResponse"
                 }
               }
             }
@@ -408,38 +320,6 @@
           }
         }
       }
-    },
-    "/logs": {
-      "get": {
-        "operationId": "readLogs",
-        "summary": "Read error logs",
-        "description": "Returns the last N lines from the error log file.",
-        "parameters": [
-          {
-            "name": "lines",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 2000,
-              "default": 200
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Log lines",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LogsResponse"
-                }
-              }
-            }
-          }
-        }
-      }
     }
   },
   "components": {
@@ -482,54 +362,6 @@
           "finished_at_utc": {
             "type": ["string", "null"],
             "format": "date-time"
-          }
-        },
-        "required": ["run_id", "status", "started_at_utc"]
-      },
-      "CacheAdminResponse": {
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean"
-          },
-          "cleared": {
-            "type": "boolean"
-          },
-          "backfill": {
-            "type": "string"
-          }
-        },
-        "required": ["ok"]
-      },
-      "SyncRun": {
-        "type": "object",
-        "properties": {
-          "run_id": {
-            "type": "string"
-          }
-        },
-        "required": ["run_id"]
-      },
-      "StatusResponse": {
-        "type": "object",
-        "properties": {
-          "run_id": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string",
-            "enum": ["running", "succeeded", "failed"]
-          },
-          "started_at_utc": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "finished_at_utc": {
-            "type": ["string", "null"],
-            "format": "date-time"
-          },
-          "error_message": {
-            "type": ["string", "null"]
           }
         },
         "required": ["run_id", "status", "started_at_utc"]
@@ -587,21 +419,6 @@
         "type": "object",
         "properties": {},
         "additionalProperties": true
-      },
-      "LogsResponse": {
-        "type": "object",
-        "properties": {
-          "path": {
-            "type": "string"
-          },
-          "lines": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": ["path", "lines"]
       }
     }
   }

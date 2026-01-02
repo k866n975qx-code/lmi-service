@@ -7,6 +7,17 @@ from ..config import settings
 _CUSIP_RE = re.compile(r"\b([A-Z0-9]{8,9})\b")
 _SHARES_OF_RE = re.compile(r"\bshares\s+of\s+([A-Z][A-Z0-9.\-]{0,9})\b", re.IGNORECASE)
 
+_ALLOWED_TX_TYPES = {
+    "buy",
+    "buy_shares",
+    "sell",
+    "sell_shares",
+    "redemption",
+    "reinvest",
+    "reinvestment",
+    "dividend",
+}
+
 
 def _allowed_plaid_ids():
     raw = settings.lm_plaid_account_ids
@@ -101,8 +112,6 @@ def normalize_investment_transactions(conn: sqlite3.Connection, run_id: str) -> 
     if not rows:
         return 0, 0
 
-    before_count = cur.execute("SELECT COUNT(*) FROM investment_transactions").fetchone()[0] or 0
-
     allowed = _allowed_plaid_ids()
     cusip_map = _load_cusip_map(conn)
     inserted = 0
@@ -139,6 +148,8 @@ def normalize_investment_transactions(conn: sqlite3.Connection, run_id: str) -> 
             symbol = cusip_map.get(cusip)
 
         tx_type = _infer_tx_type(tx, meta)
+        if tx_type not in _ALLOWED_TX_TYPES:
+            continue
 
         cur.execute(
             """
@@ -176,7 +187,21 @@ def normalize_investment_transactions(conn: sqlite3.Connection, run_id: str) -> 
         if cur.rowcount and cur.rowcount > 0:
             inserted += cur.rowcount
 
+    if _ALLOWED_TX_TYPES:
+        allowed_types = sorted(_ALLOWED_TX_TYPES)
+        type_placeholders = ",".join("?" for _ in allowed_types)
+        params: list[str] = []
+        where_clauses = [
+            f"(transaction_type IS NULL OR lower(transaction_type) NOT IN ({type_placeholders}))"
+        ]
+        params.extend(allowed_types)
+        if allowed:
+            acct_placeholders = ",".join("?" for _ in allowed)
+            where_clauses.append(f"plaid_account_id IN ({acct_placeholders})")
+            params.extend(sorted(allowed))
+        cur.execute(
+            f"DELETE FROM investment_transactions WHERE {' AND '.join(where_clauses)}",
+            params,
+        )
     conn.commit()
-    after_count = cur.execute("SELECT COUNT(*) FROM investment_transactions").fetchone()[0] or 0
-    new_rows = max(0, after_count - before_count)
-    return inserted, new_rows
+    return inserted, inserted
