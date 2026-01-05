@@ -68,12 +68,29 @@ def _last_interval_margin(period_snap: dict):
     return (intervals[-1].get("margin") or {}) if intervals else {}
 
 
+def _last_interval_daily(period_snap: dict):
+    intervals = period_snap.get("intervals") or []
+    if not intervals:
+        return period_snap.get("daily_snapshot") or {}
+    period = period_snap.get("period") or {}
+    end_date = period.get("end_date")
+    if end_date:
+        for interval in intervals:
+            if interval.get("end_date") == end_date and interval.get("daily_snapshot"):
+                return interval.get("daily_snapshot") or {}
+    for interval in reversed(intervals):
+        if interval.get("daily_snapshot"):
+            return interval.get("daily_snapshot") or {}
+    return period_snap.get("daily_snapshot") or {}
+
+
 def _period_to_daily_like(period_snap: dict):
     period = period_snap.get("period") or {}
     end_date = period.get("end_date") or period_snap.get("as_of")
     summary = period_snap.get("period_summary") or {}
     interval_totals = _last_interval_totals(period_snap)
     interval_margin = _last_interval_margin(period_snap)
+    interval_daily = _last_interval_daily(period_snap)
 
     totals_end = (summary.get("totals") or {}).get("end") or {}
     margin_end = (summary.get("margin") or {}).get("end") or interval_margin or {}
@@ -113,14 +130,18 @@ def _period_to_daily_like(period_snap: dict):
         },
     }
 
-    dividends = {
-        "realized_mtd": {
-            "total_dividends": dividends_end.get("period_dividends_received_ytd"),
-        }
-    }
-    dividends_upcoming = {
-        "projected": dividends_end.get("dividends_upcoming_30d"),
-    }
+    realized_mtd_total = None
+    next_30d_total = None
+    if interval_daily:
+        realized_mtd_total = (interval_daily.get("dividends") or {}).get("realized_mtd", {}).get("total_dividends")
+        next_30d_total = (interval_daily.get("dividends_upcoming") or {}).get("projected")
+    if realized_mtd_total is None:
+        realized_mtd_total = dividends_end.get("period_dividends_received_ytd")
+    if next_30d_total is None:
+        next_30d_total = dividends_end.get("dividends_upcoming_30d")
+
+    dividends = {"realized_mtd": {"total_dividends": realized_mtd_total}}
+    dividends_upcoming = {"projected": next_30d_total}
 
     summary_block = period_snap.get("summary") or {}
     missing_pct = None
