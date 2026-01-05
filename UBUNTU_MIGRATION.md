@@ -104,3 +104,44 @@ sudo journalctl -u lmi-sync@lmi-service.timer -f --no-pager
 - Port 8010 already in use: stop the old service or change port in `systemd/lmi@.service`.
 - Missing `.env`: ensure the repo root has `.env` with correct values.
 - Permission errors: check file ownership under `/home/jose/lmi-service`.
+
+
+sudo apt update
+sudo apt install -y git sqlite3 build-essential python3.11 python3.11-venv python3.11-dev
+
+cd /home/jose
+git clone https://github.com/k866n975qx-code/lmi-service
+cd lmi-service
+
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -U pip wheel
+pip install -r requirements.txt
+
+cp .env.example .env
+chmod 600 .env
+
+python scripts/init_db.py
+python scripts/sync_all.py
+
+uvicorn app.main:app --host 0.0.0.0 --port 8010
+curl -s http://127.0.0.1:8010/health | python3 -m json.tool
+
+sudo cp systemd/lmi@.service /etc/systemd/system/
+sudo cp systemd/lmi-sync@.service /etc/systemd/system/
+sudo cp systemd/lmi-sync@.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+
+sudo systemctl enable --now lmi@lmi-service.service
+sudo systemctl enable --now lmi-sync@lmi-service.timer
+
+sudo systemctl restart lmi@lmi-service.service
+sudo systemctl restart lmi-sync@lmi-service.service
+
+sudo systemctl status lmi@lmi-service.service
+sudo systemctl list-timers | rg lmi-sync
+curl -s http://127.0.0.1:8010/health | python3 -m json.tool
+
+sudo journalctl -u lmi@lmi-service.service -f --no-pager
+sudo journalctl -u lmi-sync@lmi-service.service -f --no-pager
+sudo journalctl -u lmi-sync@lmi-service.timer -f --no-pager

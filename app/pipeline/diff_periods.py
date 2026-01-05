@@ -55,14 +55,28 @@ def _last_interval_totals(period_snap: dict):
     return (intervals[-1].get("totals") or {}) if intervals else {}
 
 
+def _last_interval_margin(period_snap: dict):
+    intervals = period_snap.get("intervals") or []
+    if not intervals:
+        return {}
+    period = period_snap.get("period") or {}
+    end_date = period.get("end_date")
+    if end_date:
+        for interval in intervals:
+            if interval.get("end_date") == end_date and interval.get("margin") is not None:
+                return interval.get("margin") or {}
+    return (intervals[-1].get("margin") or {}) if intervals else {}
+
+
 def _period_to_daily_like(period_snap: dict):
     period = period_snap.get("period") or {}
     end_date = period.get("end_date") or period_snap.get("as_of")
     summary = period_snap.get("period_summary") or {}
     interval_totals = _last_interval_totals(period_snap)
+    interval_margin = _last_interval_margin(period_snap)
 
     totals_end = (summary.get("totals") or {}).get("end") or {}
-    margin_end = (summary.get("margin") or {}).get("end") or {}
+    margin_end = (summary.get("margin") or {}).get("end") or interval_margin or {}
     income_end = (summary.get("income") or {}).get("end") or {}
     risk_end = (summary.get("risk") or {}).get("end") or {}
     goal_end = (summary.get("goal_progress") or {}).get("end") or {}
