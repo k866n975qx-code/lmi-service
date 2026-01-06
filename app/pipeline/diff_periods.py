@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import calendar
 import json
 import sqlite3
 from datetime import date
 
 from .diff_daily import build_daily_diff
 from .periods import _period_bounds
+from ..config import settings
 
 _PERIOD_MAP = {
     "weekly": "WEEK",
@@ -174,6 +176,51 @@ def _period_to_daily_like(period_snap: dict):
     }
 
 
+def _calendar_aligned(period_type: str, start_date: date, end_date: date, weekly_aligned: bool) -> bool:
+    if period_type == "weekly":
+        return bool(weekly_aligned)
+    if period_type == "monthly":
+        if start_date.day != 1:
+            return False
+        last_day = calendar.monthrange(start_date.year, start_date.month)[1]
+        return end_date.year == start_date.year and end_date.month == start_date.month and end_date.day == last_day
+    if period_type == "quarterly":
+        if start_date.day != 1:
+            return False
+        q_start_month = ((start_date.month - 1) // 3) * 3 + 1
+        if start_date.month != q_start_month:
+            return False
+        q_end_month = q_start_month + 2
+        last_day = calendar.monthrange(start_date.year, q_end_month)[1]
+        return end_date.year == start_date.year and end_date.month == q_end_month and end_date.day == last_day
+    if period_type == "yearly":
+        return start_date.month == 1 and start_date.day == 1 and end_date.month == 12 and end_date.day == 31 and end_date.year == start_date.year
+    return False
+
+
+def _sum_dividends_for_period(conn: sqlite3.Connection, start_date: date, end_date: date) -> float | None:
+    if not start_date or not end_date:
+        return None
+    cur = conn.cursor()
+    rows = cur.execute(
+        """
+        SELECT amount
+        FROM investment_transactions
+        WHERE transaction_type='dividend' AND date BETWEEN ? AND ?
+        """,
+        (start_date.isoformat(), end_date.isoformat()),
+    ).fetchall()
+    total = 0.0
+    seen = False
+    for (amount,) in rows:
+        try:
+            total += abs(float(amount))
+            seen = True
+        except (TypeError, ValueError):
+            continue
+    return round(total, 2) if seen else None
+
+
 def diff_periods_from_db(conn: sqlite3.Connection, snapshot_type: str, left_as_of: str, right_as_of: str):
     if snapshot_type not in _PERIOD_MAP:
         raise ValueError("snapshot_type must be weekly|monthly|quarterly|yearly")
@@ -199,6 +246,33 @@ def diff_periods_from_db(conn: sqlite3.Connection, snapshot_type: str, left_as_o
 
     left_like = _period_to_daily_like(left_snap)
     right_like = _period_to_daily_like(right_snap)
-    diff = build_daily_diff(left_like, right_like, left_end.isoformat(), right_end.isoformat())
+
+    left_period = left_snap.get("period") or {}
+    right_period = right_snap.get("period") or {}
+    left_start = date.fromisoformat(left_period.get("start_date")) if left_period.get("start_date") else left_start
+    left_end_date = date.fromisoformat(left_period.get("end_date")) if left_period.get("end_date") else left_end
+    right_start = date.fromisoformat(right_period.get("start_date")) if right_period.get("start_date") else right_start
+    right_end_date = date.fromisoformat(right_period.get("end_date")) if right_period.get("end_date") else right_end
+
+    realized_left = _sum_dividends_for_period(conn, left_start, left_end_date)
+    realized_right = _sum_dividends_for_period(conn, right_start, right_end_date)
+    mtd_left = (left_like.get("dividends") or {}).get("realized_mtd", {}).get("total_dividends")
+    mtd_right = (right_like.get("dividends") or {}).get("realized_mtd", {}).get("total_dividends")
+
+    weekly_aligned = bool(getattr(settings, "weekly_calendar_aligned", False))
+    calendar_aligned = _calendar_aligned(snapshot_type, left_end, right_end, weekly_aligned)
+
+    diff = build_daily_diff(
+        left_like,
+        right_like,
+        left_end.isoformat(),
+        right_end.isoformat(),
+        period_type=snapshot_type,
+        calendar_aligned=calendar_aligned,
+        period_start=left_end.isoformat(),
+        period_end=right_end.isoformat(),
+        dividends_period_totals=(realized_left, realized_right),
+        dividends_mtd_totals=(mtd_left, mtd_right),
+    )
     diff["summary"]["period_type"] = snapshot_type
     return diff

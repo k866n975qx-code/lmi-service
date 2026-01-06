@@ -43,5 +43,6 @@ class Settings(BaseSettings):
     market_batch_size: int = Field(default=25, alias="MARKET_BATCH_SIZE")
     market_rate_limit_seconds: float = Field(default=0.2, alias="MARKET_RATE_LIMIT_SECONDS")
     market_retry_attempts: int = Field(default=2, alias="MARKET_RETRY_ATTEMPTS")
+    weekly_calendar_aligned: bool = Field(default=False, alias="WEEKLY_CALENDAR_ALIGNED")
 
 settings = Settings()
