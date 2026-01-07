@@ -235,15 +235,16 @@ def _load_provider_dividends(conn: sqlite3.Connection):
     cur = conn.cursor()
     rows = cur.execute(
         """
-        SELECT symbol, ex_date, amount, source
+        SELECT symbol, ex_date, pay_date, amount, source
         FROM dividend_events_provider
         """
     ).fetchall()
     out = defaultdict(list)
     seen = set()
-    for symbol, ex_date, amount, _source in rows:
+    for symbol, ex_date, pay_date, amount, _source in rows:
         sym = str(symbol).upper() if symbol else None
         dt = _parse_date(ex_date)
+        pay_dt = _parse_date(pay_date)
         try:
             amt = float(amount)
         except (TypeError, ValueError):
@@ -254,10 +255,73 @@ def _load_provider_dividends(conn: sqlite3.Connection):
         if key in seen:
             continue
         seen.add(key)
-        out[sym].append({"ex_date": dt, "amount": amt})
+        out[sym].append({"ex_date": dt, "pay_date": pay_dt, "amount": amt})
     for sym in out:
         out[sym].sort(key=lambda item: item["ex_date"])
     return out
+
+
+def _median_pay_lag_days(provider_divs: dict) -> int:
+    lags = []
+    for events in provider_divs.values():
+        for ev in events:
+            ex = ev.get("ex_date")
+            pay = ev.get("pay_date")
+            if not ex or not pay:
+                continue
+            delta = (pay - ex).days
+            if delta >= 0 and delta <= 60:
+                lags.append(delta)
+    if not lags:
+        return 14
+    return max(1, int(round(statistics.median(lags))))
+
+
+def _symbol_pay_lag_days(events: list[dict], default_lag: int) -> int:
+    lags = []
+    for ev in events:
+        ex = ev.get("ex_date")
+        pay = ev.get("pay_date")
+        if not ex or not pay:
+            continue
+        delta = (pay - ex).days
+        if delta >= 0 and delta <= 60:
+            lags.append(delta)
+    if not lags:
+        return default_lag
+    return max(1, int(round(statistics.median(lags))))
+
+
+def _estimate_expected_pay_events(provider_divs: dict, holdings: dict, window_start: date, window_end: date):
+    default_lag = _median_pay_lag_days(provider_divs)
+    expected = []
+    total_raw = 0.0
+    for sym in sorted(holdings.keys()):
+        events = provider_divs.get(sym, [])
+        if not events:
+            continue
+        lag_days = _symbol_pay_lag_days(events, default_lag)
+        shares = float(holdings[sym]["shares"])
+        for ev in events:
+            ex = ev.get("ex_date")
+            amt = ev.get("amount")
+            if ex is None or amt is None:
+                continue
+            pay = ev.get("pay_date") or (ex + timedelta(days=lag_days))
+            if pay < window_start or pay > window_end:
+                continue
+            amount_est = amt * shares
+            total_raw += float(amount_est)
+            expected.append(
+                {
+                    "symbol": sym,
+                    "ex_date_est": ex.isoformat(),
+                    "pay_date_est": pay.isoformat(),
+                    "amount_est": _round_money(amount_est),
+                }
+            )
+    expected.sort(key=lambda ev: (ev.get("pay_date_est") or "", ev.get("symbol") or ""))
+    return expected, _round_money(total_raw)
 
 
 def _load_account_balances(conn: sqlite3.Connection):
@@ -977,6 +1041,15 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
             "expected_events": [],
         },
     }
+
+    expected_events, projected_alt = _estimate_expected_pay_events(
+        provider_divs,
+        holdings,
+        _month_start(as_of_date_local),
+        as_of_date_local,
+    )
+    projected_vs_received["alt"]["projected"] = projected_alt or 0.0
+    projected_vs_received["alt"]["expected_events"] = expected_events
 
     dividends = {
         "projected_vs_received": projected_vs_received,

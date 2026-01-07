@@ -5,6 +5,10 @@ from ..config import settings
 from .holdings import reconstruct_holdings
 from .market import MarketData
 from .snapshots import build_daily_snapshot, persist_daily_snapshot, maybe_persist_periodic
+from ..alerts.evaluator import evaluate_alerts
+from ..alerts.storage import migrate_alerts as migrate_alerts_table
+from ..alerts.notifier import send_alerts_sync
+from ..services.telegram import TelegramClient
 from .facts import upsert_facts_from_sources
 from .utils import append_lm_raw, start_run, finish_run_ok, finish_run_fail, get_run_status, ensure_cusip_map
 from .transactions import normalize_investment_transactions
@@ -187,6 +191,15 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
             )
             if wrote_daily:
                 upsert_facts_from_sources(conn, run_id, daily, sources)
+                # Alert evaluation + immediate notifications (dedup handles repeats)
+                try:
+                    migrate_alerts_table(conn)
+                    alerts = evaluate_alerts(conn)
+                    if alerts and getattr(settings, "telegram_bot_token", None) and getattr(settings, "telegram_chat_id", None):
+                        tg = TelegramClient(settings.telegram_bot_token, settings.telegram_chat_id)
+                        send_alerts_sync(conn, alerts, tg)
+                except Exception as alert_err:
+                    log.warning("alerts_eval_failed", run_id=run_id, err=str(alert_err))
         else:
             _step_done(
                 "persist_daily_snapshot",

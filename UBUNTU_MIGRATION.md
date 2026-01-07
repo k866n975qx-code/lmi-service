@@ -105,6 +105,44 @@ sudo journalctl -u lmi-sync@lmi-service.timer -f --no-pager
 - Missing `.env`: ensure the repo root has `.env` with correct values.
 - Permission errors: check file ownership under `/home/jose/lmi-service`.
 
+## 11) Alerts DB migration (non-destructive)
+Run once after deploying the alerts code. This only adds tables/columns.
+
+```
+./.venv/bin/python - <<'PY'
+from app.db import get_conn
+from app.config import settings
+from app.alerts.storage import migrate_alerts
+
+conn = get_conn(settings.db_path)
+migrate_alerts(conn)
+print("alert_messages migrated")
+PY
+```
+
+Verify:
+```
+sqlite3 data/app.db "SELECT name FROM sqlite_master WHERE type='table' AND name='alert_messages';"
+```
+
+## 12) Telegram webhook (production)
+Public base URL (from `gpt_actions.json`): `https://mira.joseai.dev`
+
+Webhook endpoint:
+`/api/alerts/telegram/webhook`
+
+Register:
+```
+curl -X POST "https://api.telegram.org/bot<YOUR_TOKEN>/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://mira.joseai.dev/api/alerts/telegram/webhook","allowed_updates":["message"]}'
+```
+
+Verify:
+```
+curl "https://api.telegram.org/bot<YOUR_TOKEN>/getWebhookInfo"
+```
+
 
 sudo apt update
 sudo apt install -y git sqlite3 build-essential python3.11 python3.11-venv python3.11-dev

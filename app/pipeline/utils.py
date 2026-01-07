@@ -163,6 +163,7 @@ def append_lm_raw(
 ):
     # Pull transactions using date windows & pagination; append to lm_raw.
     cur = conn.cursor()
+    allowed_ids = _allowed_plaid_ids()
     last = cur.execute(
         "SELECT lm_window_end FROM runs WHERE status='succeeded' AND lm_window_end IS NOT NULL ORDER BY finished_at_utc DESC LIMIT 1"
     ).fetchone()
@@ -189,37 +190,48 @@ def append_lm_raw(
             if row[0] is not None
         }
     with httpx.Client() as client:
-        limit = 500
-        offset = 0
-        while True:
-            if deadline is not None and time.monotonic() >= deadline:
-                raise TimeoutError("time_budget_exceeded")
-            params = {"start_date": start_date, "end_date": end_date, "offset": offset, "limit": limit}
-            data = _lm_get(client, "/v1/transactions", params, deadline=deadline)
-            items = data.get("transactions") or data.get("data") or data
-            if not isinstance(items, list):
-                items = []
-            raw_count = len(items)
-            items = _filter_by_plaid_ids(items, ["plaid_account_id"])
-            if append_only and seen_tx_ids is not None:
-                filtered = []
-                for item in items:
-                    if not isinstance(item, dict):
-                        continue
-                    tx_id = item.get("id")
-                    if tx_id is None:
-                        continue
-                    tx_id = str(tx_id)
-                    if tx_id in seen_tx_ids:
-                        continue
-                    seen_tx_ids.add(tx_id)
-                    filtered.append(item)
-                items = filtered
-            _append_payloads(conn, run_id, "transactions", items, "id")
-            total += len(items)
-            if raw_count < limit:
-                break
-            offset += limit
+        def _pull_transactions(plaid_account_id: str | None):
+            pulled = 0
+            limit = 500
+            offset = 0
+            while True:
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise TimeoutError("time_budget_exceeded")
+                params = {"start_date": start_date, "end_date": end_date, "offset": offset, "limit": limit}
+                if plaid_account_id:
+                    params["plaid_account_id"] = plaid_account_id
+                data = _lm_get(client, "/v1/transactions", params, deadline=deadline)
+                items = data.get("transactions") or data.get("data") or data
+                if not isinstance(items, list):
+                    items = []
+                raw_count = len(items)
+                items = _filter_by_plaid_ids(items, ["plaid_account_id"])
+                if append_only and seen_tx_ids is not None:
+                    filtered = []
+                    for item in items:
+                        if not isinstance(item, dict):
+                            continue
+                        tx_id = item.get("id")
+                        if tx_id is None:
+                            continue
+                        tx_id = str(tx_id)
+                        if tx_id in seen_tx_ids:
+                            continue
+                        seen_tx_ids.add(tx_id)
+                        filtered.append(item)
+                    items = filtered
+                _append_payloads(conn, run_id, "transactions", items, "id")
+                pulled += len(items)
+                if raw_count < limit:
+                    break
+                offset += limit
+            return pulled
+
+        if allowed_ids:
+            for plaid_account_id in sorted(allowed_ids):
+                total += _pull_transactions(plaid_account_id)
+        else:
+            total += _pull_transactions(None)
         # Plaid accounts (scrub account_number before storing)
         try:
             if deadline is not None and time.monotonic() >= deadline:
