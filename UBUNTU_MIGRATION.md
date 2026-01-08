@@ -133,7 +133,7 @@ Webhook endpoint:
 
 Register:
 ```
-curl -X POST "https://api.telegram.org/bot<YOUR_TOKEN>/setWebhook" \
+curl -X POST "https://api.telegram.org/bot8505089815:AAFutPuAs4EeW9qvpoiMbQ5Y8oE1vagsCJc/setWebhook" \
   -H "Content-Type: application/json" \
   -d '{"url":"https://mira.joseai.dev/api/alerts/telegram/webhook","allowed_updates":["message"]}'
 ```

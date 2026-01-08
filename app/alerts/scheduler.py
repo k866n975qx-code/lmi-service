@@ -23,21 +23,24 @@ def get_scheduler() -> AsyncIOScheduler:
 def schedule_jobs(sched: AsyncIOScheduler | None = None):
     sched = sched or get_scheduler()
     tz = ZoneInfo(getattr(settings, "local_tz", "America/Los_Angeles"))
-    # Daily 07:30
-    sched.add_job(run_daily, CronTrigger(hour=getattr(settings, "alerts_daily_hour", 7), minute=getattr(settings, "alerts_daily_minute", 30), timezone=tz), id="alerts_daily", replace_existing=True)
-    # Weekly Monday 07:30
+    daily_hour = getattr(settings, "alerts_daily_hour", 7)
+    # Offset alerts from top-of-hour sync.
+    base_minute = 10
+    # Daily 07:10
+    sched.add_job(run_daily, CronTrigger(hour=daily_hour, minute=base_minute, timezone=tz), id="alerts_daily", replace_existing=True)
+    # Weekly Monday 07:10
     if getattr(settings, "alerts_weekly_enabled", 1):
-        sched.add_job(run_weekly, CronTrigger(day_of_week="mon", hour=getattr(settings, "alerts_daily_hour", 7), minute=getattr(settings, "alerts_daily_minute", 30), timezone=tz), id="alerts_weekly", replace_existing=True)
-    # Monthly 1st 07:40
+        sched.add_job(run_weekly, CronTrigger(day_of_week="mon", hour=daily_hour, minute=base_minute, timezone=tz), id="alerts_weekly", replace_existing=True)
+    # Monthly 1st 07:10
     if getattr(settings, "alerts_monthly_enabled", 1):
-        sched.add_job(run_monthly, CronTrigger(day="1", hour=getattr(settings, "alerts_daily_hour", 7), minute=40, timezone=tz), id="alerts_monthly", replace_existing=True)
-    # Quarterly approx: Jan/Apr/Jul/Oct 1st 07:45
+        sched.add_job(run_monthly, CronTrigger(day="1", hour=daily_hour, minute=base_minute, timezone=tz), id="alerts_monthly", replace_existing=True)
+    # Quarterly approx: Jan/Apr/Jul/Oct 1st 07:10
     if getattr(settings, "alerts_quarterly_enabled", 1):
-        sched.add_job(run_quarterly, CronTrigger(month="1,4,7,10", day="1", hour=getattr(settings, "alerts_daily_hour", 7), minute=45, timezone=tz), id="alerts_quarterly", replace_existing=True)
-    # Reminders every 30 minutes
-    sched.add_job(run_reminders, CronTrigger(minute="*/30", timezone=tz), id="alerts_reminders", replace_existing=True)
+        sched.add_job(run_quarterly, CronTrigger(month="1,4,7,10", day="1", hour=daily_hour, minute=base_minute, timezone=tz), id="alerts_quarterly", replace_existing=True)
+    # Reminders every 30 minutes (offset to avoid top-of-hour sync contention)
+    sched.add_job(run_reminders, CronTrigger(minute="10,40", timezone=tz), id="alerts_reminders", replace_existing=True)
     # Cleanup stale alerts nightly
-    sched.add_job(run_cleanup, CronTrigger(hour=0, minute=5, timezone=tz), id="alerts_cleanup", replace_existing=True)
+    sched.add_job(run_cleanup, CronTrigger(hour=0, minute=10, timezone=tz), id="alerts_cleanup", replace_existing=True)
     sched.start()
     _log.info("alerts_scheduler_started")
 
