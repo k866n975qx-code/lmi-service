@@ -231,6 +231,41 @@ def _load_dividend_transactions(conn: sqlite3.Connection):
     return out
 
 
+def _build_pay_history(div_tx: list[dict], max_events: int = 12):
+    by_symbol_date = defaultdict(lambda: defaultdict(float))
+    for tx in div_tx:
+        sym = tx.get("symbol")
+        dt = tx.get("date")
+        amt = tx.get("amount")
+        if not sym or not dt or not isinstance(amt, (int, float)):
+            continue
+        by_symbol_date[sym][dt] += float(amt)
+    history = {}
+    for sym, date_map in by_symbol_date.items():
+        events = [{"date": dt, "amount": amt} for dt, amt in date_map.items()]
+        events.sort(key=lambda item: item["date"])
+        if max_events and len(events) > max_events:
+            events = events[-max_events:]
+        history[sym] = events
+    return history
+
+
+def _median_gap_days(dates: list[date]) -> int | None:
+    if len(dates) < 2:
+        return None
+    gaps = sorted((b - a).days for a, b in zip(dates[:-1], dates[1:]) if b > a)
+    if not gaps:
+        return None
+    return max(1, int(round(statistics.median(gaps))))
+
+
+def _median_amount(events: list[dict]) -> float | None:
+    amounts = [ev.get("amount") for ev in events if isinstance(ev.get("amount"), (int, float))]
+    if not amounts:
+        return None
+    return float(statistics.median(amounts))
+
+
 def _load_provider_dividends(conn: sqlite3.Connection):
     cur = conn.cursor()
     rows = cur.execute(
@@ -292,11 +327,47 @@ def _symbol_pay_lag_days(events: list[dict], default_lag: int) -> int:
     return max(1, int(round(statistics.median(lags))))
 
 
-def _estimate_expected_pay_events(provider_divs: dict, holdings: dict, window_start: date, window_end: date):
+def _estimate_expected_pay_events(provider_divs: dict, holdings: dict, window_start: date, window_end: date, pay_history: dict):
     default_lag = _median_pay_lag_days(provider_divs)
     expected = []
     total_raw = 0.0
     for sym in sorted(holdings.keys()):
+        history = pay_history.get(sym, [])
+        actual_events = [ev for ev in history if window_start <= ev["date"] <= window_end]
+        if actual_events:
+            for ev in actual_events:
+                amount_est = ev.get("amount")
+                if isinstance(amount_est, (int, float)):
+                    total_raw += float(amount_est)
+                expected.append(
+                    {
+                        "symbol": sym,
+                        "ex_date_est": None,
+                        "pay_date_est": ev["date"].isoformat(),
+                        "amount_est": _round_money(amount_est),
+                    }
+                )
+            continue
+
+        if len(history) >= 2:
+            dates = [ev["date"] for ev in history]
+            median_gap = _median_gap_days(dates)
+            if median_gap:
+                next_pay = dates[-1] + timedelta(days=median_gap)
+                if window_start <= next_pay <= window_end:
+                    amount_est = _median_amount(history[-6:])
+                    if isinstance(amount_est, (int, float)):
+                        total_raw += float(amount_est)
+                    expected.append(
+                        {
+                            "symbol": sym,
+                            "ex_date_est": None,
+                            "pay_date_est": next_pay.isoformat(),
+                            "amount_est": _round_money(amount_est),
+                        }
+                    )
+            continue
+
         events = provider_divs.get(sym, [])
         if not events:
             continue
@@ -808,6 +879,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
     cur = conn.cursor()
     trade_counts = _load_trade_counts(conn)
     div_tx = _load_dividend_transactions(conn)
+    pay_history = _build_pay_history(div_tx)
     provider_divs = _load_provider_dividends(conn)
     account_balances = _load_account_balances(conn)
 
@@ -1047,6 +1119,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         holdings,
         _month_start(as_of_date_local),
         as_of_date_local,
+        pay_history,
     )
     projected_vs_received["alt"]["projected"] = projected_alt or 0.0
     projected_vs_received["alt"]["expected_events"] = expected_events
