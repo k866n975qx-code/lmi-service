@@ -101,14 +101,17 @@ def _is_number(val):
     return isinstance(val, (int, float)) and not isinstance(val, bool)
 
 
-def _risk_quality_category(ratio: float | None) -> str | None:
-    if ratio is None:
+def _risk_quality_category(sortino: float | None, sharpe: float | None) -> str | None:
+    if sharpe in (0, 0.0):
+        return "concerning"
+    if sortino is None or sharpe is None:
         return None
-    if ratio > 1.2:
+    score = sortino / sharpe
+    if score >= 1.2 and sortino >= 1.0:
         return "excellent"
-    if ratio >= 1.0:
+    if score >= 1.0 and sortino >= 0.6:
         return "good"
-    if ratio >= 0.8:
+    if score >= 0.8 or sortino >= 0.5:
         return "acceptable"
     return "concerning"
 
@@ -582,7 +585,7 @@ def _symbol_metrics(series, benchmark_series):
     sortino_3m = metrics.sortino_ratio(returns, window_days=90)
     sortino_1m = metrics.sortino_ratio(returns, window_days=30)
     risk_quality_score = _safe_divide(sortino, sharpe)
-    risk_quality_category = _risk_quality_category(risk_quality_score)
+    risk_quality_category = _risk_quality_category(sortino, sharpe)
     volatility_profile = _volatility_profile(sortino, sharpe)
     twr_1m = metrics.twr(series, window_days=30)
     twr_3m = metrics.twr(series, window_days=90)
@@ -1285,6 +1288,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
     bench_values = benchmark_series if benchmark_series is not None else None
     performance = metrics.portfolio_performance(portfolio_values)
     risk = metrics.portfolio_risk(portfolio_values, bench_values)
+    risk["portfolio_risk_quality"] = _risk_quality_category(risk.get("sortino_1y"), risk.get("sharpe_1y"))
     income_stability_score = _income_stability_score(div_tx, as_of_date_local)
     risk["income_stability_score"] = income_stability_score
 
@@ -1365,12 +1369,13 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         "cache_control": {"revalidate": "when-stale", "no_store": False},
         "served_from": "db",
         "notes": [],
+        "changes": ["Updated risk_quality_category to use two-factor classification (Sortino + Score)"],
         "cache": {
             "pricing": {"ttl_seconds": settings.cache_ttl_hours * 3600, "bypassed": False},
             "yf_dividends": {"ttl_seconds": settings.cache_ttl_hours * 3600, "bypassed": False},
         },
         "snapshot_age_days": 0,
-        "schema_version": "2.8",
+        "schema_version": "2.9",
         "filled_from_existing": False,
     }
 
