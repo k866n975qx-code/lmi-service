@@ -754,6 +754,7 @@ def build_daily_report_html(conn: sqlite3.Connection):
     goal_net = snap.get("goal_progress_net") or {}
     macro = (snap.get("macro") or {}).get("snapshot") or {}
     margin_guidance = snap.get("margin_guidance") or {}
+    holdings = snap.get("holdings") or []
 
     try:
         as_of_dt = date.fromisoformat(as_of)
@@ -905,7 +906,6 @@ def build_daily_report_html(conn: sqlite3.Connection):
     parts.append(f"• HY Spread: {hy_spread if hy_spread is not None else '—'} bps | Stress: {macro.get('macro_stress_score', '—')}")
 
     # Position highlights
-    holdings = snap.get("holdings") or []
     top_weight = None
     top_yield = None
     top_vol = None
