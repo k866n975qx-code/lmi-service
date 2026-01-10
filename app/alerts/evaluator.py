@@ -28,6 +28,10 @@ from .constants import (
     MILESTONE_NET_VALUES,
     MILESTONE_PROGRESS_PCT,
     PORTFOLIO_VOL_WARNING,
+    PORTFOLIO_SORTINO_MIN,
+    PORTFOLIO_SORTINO_DROP,
+    PORTFOLIO_SORTINO_SHARPE_GAP,
+    POSITION_SORTINO_NEGATIVE,
     POSITION_LOSS_CRITICAL,
     POSITION_LOSS_SEVERE,
     SINGLE_POSITION_MAX,
@@ -135,6 +139,17 @@ def _fmt_pct(x, precision: int = 2):
         return f"{float(x):.{precision}f}%"
     except Exception:
         return "—"
+
+def _fmt_ratio(x, precision: int = 2):
+    try:
+        return f"{float(x):.{precision}f}"
+    except Exception:
+        return "—"
+
+def _profile_label(profile: str | None) -> str | None:
+    if not profile:
+        return None
+    return profile.replace("_", "-")
 
 def _month_day_info(d: date):
     import calendar
@@ -538,6 +553,48 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
             body = f"⚠️ <b>{sym}</b> vol expanding<br/>30d {hvol30:.1f}% vs 90d {hvol90:.1f}%."
             alerts.append(_mk("volatility", as_of, 5, title, body))
 
+    # 8b) Sortino risk signals
+    sortino_now = risk.get("sortino_1y")
+    sharpe_now = risk.get("sharpe_1y")
+    sortino_prev = None
+    if prev_7d_snap:
+        sortino_prev = ((prev_7d_snap.get("portfolio_rollups") or {}).get("risk") or {}).get("sortino_1y")
+    if sortino_prev is None and prev_snap:
+        sortino_prev = ((prev_snap.get("portfolio_rollups") or {}).get("risk") or {}).get("sortino_1y")
+    if isinstance(sortino_now, (int, float)) and sortino_now < PORTFOLIO_SORTINO_MIN:
+        title = "Portfolio Sortino Low"
+        body = f"⚠️ <b>Portfolio Sortino</b><br/>Sortino: {_fmt_ratio(sortino_now,2)} (below {PORTFOLIO_SORTINO_MIN:.2f})."
+        alerts.append(_mk("risk", as_of, 7, title, body))
+    if (
+        isinstance(sortino_now, (int, float))
+        and isinstance(sortino_prev, (int, float))
+        and (sortino_prev - sortino_now) >= PORTFOLIO_SORTINO_DROP
+    ):
+        delta = sortino_now - sortino_prev
+        title = "Sortino Declining"
+        body = f"⚠️ <b>Sortino Decline</b><br/>{_fmt_ratio(sortino_prev,2)} → {_fmt_ratio(sortino_now,2)} ({delta:+.2f})."
+        alerts.append(_mk("risk", as_of, 6, title, body))
+    if isinstance(sortino_now, (int, float)) and isinstance(sharpe_now, (int, float)):
+        gap = sharpe_now - sortino_now
+        if gap > PORTFOLIO_SORTINO_SHARPE_GAP:
+            title = "Downside-heavy Volatility"
+            body = f"⚠️ <b>Downside Volatility</b><br/>Sortino {_fmt_ratio(sortino_now,2)} vs Sharpe {_fmt_ratio(sharpe_now,2)} (gap {gap:.2f})."
+            alerts.append(_mk("risk", as_of, 6, title, body))
+    for pos in holdings:
+        sym = pos.get("symbol")
+        if not sym:
+            continue
+        sortino_pos = pos.get("sortino_1y")
+        if sortino_pos is None:
+            sortino_pos = (pos.get("ultimate") or {}).get("sortino_1y")
+        if isinstance(sortino_pos, (int, float)) and sortino_pos < POSITION_SORTINO_NEGATIVE:
+            max_dd = (pos.get("ultimate") or {}).get("max_drawdown_1y_pct")
+            title = f"{sym} Sortino Negative"
+            body = f"🔴 <b>{sym}</b> Sortino {sortino_pos:.2f}"
+            if isinstance(max_dd, (int, float)):
+                body += f"<br/>Max DD: {_fmt_pct(max_dd,1)}."
+            alerts.append(_mk("position", as_of, 8, title, body))
+
     # 9) Yield compression
     current_yield = income.get("portfolio_current_yield_pct")
     prev_yield = None
@@ -704,6 +761,7 @@ def build_daily_report_html(conn: sqlite3.Connection):
         as_of_dt = date.today()
 
     prev_7d_date, prev_7d_snap = _snapshot_on_or_before(conn, as_of_dt - timedelta(days=7))
+    _prev_date, prev_snap = _previous_daily(conn, as_of)
     nlv = totals.get("net_liquidation_value")
     prev_nlv = (prev_7d_snap or {}).get("totals", {}).get("net_liquidation_value") if prev_7d_snap else None
     week_delta = None
@@ -764,8 +822,71 @@ def build_daily_report_html(conn: sqlite3.Connection):
 
     parts.append("")
     parts.append("<b>📉 RISK</b>")
-    parts.append(f"• 30d Vol: {_fmt_pct(risk.get('vol_30d_pct'),2)} | Sharpe: {risk.get('sharpe_1y', '—')}")
+    sortino = risk.get("sortino_1y")
+    sharpe = risk.get("sharpe_1y")
+    prev_sortino = None
+    if prev_snap:
+        prev_sortino = ((prev_snap.get("portfolio_rollups") or {}).get("risk") or {}).get("sortino_1y")
+    sortino_delta = None
+    if isinstance(sortino, (int, float)) and isinstance(prev_sortino, (int, float)):
+        sortino_delta = sortino - prev_sortino
+    profile = None
+    if isinstance(sortino, (int, float)) and isinstance(sharpe, (int, float)):
+        if sortino > sharpe:
+            profile = "upside_biased"
+        elif sortino < sharpe:
+            profile = "downside_biased"
+        else:
+            profile = "balanced"
+    sortino_delta_text = f" ({sortino_delta:+.2f})" if isinstance(sortino_delta, (int, float)) else ""
+    parts.append(
+        f"• 30d Vol: {_fmt_pct(risk.get('vol_30d_pct'),2)} | Sharpe: {_fmt_ratio(sharpe,2)} | Sortino: {_fmt_ratio(sortino,2)}{sortino_delta_text}"
+    )
+    profile_label = _profile_label(profile)
+    if profile_label:
+        parts.append(f"• Volatility Profile: {profile_label}")
     parts.append(f"• Max DD: {_fmt_pct(risk.get('max_drawdown_1y_pct'),2)} | DD Days: {risk.get('drawdown_duration_1y_days', '—')}")
+
+    sortino_rows = []
+    for h in holdings:
+        sortino_val = h.get("sortino_1y")
+        if sortino_val is None:
+            sortino_val = (h.get("ultimate") or {}).get("sortino_1y")
+        if isinstance(sortino_val, (int, float)):
+            sortino_rows.append((h, float(sortino_val)))
+    if sortino_rows:
+        sortino_rows.sort(key=lambda item: item[1], reverse=True)
+        parts.append("")
+        parts.append("<b>🧭 SORTINO SNAPSHOT</b>")
+        prev_7d_sortino = None
+        if prev_7d_snap:
+            prev_7d_sortino = ((prev_7d_snap.get("portfolio_rollups") or {}).get("risk") or {}).get("sortino_1y")
+        if isinstance(sortino, (int, float)) and isinstance(prev_7d_sortino, (int, float)):
+            trend_delta = sortino - prev_7d_sortino
+            parts.append(f"7-Day Trend: {prev_7d_sortino:.2f} → {sortino:.2f} ({trend_delta:+.2f})")
+        top = sortino_rows[:3]
+        if top:
+            parts.append("Top performers (Sortino):")
+            for h, val in top:
+                category = h.get("risk_quality_category") or (h.get("ultimate") or {}).get("risk_quality_category")
+                label = f" ({category})" if category else ""
+                parts.append(f"• {h.get('symbol')}: {val:.2f}{label}")
+        low = [item for item in sortino_rows[::-1] if item[1] < PORTFOLIO_SORTINO_MIN]
+        if not low:
+            low = sortino_rows[-3:][::-1]
+        if low:
+            parts.append("Watch list (low Sortino):")
+            for h, val in low[:3]:
+                profile = h.get("volatility_profile") or (h.get("ultimate") or {}).get("volatility_profile")
+                profile_label = _profile_label(profile)
+                max_dd = (h.get("ultimate") or {}).get("max_drawdown_1y_pct")
+                extra = []
+                if profile_label:
+                    extra.append(profile_label)
+                if isinstance(max_dd, (int, float)):
+                    extra.append(f"max DD {_fmt_pct(max_dd,1)}")
+                extra_text = f" ({', '.join(extra)})" if extra else ""
+                parts.append(f"• {h.get('symbol')}: {val:.2f}{extra_text}")
 
     parts.append("")
     parts.append("<b>🎯 GOAL PROGRESS</b>")
@@ -876,8 +997,11 @@ def build_period_report_html(conn: sqlite3.Connection, period: str):
 
     parts.append("")
     parts.append("<b>📉 Risk</b>")
-    parts.append(f"• 30d Vol: {_fmt_pct(risk.get('end', {}).get('vol_30d_pct'),2)}")
-    parts.append(f"• Max DD: {_fmt_pct(risk.get('end', {}).get('max_drawdown_1y_pct'),2)}")
+    risk_end = risk.get("end", {}) if isinstance(risk, dict) else {}
+    parts.append(
+        f"• 30d Vol: {_fmt_pct(risk_end.get('vol_30d_pct'),2)} | Sharpe: {_fmt_ratio(risk_end.get('sharpe_1y'),2)} | Sortino: {_fmt_ratio(risk_end.get('sortino_1y'),2)}"
+    )
+    parts.append(f"• Max DD: {_fmt_pct(risk_end.get('max_drawdown_1y_pct'),2)}")
 
     parts.append("")
     parts.append("<b>🎯 Goal</b>")

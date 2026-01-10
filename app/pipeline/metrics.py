@@ -152,11 +152,27 @@ def portfolio_risk(values: pd.Series, benchmark_values: pd.Series | None = None,
         beta, corr = beta_and_corr(returns, bench_returns, window_days=365)
     max_dd, dd_dur = max_drawdown(values, window_days=365)
     var_95, cvar_95 = var_cvar(returns, alpha=0.05, window_days=365)
+    downside_1y = downside_deviation(returns, window_days=365)
+    sharpe_1y = sharpe_ratio(returns, rf_annual=rf_annual, window_days=365)
+    sortino_1y = sortino_ratio(returns, rf_annual=rf_annual, window_days=365)
+    sortino_6m = sortino_ratio(returns, rf_annual=rf_annual, window_days=180)
+    sortino_3m = sortino_ratio(returns, rf_annual=rf_annual, window_days=90)
+    sortino_1m = sortino_ratio(returns, rf_annual=rf_annual, window_days=30)
+    sortino_sharpe_ratio = _safe_divide(sortino_1y, sharpe_1y)
+    sortino_sharpe_divergence = None
+    if sortino_1y is not None and sharpe_1y is not None:
+        sortino_sharpe_divergence = sortino_1y - sharpe_1y
     return {
         "vol_30d_pct": _pct(annualized_volatility(returns, window_days=30)),
         "vol_90d_pct": _pct(annualized_volatility(returns, window_days=90)),
-        "downside_dev_1y_pct": _pct(downside_deviation(returns, window_days=365)),
-        "sharpe_1y": _round(sharpe_ratio(returns, rf_annual=rf_annual, window_days=365)),
+        "downside_dev_1y_pct": _pct(downside_1y),
+        "sharpe_1y": _round(sharpe_1y),
+        "sortino_1y": _round(sortino_1y),
+        "sortino_6m": _round(sortino_6m),
+        "sortino_3m": _round(sortino_3m),
+        "sortino_1m": _round(sortino_1m),
+        "sortino_sharpe_ratio": _round(sortino_sharpe_ratio),
+        "sortino_sharpe_divergence": _round(sortino_sharpe_divergence),
         "calmar_1y": _round(_safe_divide(twr(values, window_days=365), abs(max_dd) if max_dd is not None else None)),
         "max_drawdown_1y_pct": _pct(max_dd),
         "drawdown_duration_1y_days": dd_dur,

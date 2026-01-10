@@ -377,6 +377,12 @@ def _intervals(dailies, snapshot_type: str, as_of_date: date, as_of_daily: dict 
             },
             "risk": {
                 "sharpe_1y": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("sharpe_1y"),
+                "sortino_1y": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("sortino_1y"),
+                "sortino_6m": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("sortino_6m"),
+                "sortino_3m": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("sortino_3m"),
+                "sortino_1m": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("sortino_1m"),
+                "sortino_sharpe_ratio": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("sortino_sharpe_ratio"),
+                "sortino_sharpe_divergence": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("sortino_sharpe_divergence"),
                 "cvar_95_1d_pct": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("cvar_95_1d_pct"),
                 "max_drawdown_1y_pct": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("max_drawdown_1y_pct"),
                 "drawdown_duration_1y_days": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("drawdown_duration_1y_days"),
@@ -400,6 +406,14 @@ def _intervals(dailies, snapshot_type: str, as_of_date: date, as_of_daily: dict 
                     "projected_monthly_dividend": h.get("projected_monthly_dividend"),
                     "current_yield_pct": h.get("current_yield_pct"),
                     "yield_on_cost_pct": h.get("yield_on_cost_pct"),
+                    "sharpe_1y": h.get("sharpe_1y"),
+                    "sortino_1y": h.get("sortino_1y"),
+                    "sortino_6m": h.get("sortino_6m"),
+                    "sortino_3m": h.get("sortino_3m"),
+                    "sortino_1m": h.get("sortino_1m"),
+                    "risk_quality_score": h.get("risk_quality_score"),
+                    "risk_quality_category": h.get("risk_quality_category"),
+                    "volatility_profile": h.get("volatility_profile"),
                 }
                 for h in (end_snap.get("holdings") or [])
             ],
@@ -464,6 +478,12 @@ def _intervals_from_periods(period_snaps: list[dict], snapshot_type: str, as_of_
             },
             "risk": {
                 "sharpe_1y": risk.get("sharpe_1y") if risk else None,
+                "sortino_1y": risk.get("sortino_1y") if risk else None,
+                "sortino_6m": risk.get("sortino_6m") if risk else None,
+                "sortino_3m": risk.get("sortino_3m") if risk else None,
+                "sortino_1m": risk.get("sortino_1m") if risk else None,
+                "sortino_sharpe_ratio": risk.get("sortino_sharpe_ratio") if risk else None,
+                "sortino_sharpe_divergence": risk.get("sortino_sharpe_divergence") if risk else None,
                 "cvar_95_1d_pct": risk.get("cvar_95_1d_pct") if risk else None,
                 "max_drawdown_1y_pct": risk.get("max_drawdown_1y_pct") if risk else None,
                 "drawdown_duration_1y_days": risk.get("drawdown_duration_1y_days") if risk else None,
@@ -487,6 +507,14 @@ def _intervals_from_periods(period_snaps: list[dict], snapshot_type: str, as_of_
                     "projected_monthly_dividend": h.get("projected_monthly_dividend"),
                     "current_yield_pct": h.get("current_yield_pct"),
                     "yield_on_cost_pct": h.get("yield_on_cost_pct"),
+                    "sharpe_1y": h.get("sharpe_1y"),
+                    "sortino_1y": h.get("sortino_1y"),
+                    "sortino_6m": h.get("sortino_6m"),
+                    "sortino_3m": h.get("sortino_3m"),
+                    "sortino_1m": h.get("sortino_1m"),
+                    "risk_quality_score": h.get("risk_quality_score"),
+                    "risk_quality_category": h.get("risk_quality_category"),
+                    "volatility_profile": h.get("volatility_profile"),
                 }
                 for h in holdings
             ],
@@ -581,6 +609,12 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
         "vol_30d_pct",
         "vol_90d_pct",
         "sharpe_1y",
+        "sortino_1y",
+        "sortino_6m",
+        "sortino_3m",
+        "sortino_1m",
+        "sortino_sharpe_ratio",
+        "sortino_sharpe_divergence",
         "cvar_95_1d_pct",
         "drawdown_duration_1y_days",
         "calmar_1y",
@@ -606,6 +640,19 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
         values = [v for v in values if isinstance(v, (int, float))]
         if values:
             macro_avg[key] = round(sum(values) / len(values), 2)
+    risk_stats = {}
+    for key in ["sortino_1y", "sortino_6m", "sortino_3m", "sortino_1m"]:
+        values = [
+            (s.get("portfolio_rollups") or {}).get("risk", {}).get(key)
+            for s in dailies
+        ]
+        values = [v for v in values if isinstance(v, (int, float))]
+        if values:
+            risk_stats[key] = {
+                "avg": round(sum(values) / len(values), 3),
+                "min": round(min(values), 3),
+                "max": round(max(values), 3),
+            }
 
     period_summary = {
         "totals": {
@@ -744,6 +791,8 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
             },
         },
     }
+    if risk_stats:
+        period_summary["risk"]["stats"] = risk_stats
 
     summary_id = f"{snapshot_type}_{end_date.isoformat()}"
     benchmark_symbol = settings.benchmark_primary

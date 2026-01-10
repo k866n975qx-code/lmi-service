@@ -106,6 +106,12 @@ def _fmt_pct(val, precision: int = 2):
     except Exception:
         return "—"
 
+def _fmt_ratio(val, precision: int = 2):
+    try:
+        return f"{float(val):.{precision}f}"
+    except Exception:
+        return "—"
+
 def _status_text(snap: dict) -> str:
     totals = snap.get("totals") or {}
     income = snap.get("income") or {}
@@ -183,7 +189,9 @@ def _risk_text(snap: dict) -> str:
         "<b>Risk</b>\n"
         f"30d Vol: {_fmt_pct(risk.get('vol_30d_pct'),2)}\n"
         f"90d Vol: {_fmt_pct(risk.get('vol_90d_pct'),2)}\n"
-        f"Sharpe: {risk.get('sharpe_1y', '—')}\n"
+        f"Sharpe: {_fmt_ratio(risk.get('sharpe_1y'),2)}\n"
+        f"Sortino: {_fmt_ratio(risk.get('sortino_1y'),2)}\n"
+        f"Sortino/Sharpe: {_fmt_ratio(risk.get('sortino_sharpe_ratio'),2)}\n"
         f"Max DD: {_fmt_pct(risk.get('max_drawdown_1y_pct'),2)}"
     )
 

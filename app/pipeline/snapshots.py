@@ -97,6 +97,32 @@ def _safe_divide(a, b):
     return float(a / b)
 
 
+def _is_number(val):
+    return isinstance(val, (int, float)) and not isinstance(val, bool)
+
+
+def _risk_quality_category(ratio: float | None) -> str | None:
+    if ratio is None:
+        return None
+    if ratio > 1.2:
+        return "excellent"
+    if ratio >= 1.0:
+        return "good"
+    if ratio >= 0.8:
+        return "acceptable"
+    return "concerning"
+
+
+def _volatility_profile(sortino: float | None, sharpe: float | None) -> str | None:
+    if sortino is None or sharpe is None:
+        return None
+    if sortino > sharpe:
+        return "upside_biased"
+    if sortino < sharpe:
+        return "downside_biased"
+    return "balanced"
+
+
 def _round_money(val):
     return None if val is None else round(float(val), 2)
 
@@ -538,6 +564,12 @@ def _symbol_metrics(series, benchmark_series):
     downside = metrics.downside_deviation(returns, window_days=365)
     sharpe = metrics.sharpe_ratio(returns, window_days=365)
     sortino = metrics.sortino_ratio(returns, window_days=365)
+    sortino_6m = metrics.sortino_ratio(returns, window_days=180)
+    sortino_3m = metrics.sortino_ratio(returns, window_days=90)
+    sortino_1m = metrics.sortino_ratio(returns, window_days=30)
+    risk_quality_score = _safe_divide(sortino, sharpe)
+    risk_quality_category = _risk_quality_category(risk_quality_score)
+    volatility_profile = _volatility_profile(sortino, sharpe)
     twr_1m = metrics.twr(series, window_days=30)
     twr_3m = metrics.twr(series, window_days=90)
     twr_6m = metrics.twr(series, window_days=180)
@@ -549,9 +581,15 @@ def _symbol_metrics(series, benchmark_series):
         "beta_3y": _round_pct(beta),
         "max_drawdown_1y_pct": _round_pct(max_dd * 100 if max_dd is not None else None),
         "sortino_1y": _round_pct(sortino),
+        "sortino_6m": _round_pct(sortino_6m),
+        "sortino_3m": _round_pct(sortino_3m),
+        "sortino_1m": _round_pct(sortino_1m),
         "downside_dev_1y_pct": _round_pct(downside * 100 if downside is not None else None),
         "sharpe_1y": _round_pct(sharpe),
         "calmar_1y": _round_pct(calmar),
+        "risk_quality_score": _round_pct(risk_quality_score),
+        "risk_quality_category": risk_quality_category,
+        "volatility_profile": volatility_profile,
         "drawdown_duration_1y_days": dd_dur,
         "var_95_1d_pct": _round_pct(var_95 * 100 if var_95 is not None else None),
         "cvar_95_1d_pct": _round_pct(cvar_95 * 100 if cvar_95 is not None else None),
@@ -787,6 +825,177 @@ def _trend_block(series: pd.Series | None):
         "delta_30d": round(latest - sma_30, 3),
     }
 
+
+def _history_series(records: list[dict], key: str):
+    data = {}
+    for record in records:
+        val = record.get(key)
+        if not _is_number(val):
+            continue
+        dt = _parse_date(record.get("date"))
+        if not dt:
+            continue
+        data[dt] = float(val)
+    if not data:
+        return None
+    series = pd.Series(data).sort_index()
+    series.index = pd.to_datetime(series.index)
+    return series
+
+
+def _build_portfolio_risk_history(conn: sqlite3.Connection, as_of_date_local: date, current_risk: dict, window_days: int = 30):
+    if not conn or not as_of_date_local or window_days <= 0:
+        return None
+    start_date = as_of_date_local - timedelta(days=window_days - 1)
+    cur = conn.cursor()
+    rows = cur.execute(
+        """
+        SELECT as_of_date_local, payload_json
+        FROM snapshot_daily_current
+        WHERE as_of_date_local BETWEEN ? AND ?
+        ORDER BY as_of_date_local ASC
+        """,
+        (start_date.isoformat(), as_of_date_local.isoformat()),
+    ).fetchall()
+    keys = [
+        "sortino_1y",
+        "sortino_6m",
+        "sortino_3m",
+        "sortino_1m",
+        "sharpe_1y",
+        "sortino_sharpe_ratio",
+        "sortino_sharpe_divergence",
+    ]
+    records = []
+    for as_of_str, payload_json in rows:
+        try:
+            snap = json.loads(payload_json)
+        except Exception:
+            continue
+        risk = (snap.get("portfolio_rollups") or {}).get("risk") or {}
+        record = {"date": as_of_str}
+        for key in keys:
+            record[key] = risk.get(key) if _is_number(risk.get(key)) else None
+        if any(_is_number(record.get(key)) for key in keys):
+            records.append(record)
+
+    current_record = {"date": as_of_date_local.isoformat()}
+    for key in keys:
+        current_record[key] = current_risk.get(key) if _is_number(current_risk.get(key)) else None
+    if any(_is_number(current_record.get(key)) for key in keys):
+        replaced = False
+        for idx, record in enumerate(records):
+            if record.get("date") == current_record["date"]:
+                records[idx] = current_record
+                replaced = True
+                break
+        if not replaced:
+            records.append(current_record)
+
+    records.sort(key=lambda r: r.get("date") or "")
+    trends = {key: _trend_block(_history_series(records, key)) for key in keys}
+    return {
+        "records": records,
+        "trends": trends,
+        "meta": {"window_days": window_days, "updated_at": now_utc_iso(), "count": len(records)},
+    }
+
+
+def _build_holdings_sortino_history(conn: sqlite3.Connection, as_of_date_local: date, holdings_out: list[dict], window_days: int = 30):
+    if not conn or not as_of_date_local or not holdings_out or window_days <= 0:
+        return {}
+    symbols = {h.get("symbol") for h in holdings_out if h.get("symbol")}
+    if not symbols:
+        return {}
+    start_date = as_of_date_local - timedelta(days=window_days - 1)
+    cur = conn.cursor()
+    rows = cur.execute(
+        """
+        SELECT as_of_date_local, payload_json
+        FROM snapshot_daily_current
+        WHERE as_of_date_local BETWEEN ? AND ?
+        ORDER BY as_of_date_local ASC
+        """,
+        (start_date.isoformat(), as_of_date_local.isoformat()),
+    ).fetchall()
+    keys = [
+        "sortino_1y",
+        "sortino_6m",
+        "sortino_3m",
+        "sortino_1m",
+        "sharpe_1y",
+        "risk_quality_score",
+    ]
+    history_by_symbol = {sym: [] for sym in symbols}
+    for as_of_str, payload_json in rows:
+        try:
+            snap = json.loads(payload_json)
+        except Exception:
+            continue
+        for holding in snap.get("holdings") or []:
+            sym = holding.get("symbol")
+            if sym not in history_by_symbol:
+                continue
+            record = {"date": as_of_str}
+            sortino_val = None
+            sharpe_val = None
+            for key in keys:
+                val = holding.get(key)
+                if val is None:
+                    val = (holding.get("ultimate") or {}).get(key)
+                if key == "sortino_1y":
+                    sortino_val = val if _is_number(val) else None
+                if key == "sharpe_1y":
+                    sharpe_val = val if _is_number(val) else None
+                record[key] = float(val) if _is_number(val) else None
+            if record.get("risk_quality_score") is None and _is_number(sortino_val) and _is_number(sharpe_val):
+                record["risk_quality_score"] = _safe_divide(float(sortino_val), float(sharpe_val))
+            if any(_is_number(record.get(key)) for key in keys):
+                history_by_symbol[sym].append(record)
+
+    current_date = as_of_date_local.isoformat()
+    for holding in holdings_out:
+        sym = holding.get("symbol")
+        if sym not in history_by_symbol:
+            continue
+        record = {"date": current_date}
+        sortino_val = None
+        sharpe_val = None
+        for key in keys:
+            val = holding.get(key)
+            if val is None:
+                val = (holding.get("ultimate") or {}).get(key)
+            if key == "sortino_1y":
+                sortino_val = val if _is_number(val) else None
+            if key == "sharpe_1y":
+                sharpe_val = val if _is_number(val) else None
+            record[key] = float(val) if _is_number(val) else None
+        if record.get("risk_quality_score") is None and _is_number(sortino_val) and _is_number(sharpe_val):
+            record["risk_quality_score"] = _safe_divide(float(sortino_val), float(sharpe_val))
+        if any(_is_number(record.get(key)) for key in keys):
+            records = history_by_symbol.get(sym, [])
+            replaced = False
+            for idx, existing in enumerate(records):
+                if existing.get("date") == current_date:
+                    records[idx] = record
+                    replaced = True
+                    break
+            if not replaced:
+                records.append(record)
+            history_by_symbol[sym] = records
+
+    out = {}
+    for sym, records in history_by_symbol.items():
+        if not records:
+            continue
+        records.sort(key=lambda r: r.get("date") or "")
+        trends = {key: _trend_block(_history_series(records, key)) for key in keys}
+        out[sym] = {
+            "records": records,
+            "trends": trends,
+            "meta": {"window_days": window_days, "updated_at": now_utc_iso(), "count": len(records)},
+        }
+    return out
 
 def _build_macro_snapshot(md, as_of_date_local: date):
     if md is None or getattr(md, "fred", None) is None:
@@ -1043,8 +1252,14 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
             "drawdown_duration_1y_days",
             "sharpe_1y",
             "sortino_1y",
+            "sortino_6m",
+            "sortino_3m",
+            "sortino_1m",
             "downside_dev_1y_pct",
             "calmar_1y",
+            "risk_quality_score",
+            "risk_quality_category",
+            "volatility_profile",
             "var_95_1d_pct",
             "cvar_95_1d_pct",
             "corr_1y",
@@ -1073,6 +1288,14 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
             "projected_monthly_dividend": _round_money(_safe_divide(forward_12m_dividend, 12.0)),
             "current_yield_pct": _round_pct(_safe_divide(forward_12m_dividend, mv) * 100 if mv is not None else None),
             "yield_on_cost_pct": _round_pct(_safe_divide(forward_12m_dividend, h["cost_basis"]) * 100 if h.get("cost_basis") else None),
+            "sharpe_1y": ultimate.get("sharpe_1y"),
+            "sortino_1y": ultimate.get("sortino_1y"),
+            "sortino_6m": ultimate.get("sortino_6m"),
+            "sortino_3m": ultimate.get("sortino_3m"),
+            "sortino_1m": ultimate.get("sortino_1m"),
+            "risk_quality_score": ultimate.get("risk_quality_score"),
+            "risk_quality_category": ultimate.get("risk_quality_category"),
+            "volatility_profile": ultimate.get("volatility_profile"),
             "ultimate": ultimate,
             "dividends_30d": _round_money(div_30d),
             "dividends_qtd": _round_money(div_qtd),
@@ -1108,6 +1331,14 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         holding["weight_pct"] = _round_pct(
             _safe_divide(mv, total_market_value) * 100 if mv is not None and total_market_value else None
         )
+
+    holdings_sortino_history = _build_holdings_sortino_history(conn, as_of_date_local, holdings_out)
+    if holdings_sortino_history:
+        for holding in holdings_out:
+            sym = holding.get("symbol")
+            history = holdings_sortino_history.get(sym)
+            if history:
+                holding["sortino_history"] = history
 
     margin_loan_balance = 0.0
     for account in account_balances:
@@ -1218,6 +1449,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
     risk = metrics.portfolio_risk(portfolio_values, bench_values)
     income_stability_score = _income_stability_score(div_tx, as_of_date_local)
     risk["income_stability_score"] = income_stability_score
+    risk_history = _build_portfolio_risk_history(conn, as_of_date_local, risk)
 
     portfolio_rollups = {
         "performance": performance,
@@ -1225,6 +1457,8 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         "risk": risk,
         "meta": {"version": f"v{as_of_date_str}", "method": "approx-holdings"},
     }
+    if risk_history:
+        portfolio_rollups["risk_history"] = risk_history
 
     totals_prov = {}
     for key in ["cost_basis", "margin_loan_balance", "market_value", "net_liquidation_value", "margin_to_portfolio_pct", "unrealized_pnl", "unrealized_pct"]:
@@ -1301,7 +1535,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
             "yf_dividends": {"ttl_seconds": settings.cache_ttl_hours * 3600, "bypassed": False},
         },
         "snapshot_age_days": 0,
-        "schema_version": "2.4",
+        "schema_version": "2.7",
         "filled_from_existing": False,
     }
 

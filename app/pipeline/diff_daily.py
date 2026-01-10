@@ -169,7 +169,17 @@ def _holdings_diff(left: dict, right: dict, min_weight_delta: float | None = Non
     added = []
     removed = []
     changed = []
-    fields = ["shares", "market_value", "weight_pct", "last_price", "unrealized_pnl"]
+    fields = [
+        "shares",
+        "market_value",
+        "weight_pct",
+        "last_price",
+        "unrealized_pnl",
+        "sortino_1y",
+        "sortino_6m",
+        "sortino_3m",
+        "sortino_1m",
+    ]
     for sym in symbols:
         lval = left_map.get(sym, {})
         rval = right_map.get(sym, {})
@@ -317,9 +327,12 @@ def _summary_block(left: dict, right: dict, holdings_diff: dict, days_apart: int
             if _is_number(annualized):
                 highlights.append(f"Annualized return {_format_pct(annualized)}")
             sharpe = risk.get("sharpe_1y")
+            sortino = risk.get("sortino_1y")
             calmar = risk.get("calmar_1y")
             if _is_number(sharpe):
                 highlights.append(f"Sharpe 1y {_format_number(sharpe)}")
+            if _is_number(sortino):
+                highlights.append(f"Sortino 1y {_format_number(sortino)}")
             if _is_number(calmar):
                 highlights.append(f"Calmar 1y {_format_number(calmar)}")
         elif period_type == "yearly":
@@ -327,9 +340,12 @@ def _summary_block(left: dict, right: dict, holdings_diff: dict, days_apart: int
             if _is_number(twr_12m):
                 highlights.append(f"TWR 12m {_format_pct(twr_12m)}")
             sharpe = risk.get("sharpe_1y")
+            sortino = risk.get("sortino_1y")
             calmar = risk.get("calmar_1y")
             if _is_number(sharpe):
                 highlights.append(f"Sharpe 1y {_format_number(sharpe)}")
+            if _is_number(sortino):
+                highlights.append(f"Sortino 1y {_format_number(sortino)}")
             if _is_number(calmar):
                 highlights.append(f"Calmar 1y {_format_number(calmar)}")
 
@@ -374,7 +390,19 @@ def build_daily_diff(
     rollup_risk = _section_diff(
         left.get("portfolio_rollups", {}).get("risk", {}),
         right.get("portfolio_rollups", {}).get("risk", {}),
-        ["vol_30d_pct", "vol_90d_pct", "sharpe_1y", "calmar_1y", "max_drawdown_1y_pct"],
+        [
+            "vol_30d_pct",
+            "vol_90d_pct",
+            "sharpe_1y",
+            "sortino_1y",
+            "sortino_6m",
+            "sortino_3m",
+            "sortino_1m",
+            "sortino_sharpe_ratio",
+            "sortino_sharpe_divergence",
+            "calmar_1y",
+            "max_drawdown_1y_pct",
+        ],
     )
 
     goal_progress = _section_diff(
