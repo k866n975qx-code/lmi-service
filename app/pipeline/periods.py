@@ -48,6 +48,15 @@ def _strip_provenance(value):
     return value
 
 
+def _holding_metric(holding: dict, key: str):
+    if not isinstance(holding, dict):
+        return None
+    val = holding.get(key)
+    if val is None:
+        val = (holding.get("ultimate") or {}).get(key)
+    return val
+
+
 def _coverage_summary(dailies):
     derived = []
     pulled = []
@@ -406,14 +415,14 @@ def _intervals(dailies, snapshot_type: str, as_of_date: date, as_of_daily: dict 
                     "projected_monthly_dividend": h.get("projected_monthly_dividend"),
                     "current_yield_pct": h.get("current_yield_pct"),
                     "yield_on_cost_pct": h.get("yield_on_cost_pct"),
-                    "sharpe_1y": h.get("sharpe_1y"),
-                    "sortino_1y": h.get("sortino_1y"),
-                    "sortino_6m": h.get("sortino_6m"),
-                    "sortino_3m": h.get("sortino_3m"),
-                    "sortino_1m": h.get("sortino_1m"),
-                    "risk_quality_score": h.get("risk_quality_score"),
-                    "risk_quality_category": h.get("risk_quality_category"),
-                    "volatility_profile": h.get("volatility_profile"),
+                    "sharpe_1y": _holding_metric(h, "sharpe_1y"),
+                    "sortino_1y": _holding_metric(h, "sortino_1y"),
+                    "sortino_6m": _holding_metric(h, "sortino_6m"),
+                    "sortino_3m": _holding_metric(h, "sortino_3m"),
+                    "sortino_1m": _holding_metric(h, "sortino_1m"),
+                    "risk_quality_score": _holding_metric(h, "risk_quality_score"),
+                    "risk_quality_category": _holding_metric(h, "risk_quality_category"),
+                    "volatility_profile": _holding_metric(h, "volatility_profile"),
                 }
                 for h in (end_snap.get("holdings") or [])
             ],
@@ -507,14 +516,14 @@ def _intervals_from_periods(period_snaps: list[dict], snapshot_type: str, as_of_
                     "projected_monthly_dividend": h.get("projected_monthly_dividend"),
                     "current_yield_pct": h.get("current_yield_pct"),
                     "yield_on_cost_pct": h.get("yield_on_cost_pct"),
-                    "sharpe_1y": h.get("sharpe_1y"),
-                    "sortino_1y": h.get("sortino_1y"),
-                    "sortino_6m": h.get("sortino_6m"),
-                    "sortino_3m": h.get("sortino_3m"),
-                    "sortino_1m": h.get("sortino_1m"),
-                    "risk_quality_score": h.get("risk_quality_score"),
-                    "risk_quality_category": h.get("risk_quality_category"),
-                    "volatility_profile": h.get("volatility_profile"),
+                    "sharpe_1y": _holding_metric(h, "sharpe_1y"),
+                    "sortino_1y": _holding_metric(h, "sortino_1y"),
+                    "sortino_6m": _holding_metric(h, "sortino_6m"),
+                    "sortino_3m": _holding_metric(h, "sortino_3m"),
+                    "sortino_1m": _holding_metric(h, "sortino_1m"),
+                    "risk_quality_score": _holding_metric(h, "risk_quality_score"),
+                    "risk_quality_category": _holding_metric(h, "risk_quality_category"),
+                    "volatility_profile": _holding_metric(h, "volatility_profile"),
                 }
                 for h in holdings
             ],

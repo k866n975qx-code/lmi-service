@@ -8,6 +8,7 @@ HOLDINGS_CHANGE_MIN_WEIGHT_PCT = 0.10
 HOLDINGS_CHANGE_MIN_MARKET_VALUE = 25.0
 _DIFF_TOL_MONEY = 0.05
 _DIFF_TOL_PCT = 0.1
+_HOLDING_ULTIMATE_FIELDS = {"sortino_1y", "sortino_6m", "sortino_3m", "sortino_1m"}
 
 
 def _load_daily_snapshot(conn: sqlite3.Connection, as_of_date_local: str):
@@ -121,11 +122,20 @@ def _holdings_map(snapshot: dict):
     return out
 
 
+def _holding_field_value(holding: dict, field: str):
+    if not holding:
+        return None
+    val = holding.get(field)
+    if val is None and field in _HOLDING_ULTIMATE_FIELDS:
+        val = (holding.get("ultimate") or {}).get(field)
+    return val
+
+
 def _holding_fields_diff(left: dict, right: dict, fields: list[str], missing_note: str | None = None):
     out = {}
     for field in fields:
-        lval = left.get(field) if left else None
-        rval = right.get(field) if right else None
+        lval = _holding_field_value(left, field)
+        rval = _holding_field_value(right, field)
         precision = 6 if field == "shares" else 3
         if _is_number(lval) or _is_number(rval):
             if missing_note and lval is None and _is_number(rval):
