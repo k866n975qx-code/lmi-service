@@ -397,26 +397,37 @@ def _symbol_pay_lag_days(events: list[dict], default_lag: int) -> int:
     return max(1, int(round(statistics.median(lags))))
 
 
-def _estimate_expected_pay_events(provider_divs: dict, holdings: dict, window_start: date, window_end: date, pay_history: dict):
+def _estimate_expected_pay_events(
+    provider_divs: dict,
+    holdings: dict,
+    window_start: date,
+    window_end: date,
+    pay_history: dict,
+    ex_date_est_by_symbol: dict[str, date] | None = None,
+):
     default_lag = _median_pay_lag_days(provider_divs)
     expected = []
     total_raw = 0.0
+    ex_date_est_by_symbol = ex_date_est_by_symbol or {}
     for sym in sorted(holdings.keys()):
         history = pay_history.get(sym, [])
         actual_events = [ev for ev in history if window_start <= ev["date"] <= window_end]
         if actual_events:
             for ev in actual_events:
+                ex_date_est = ex_date_est_by_symbol.get(sym)
+                if not ex_date_est:
+                    continue
                 amount_est = ev.get("amount")
-                if isinstance(amount_est, (int, float)):
-                    total_raw += float(amount_est)
                 expected.append(
                     {
                         "symbol": sym,
-                        "ex_date_est": None,
+                        "ex_date_est": ex_date_est.isoformat(),
                         "pay_date_est": ev["date"].isoformat(),
                         "amount_est": _round_money(amount_est),
                     }
                 )
+                if isinstance(amount_est, (int, float)):
+                    total_raw += float(amount_est)
             continue
 
         if len(history) >= 2:
@@ -425,17 +436,20 @@ def _estimate_expected_pay_events(provider_divs: dict, holdings: dict, window_st
             if median_gap:
                 next_pay = dates[-1] + timedelta(days=median_gap)
                 if window_start <= next_pay <= window_end:
+                    ex_date_est = ex_date_est_by_symbol.get(sym)
+                    if not ex_date_est:
+                        continue
                     amount_est = _median_amount(history[-6:])
-                    if isinstance(amount_est, (int, float)):
-                        total_raw += float(amount_est)
                     expected.append(
                         {
                             "symbol": sym,
-                            "ex_date_est": None,
+                            "ex_date_est": ex_date_est.isoformat(),
                             "pay_date_est": next_pay.isoformat(),
                             "amount_est": _round_money(amount_est),
                         }
                     )
+                    if isinstance(amount_est, (int, float)):
+                        total_raw += float(amount_est)
             continue
 
         events = provider_divs.get(sym, [])
@@ -1207,12 +1221,23 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         },
     }
 
+    ex_date_est_by_symbol = {}
+    for holding in holdings_out:
+        sym = holding.get("symbol")
+        if not sym:
+            continue
+        next_ex = (holding.get("ultimate") or {}).get("next_ex_date_est")
+        next_dt = _parse_date(next_ex)
+        if next_dt:
+            ex_date_est_by_symbol[sym] = next_dt
+
     expected_events, projected_alt = _estimate_expected_pay_events(
         provider_divs,
         holdings,
         _month_start(as_of_date_local),
         as_of_date_local,
         pay_history,
+        ex_date_est_by_symbol,
     )
     projected_vs_received["alt"]["projected"] = projected_alt or 0.0
     projected_vs_received["alt"]["expected_events"] = expected_events
