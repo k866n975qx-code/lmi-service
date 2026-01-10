@@ -73,10 +73,19 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080
 - `samples/diff_daily.json`
 - `samples/diff_period.json`
 
+## Docs
+
+- `docs/ARCHITECTURE.md`
+- `docs/blueprint.md`
+- `docs/UBUNTU_MIGRATION.md`
+- `docs/TELEGRAM_BOT_SETUP.md`
+- `docs/ALERTS_DB_MIGRATION.md`
+- `docs/LOCAL_TEST_COMMANDS.md`
+
 ## Project status
 
 - `TASKS.md` tracks the remaining work (most items are completed).
-- `blueprint.md` is the target spec; it is nearly met and used as a reference.
+- `docs/blueprint.md` is the target spec; it is nearly met and used as a reference.
 
 ## Design highlights
 

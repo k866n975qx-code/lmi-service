@@ -259,6 +259,16 @@ def _median_gap_days(dates: list[date]) -> int | None:
     return max(1, int(round(statistics.median(gaps))))
 
 
+def _fallback_next_ex_date(last_ex_date: date | None, pay_history: list[dict]) -> date | None:
+    if not last_ex_date or len(pay_history) < 2:
+        return None
+    dates = [ev.get("date") for ev in pay_history if ev.get("date")]
+    gap = _median_gap_days(dates)
+    if not gap:
+        return None
+    return last_ex_date + timedelta(days=gap)
+
+
 def _median_amount(events: list[dict]) -> float | None:
     amounts = [ev.get("amount") for ev in events if isinstance(ev.get("amount"), (int, float))]
     if not amounts:
@@ -294,6 +304,40 @@ def _load_provider_dividends(conn: sqlite3.Connection):
     for sym in out:
         out[sym].sort(key=lambda item: item["ex_date"])
     return out
+
+
+def _load_lm_ex_dates(conn: sqlite3.Connection):
+    cur = conn.cursor()
+    rows = cur.execute(
+        """
+        SELECT symbol, ex_date, ex_date_est
+        FROM dividend_events_lm
+        """
+    ).fetchall()
+    out = defaultdict(list)
+    seen = set()
+    for symbol, ex_date, ex_date_est in rows:
+        sym = str(symbol).upper() if symbol else None
+        dt = _parse_date(ex_date_est) or _parse_date(ex_date)
+        if not sym or dt is None:
+            continue
+        key = (sym, dt.isoformat())
+        if key in seen:
+            continue
+        seen.add(key)
+        out[sym].append(dt)
+    for sym in out:
+        out[sym].sort()
+    return out
+
+
+def _effective_ex_dates(sym: str, provider_divs: dict, lm_ex_dates: dict):
+    ex_dates = [ev["ex_date"] for ev in provider_divs.get(sym, []) if ev.get("ex_date")]
+    if not ex_dates:
+        ex_dates = list(lm_ex_dates.get(sym, []))
+    if not ex_dates:
+        return []
+    return sorted({dt for dt in ex_dates if dt})
 
 
 def _median_pay_lag_days(provider_divs: dict) -> int:
@@ -881,6 +925,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
     div_tx = _load_dividend_transactions(conn)
     pay_history = _build_pay_history(div_tx)
     provider_divs = _load_provider_dividends(conn)
+    lm_ex_dates = _load_lm_ex_dates(conn)
     account_balances = _load_account_balances(conn)
 
     holding_symbols = set(holdings.keys())
@@ -909,6 +954,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
     total_market_value = 0.0
     total_cost_basis = 0.0
     total_forward_12m = 0.0
+    ex_dates_by_symbol = {}
 
     for sym in sorted(holdings.keys()):
         h = holdings[sym]
@@ -921,7 +967,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         total_cost_basis += float(h["cost_basis"]) if h.get("cost_basis") is not None else 0.0
 
         div_events = provider_divs.get(sym, [])
-        ex_dates = [ev["ex_date"] for ev in div_events]
+        ex_dates = _effective_ex_dates(sym, provider_divs, lm_ex_dates)
         trailing_12m_div_ps = sum(
             ev["amount"]
             for ev in div_events
@@ -930,6 +976,9 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         last_ex_date = ex_dates[-1] if ex_dates else None
         frequency = _frequency_from_ex_dates(ex_dates)
         next_ex_date_est = _next_ex_date_est(ex_dates)
+        if next_ex_date_est is None and last_ex_date:
+            next_ex_date_est = _fallback_next_ex_date(last_ex_date, pay_history.get(sym, []))
+        ex_dates_by_symbol[sym] = ex_dates
         forward_12m_div_ps = trailing_12m_div_ps if trailing_12m_div_ps else 0.0
         forward_method = "t12m" if trailing_12m_div_ps else None
         forward_12m_dividend = forward_12m_div_ps * float(h["shares"])
@@ -1137,7 +1186,10 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
     for sym in sorted(holding_symbols):
         events = [ev for ev in provider_divs.get(sym, []) if window_start <= ev["ex_date"] <= window_end]
         if not events:
-            next_est = _next_ex_date_est([ev["ex_date"] for ev in provider_divs.get(sym, [])])
+            ex_dates = ex_dates_by_symbol.get(sym) or _effective_ex_dates(sym, provider_divs, lm_ex_dates)
+            next_est = _next_ex_date_est(ex_dates)
+            if next_est is None and ex_dates:
+                next_est = _fallback_next_ex_date(ex_dates[-1], pay_history.get(sym, []))
             if next_est and window_start <= next_est <= window_end:
                 per_share, _freq = _estimate_upcoming_per_share(provider_divs.get(sym, []), as_of_date_local)
                 if per_share is not None:
