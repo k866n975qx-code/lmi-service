@@ -326,6 +326,8 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
     portfolio_rollups = snap.get("portfolio_rollups") or {}
     risk = (portfolio_rollups.get("risk") or {})
     performance = (portfolio_rollups.get("performance") or {})
+    income_stability = portfolio_rollups.get("income_stability") or {}
+    tail_risk = portfolio_rollups.get("tail_risk") or {}
     macro = (snap.get("macro") or {}).get("snapshot") or {}
     goal = snap.get("goal_progress") or {}
     goal_net = snap.get("goal_progress_net") or {}
