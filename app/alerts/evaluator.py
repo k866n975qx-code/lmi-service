@@ -330,6 +330,7 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
     goal = snap.get("goal_progress") or {}
     goal_net = snap.get("goal_progress_net") or {}
     margin_guidance = snap.get("margin_guidance") or {}
+    margin_stress = snap.get("margin_stress") or {}
 
     try:
         as_of_dt = date.fromisoformat(as_of)
