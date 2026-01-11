@@ -10,6 +10,7 @@ from ..pipeline.periods import build_period_snapshot, _period_bounds
 from ..pipeline.diff_daily import diff_daily_from_db
 from ..pipeline.diff_periods import diff_periods_from_db
 from ..pipeline.snapshot_views import slim_snapshot
+from ..pipeline.null_reasons import replace_nulls_with_reasons
 from ..config import settings
 from ..db import get_conn
 from ..cache_layer import CacheLayer
@@ -169,7 +170,8 @@ def get_latest_daily_portfolio(slim: bool = True):
     if not row:
         raise HTTPException(404, 'daily snapshot not found')
     payload = json.loads(row[0])
-    return slim_snapshot(payload) if slim else payload
+    payload = slim_snapshot(payload) if slim else payload
+    return replace_nulls_with_reasons(payload, kind="daily", conn=conn)
 
 @router.get(
     '/portfolio/daily/{as_of}',
@@ -191,7 +193,8 @@ def get_daily_portfolio(as_of: str, slim: bool = True):
     if not row:
         raise HTTPException(404, 'daily snapshot not found')
     payload = json.loads(row[0])
-    return slim_snapshot(payload) if slim else payload
+    payload = slim_snapshot(payload) if slim else payload
+    return replace_nulls_with_reasons(payload, kind="daily", conn=conn)
 
 @router.get(
     '/period-summary/{kind}/{as_of}',
@@ -215,7 +218,9 @@ def get_period_summary(kind: str, as_of: str, slim: bool = True):
     snap = get_snapshot(_PERIOD_MAP[kind], start.isoformat(), end.isoformat())
     if not snap:
         raise HTTPException(404, 'snapshot not found')
-    return slim_snapshot(snap) if slim else snap
+    snap = slim_snapshot(snap) if slim else snap
+    conn = get_conn(settings.db_path)
+    return replace_nulls_with_reasons(snap, kind="period", conn=conn)
 
 @router.get(
     '/period-summary/{kind}/{as_of}/{mode}',
@@ -244,9 +249,11 @@ def get_period_summary_mode(kind: str, as_of: str, mode: str, slim: bool = True)
             start, end = _period_bounds(kind, as_of_date)
             snap = get_snapshot(_PERIOD_MAP[kind], start.isoformat(), end.isoformat())
             if snap:
-                return slim_snapshot(snap) if slim else snap
+                snap = slim_snapshot(snap) if slim else snap
+                return replace_nulls_with_reasons(snap, kind="period", conn=conn)
         snap = build_period_snapshot(conn, snapshot_type=kind, as_of=as_of, mode=mode)
-        return slim_snapshot(snap) if slim else snap
+        snap = slim_snapshot(snap) if slim else snap
+        return replace_nulls_with_reasons(snap, kind="period", conn=conn)
     except ValueError as e:
         raise HTTPException(404, str(e))
 
@@ -259,7 +266,8 @@ def get_period_summary_mode(kind: str, as_of: str, mode: str, slim: bool = True)
 def compare_daily_portfolios(left_date: str, right_date: str):
     conn = get_conn(settings.db_path)
     try:
-        return diff_daily_from_db(conn, left_date, right_date)
+        diff = diff_daily_from_db(conn, left_date, right_date)
+        return replace_nulls_with_reasons(diff, kind="diff", conn=conn)
     except ValueError as e:
         raise HTTPException(404, str(e))
 
@@ -273,7 +281,8 @@ def compare_period_summaries(kind: str, left_as_of: str, right_as_of: str):
     kind = kind.lower()
     conn = get_conn(settings.db_path)
     try:
-        return diff_periods_from_db(conn, kind, left_as_of, right_as_of)
+        diff = diff_periods_from_db(conn, kind, left_as_of, right_as_of)
+        return replace_nulls_with_reasons(diff, kind="diff", conn=conn)
     except ValueError as e:
         raise HTTPException(404, str(e))
 

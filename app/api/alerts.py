@@ -185,6 +185,8 @@ def _holdings_text(snap: dict) -> str:
 
 def _risk_text(snap: dict) -> str:
     risk = (snap.get("portfolio_rollups") or {}).get("risk") or {}
+    stability = (snap.get("portfolio_rollups") or {}).get("income_stability") or {}
+    tail = (snap.get("portfolio_rollups") or {}).get("tail_risk") or {}
     return (
         "<b>Risk</b>\n"
         f"30d Vol: {_fmt_pct(risk.get('vol_30d_pct'),2)}\n"
@@ -192,7 +194,9 @@ def _risk_text(snap: dict) -> str:
         f"Sharpe: {_fmt_ratio(risk.get('sharpe_1y'),2)}\n"
         f"Sortino: {_fmt_ratio(risk.get('sortino_1y'),2)}\n"
         f"Sortino/Sharpe: {_fmt_ratio(risk.get('sortino_sharpe_ratio'),2)}\n"
-        f"Max DD: {_fmt_pct(risk.get('max_drawdown_1y_pct'),2)}"
+        f"Max DD: {_fmt_pct(risk.get('max_drawdown_1y_pct'),2)}\n"
+        f"Income Stability: {_fmt_ratio(stability.get('stability_score'),2)}\n"
+        f"CVaR 1d: {_fmt_pct(tail.get('cvar_95_1d_pct'),1)}"
     )
 
 def _goal_text(snap: dict) -> str:

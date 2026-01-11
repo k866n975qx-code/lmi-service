@@ -28,6 +28,12 @@ def _slice_window(series: pd.Series, window_days: int | None = None, window_poin
     return series
 
 
+def scale_by_time(value: float | None, target_days: int, base_days: int = 1) -> float | None:
+    if value is None or target_days <= 0 or base_days <= 0:
+        return None
+    return float(value * np.sqrt(target_days / base_days))
+
+
 def time_weighted_returns(values: pd.Series, cashflows: pd.Series | None = None) -> pd.Series:
     if values is None or values.empty:
         return pd.Series(dtype=float)
@@ -100,6 +106,54 @@ def var_cvar(returns: pd.Series, alpha: float = 0.05, window_days: int | None = 
     return var, cvar
 
 
+def tracking_error(portfolio_returns: pd.Series, benchmark_returns: pd.Series, window_days: int | None = None, periods: int = ANNUAL_PERIODS) -> float | None:
+    if portfolio_returns is None or benchmark_returns is None:
+        return None
+    pr = _slice_window(portfolio_returns, window_days=window_days)
+    br = _slice_window(benchmark_returns, window_days=window_days)
+    df = pd.concat([pr, br], axis=1).dropna()
+    if df.empty:
+        return None
+    active = df.iloc[:, 0] - df.iloc[:, 1]
+    return float(active.std(ddof=0) * np.sqrt(periods))
+
+
+def information_ratio(portfolio_returns: pd.Series, benchmark_returns: pd.Series, window_days: int | None = None, periods: int = ANNUAL_PERIODS) -> float | None:
+    if portfolio_returns is None or benchmark_returns is None:
+        return None
+    pr = _slice_window(portfolio_returns, window_days=window_days)
+    br = _slice_window(benchmark_returns, window_days=window_days)
+    df = pd.concat([pr, br], axis=1).dropna()
+    if df.empty:
+        return None
+    te = tracking_error(df.iloc[:, 0], df.iloc[:, 1], periods=periods)
+    if te in (None, 0.0):
+        return None
+    excess = (df.iloc[:, 0].mean() - df.iloc[:, 1].mean()) * periods
+    return float(excess / te)
+
+
+def ulcer_index(values: pd.Series, window_days: int | None = None) -> float | None:
+    v = _slice_window(_as_datetime_index(values).dropna(), window_days=window_days)
+    if v is None or v.empty:
+        return None
+    peak = v.cummax()
+    dd = v / peak - 1.0
+    return float(np.sqrt(np.mean(np.square(dd))))
+
+
+def omega_ratio(returns: pd.Series, threshold: float = 0.0, window_days: int | None = None) -> float | None:
+    rets = _slice_window(returns, window_days=window_days)
+    if rets is None or rets.empty:
+        return None
+    excess = rets - threshold
+    gains = excess[excess > 0].sum()
+    losses = -excess[excess < 0].sum()
+    if losses == 0:
+        return None
+    return float(gains / losses)
+
+
 def max_drawdown(values: pd.Series, window_days: int | None = None) -> tuple[float | None, int | None]:
     v = _slice_window(_as_datetime_index(values).dropna(), window_days=window_days)
     if v is None or v.empty:
@@ -147,11 +201,14 @@ def portfolio_performance(values: pd.Series, cashflows: pd.Series | None = None)
 def portfolio_risk(values: pd.Series, benchmark_values: pd.Series | None = None, rf_annual: float = 0.0) -> dict:
     returns = time_weighted_returns(values)
     beta, corr = (None, None)
+    bench_returns = None
     if benchmark_values is not None:
         bench_returns = time_weighted_returns(benchmark_values)
         beta, corr = beta_and_corr(returns, bench_returns, window_days=365)
     max_dd, dd_dur = max_drawdown(values, window_days=365)
+    var_90, cvar_90 = var_cvar(returns, alpha=0.10, window_days=365)
     var_95, cvar_95 = var_cvar(returns, alpha=0.05, window_days=365)
+    var_99, cvar_99 = var_cvar(returns, alpha=0.01, window_days=365)
     downside_1y = downside_deviation(returns, window_days=365)
     sharpe_1y = sharpe_ratio(returns, rf_annual=rf_annual, window_days=365)
     sortino_1y = sortino_ratio(returns, rf_annual=rf_annual, window_days=365)
@@ -162,6 +219,10 @@ def portfolio_risk(values: pd.Series, benchmark_values: pd.Series | None = None,
     sortino_sharpe_divergence = None
     if sortino_1y is not None and sharpe_1y is not None:
         sortino_sharpe_divergence = sortino_1y - sharpe_1y
+    ulcer_1y = ulcer_index(values, window_days=365)
+    omega_1y = omega_ratio(returns, threshold=0.0, window_days=365)
+    info_ratio = information_ratio(returns, bench_returns, window_days=365) if bench_returns is not None else None
+    tracking_err = tracking_error(returns, bench_returns, window_days=365) if bench_returns is not None else None
     return {
         "vol_30d_pct": _pct(annualized_volatility(returns, window_days=30)),
         "vol_90d_pct": _pct(annualized_volatility(returns, window_days=90)),
@@ -176,10 +237,22 @@ def portfolio_risk(values: pd.Series, benchmark_values: pd.Series | None = None,
         "calmar_1y": _round(_safe_divide(twr(values, window_days=365), abs(max_dd) if max_dd is not None else None)),
         "max_drawdown_1y_pct": _pct(max_dd),
         "drawdown_duration_1y_days": dd_dur,
+        "var_90_1d_pct": _pct(var_90),
         "var_95_1d_pct": _pct(var_95),
+        "var_99_1d_pct": _pct(var_99),
+        "var_95_1w_pct": _pct(scale_by_time(var_95, 5)),
+        "var_95_1m_pct": _pct(scale_by_time(var_95, 21)),
+        "cvar_90_1d_pct": _pct(cvar_90),
         "cvar_95_1d_pct": _pct(cvar_95),
+        "cvar_99_1d_pct": _pct(cvar_99),
+        "cvar_95_1w_pct": _pct(scale_by_time(cvar_95, 5)),
+        "cvar_95_1m_pct": _pct(scale_by_time(cvar_95, 21)),
         "beta_portfolio": _round(beta),
         "corr_1y": _round(corr),
+        "information_ratio_1y": _round(info_ratio),
+        "tracking_error_1y_pct": _pct(tracking_err),
+        "ulcer_index_1y": _pct(ulcer_1y),
+        "omega_ratio_1y": _round(omega_1y),
         "income_stability_score": None,
     }
 

@@ -1,0 +1,1188 @@
+{
+  "comparison": {
+    "left_date": "2026-01-03",
+    "right_date": "2026-01-10",
+    "days_apart": 7,
+    "mode": "non_adjacent",
+    "period_type": "weekly",
+    "period_start": "2026-01-03",
+    "period_end": "2026-01-10",
+    "calendar_aligned": false
+  },
+  "left": {
+    "date": "2026-01-03"
+  },
+  "right": {
+    "date": "2026-01-10"
+  },
+  "summary": {
+    "direction": "neutral",
+    "primary_driver": "price_move",
+    "headline": "Over 7 days, small flat move with flat income.",
+    "highlights": [
+      "Market value +$0.00 (+0.00%) vs 7 days ago",
+      "Forward 12m income +$0.00",
+      "No holdings added or removed",
+      "Per-day return +0.00%",
+      "Vol 30d +6.68%"
+    ],
+    "period_type": "weekly"
+  },
+  "range_metrics": {
+    "simple_return_pct": 0.0,
+    "simple_pnl": 0.0,
+    "per_day_return_pct": 0.0
+  },
+  "portfolio_metrics": {
+    "totals": {
+      "market_value": {
+        "left": 45709.76,
+        "right": 45709.76,
+        "delta": 0.0
+      },
+      "net_liquidation_value": {
+        "left": 36354.49,
+        "right": 36354.49,
+        "delta": 0.0
+      },
+      "cost_basis": {
+        "left": 44957.87,
+        "right": 44957.87,
+        "delta": 0.0
+      },
+      "unrealized_pnl": {
+        "left": 751.9,
+        "right": 751.9,
+        "delta": 0.0
+      },
+      "unrealized_pct": {
+        "left": 1.672,
+        "right": 1.672,
+        "delta": 0.0
+      },
+      "margin_loan_balance": {
+        "left": 9355.27,
+        "right": 9355.27,
+        "delta": 0.0
+      },
+      "margin_to_portfolio_pct": {
+        "left": 20.467,
+        "right": 20.467,
+        "delta": 0.0
+      }
+    },
+    "income": {
+      "projected_monthly_income": {
+        "left": 520.29,
+        "right": 520.29,
+        "delta": 0.0
+      },
+      "forward_12m_total": {
+        "left": 6243.44,
+        "right": 6243.44,
+        "delta": 0.0
+      },
+      "portfolio_current_yield_pct": {
+        "left": 13.659,
+        "right": 13.659,
+        "delta": 0.0
+      },
+      "portfolio_yield_on_cost_pct": {
+        "left": 13.887,
+        "right": 13.887,
+        "delta": 0.0
+      }
+    },
+    "rollups": {
+      "performance": {
+        "twr_1m_pct": {
+          "left": 4.564,
+          "right": 4.564,
+          "delta": 0.0
+        },
+        "twr_3m_pct": {
+          "left": 10.513,
+          "right": 10.513,
+          "delta": 0.0
+        },
+        "twr_6m_pct": {
+          "left": 14.85,
+          "right": 14.85,
+          "delta": 0.0
+        },
+        "twr_12m_pct": {
+          "left": 17.523,
+          "right": 17.524,
+          "delta": 0.001
+        }
+      },
+      "risk": {
+        "vol_30d_pct": {
+          "left": 6.676,
+          "right": 6.676,
+          "delta": 0.0
+        },
+        "vol_90d_pct": {
+          "left": 10.455,
+          "right": 10.455,
+          "delta": 0.0
+        },
+        "sharpe_1y": {
+          "left": 0.921,
+          "right": 0.921,
+          "delta": 0.0
+        },
+        "sortino_1y": {
+          "left": 1.026,
+          "right": 1.146,
+          "delta": 0.12
+        },
+        "sortino_6m": {
+          "left": 2.81,
+          "right": 4.16,
+          "delta": 1.35
+        },
+        "sortino_3m": {
+          "left": 2.324,
+          "right": 6.372,
+          "delta": 4.048
+        },
+        "sortino_1m": {
+          "left": 13.497,
+          "right": 29.892,
+          "delta": 16.395
+        },
+        "sortino_sharpe_ratio": {
+          "left": 1.25,
+          "right": 1.243,
+          "delta": -0.007
+        },
+        "sortino_sharpe_divergence": {
+          "left": 0.205,
+          "right": 0.224,
+          "delta": 0.019
+        },
+        "information_ratio_1y": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 0.007,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "tracking_error_1y_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 7.022,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "ulcer_index_1y": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 5.67,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "omega_ratio_1y": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 1.206,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "pain_adjusted_return": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 3.091,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "income_stability_score": {
+          "left": 0.0,
+          "right": 0.0,
+          "delta": 0.0
+        },
+        "var_90_1d_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": -1.035,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "calmar_1y": {
+          "left": 0.878,
+          "right": 0.878,
+          "delta": 0.0
+        },
+        "max_drawdown_1y_pct": {
+          "left": -19.948,
+          "right": -19.948,
+          "delta": 0.0
+        },
+        "var_95_1d_pct": {
+          "left": -1.829,
+          "right": -1.829,
+          "delta": 0.0
+        },
+        "var_99_1d_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": -3.271,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "var_95_1w_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": -4.09,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "var_95_1m_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": -8.382,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "cvar_90_1d_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": -2.19,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "cvar_95_1d_pct": {
+          "left": -2.985,
+          "right": -2.985,
+          "delta": 0.0
+        },
+        "cvar_99_1d_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": -5.057,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "cvar_95_1w_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": -6.675,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "cvar_95_1m_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": -13.68,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        }
+      },
+      "income_stability": {
+        "stability_score": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 0.0,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "income_volatility_30d_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 243.556,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "missed_payment_count_12m": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 9,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "coefficient_of_variation": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 2.465,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "dividend_cut_count_12m": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 1,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "consecutive_months_positive": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 3,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "income_drawdown_max_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": -80.873,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        }
+      },
+      "income_growth": {
+        "mom_absolute": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": -164.44,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "mom_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": -80.873,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        }
+      },
+      "tail_risk": {
+        "cvar_to_income_ratio": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 12.018,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "var_95_1w_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": -4.09,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "var_95_1d_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": -1.829,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "cvar_95_1m_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": -13.68,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "cvar_90_1d_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": -2.19,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "cvar_95_1w_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": -6.675,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "cvar_95_1d_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": -2.985,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "var_95_1m_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": -8.382,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "cvar_99_1d_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": -5.057,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "worst_expected_loss_1w": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 3051.13,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        }
+      },
+      "vs_benchmark": {
+        "information_ratio_1y": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 0.007,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "excess_return_1y_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": -0.184,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "tracking_error_1y_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 7.022,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "active_share_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 100.0,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "correlation_to_benchmark": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 0.934,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        }
+      },
+      "return_attribution_1m": {
+        "window": {
+          "days": {
+            "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+            "right": 30,
+            "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+          }
+        },
+        "income_contribution_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 0.247,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "total_return_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 4.196,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "total_return_dollars": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 1844.93,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "income_contribution_dollars": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 108.63,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "price_contribution_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 3.949,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "price_contribution_dollars": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 1736.3,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        }
+      },
+      "return_attribution_3m": {
+        "window": {
+          "days": {
+            "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+            "right": 90,
+            "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+          }
+        },
+        "income_contribution_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 0.442,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "total_return_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 8.742,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "total_return_dollars": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 3689.59,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "income_contribution_dollars": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 186.5,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "price_contribution_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 8.3,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "price_contribution_dollars": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 3503.09,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        }
+      },
+      "return_attribution_6m": {
+        "window": {
+          "days": {
+            "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+            "right": 180,
+            "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+          }
+        },
+        "income_contribution_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 0.467,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "total_return_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 15.005,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "total_return_dollars": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 5988.17,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "income_contribution_dollars": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 186.5,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "price_contribution_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 14.538,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "price_contribution_dollars": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 5801.67,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        }
+      },
+      "return_attribution_12m": {
+        "window": {
+          "days": {
+            "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+            "right": 365,
+            "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+          }
+        },
+        "income_contribution_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 0.486,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "total_return_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 19.685,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "total_return_dollars": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 7548.81,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "income_contribution_dollars": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 186.5,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "price_contribution_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 19.199,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "price_contribution_dollars": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 7362.31,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        }
+      }
+    },
+    "goal_progress": {
+      "progress_pct": {
+        "left": 26.014,
+        "right": 26.014,
+        "delta": 0.0
+      },
+      "current_projected_monthly": {
+        "left": 520.29,
+        "right": 520.29,
+        "delta": 0.0
+      },
+      "months_to_goal": {
+        "left": 37,
+        "right": 37,
+        "delta": 0.0
+      }
+    },
+    "goal_progress_net": {
+      "progress_pct": {
+        "left": 24.397,
+        "right": 24.397,
+        "delta": 0.0
+      },
+      "current_projected_monthly_net": {
+        "left": 487.94,
+        "right": 487.94,
+        "delta": 0.0
+      }
+    },
+    "margin": {
+      "margin_loan_balance": {
+        "left": 9355.27,
+        "right": 9355.27,
+        "delta": 0.0
+      },
+      "margin_to_portfolio_pct": {
+        "left": 20.467,
+        "right": 20.467,
+        "delta": 0.0
+      },
+      "ltv_pct": {
+        "left": 20.467,
+        "right": 20.467,
+        "delta": 0.0
+      }
+    },
+    "margin_stress": {
+      "historical_trends_90d": {
+        "ltv_min": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 20.467,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "interest_expense_avg": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 30.46,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "ltv_std": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 8.278,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "ltv_max": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 39.632,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "ltv_avg": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 25.246,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        }
+      },
+      "efficiency": {
+        "interest_expense_as_pct_of_returns": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 4.847,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "roi_on_margin_capital_1y_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 17.524,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "interest_expense_as_pct_of_income": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 6.218,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "net_benefit_of_leverage_1y_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 13.374,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        }
+      },
+      "stress_scenarios": {
+        "interest_rate_shock": {
+          "rate_plus_100bp": {
+            "income_coverage_ratio": {
+              "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+              "right": 12.959,
+              "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+            },
+            "monthly_expense": {
+              "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+              "right": 40.15,
+              "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+            },
+            "annual_expense": {
+              "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+              "right": 481.8,
+              "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+            },
+            "new_rate_pct": {
+              "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+              "right": 5.15,
+              "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+            },
+            "expense_as_pct_of_income": {
+              "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+              "right": 7.717,
+              "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+            }
+          },
+          "rate_plus_200bp": {
+            "income_coverage_ratio": {
+              "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+              "right": 10.852,
+              "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+            },
+            "monthly_expense": {
+              "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+              "right": 47.95,
+              "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+            },
+            "annual_expense": {
+              "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+              "right": 575.35,
+              "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+            },
+            "new_rate_pct": {
+              "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+              "right": 6.15,
+              "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+            },
+            "expense_as_pct_of_income": {
+              "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+              "right": 9.215,
+              "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+            }
+          },
+          "rate_plus_300bp": {
+            "income_coverage_ratio": {
+              "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+              "right": 9.334,
+              "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+            },
+            "monthly_expense": {
+              "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+              "right": 55.74,
+              "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+            },
+            "annual_expense": {
+              "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+              "right": 668.9,
+              "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+            },
+            "new_rate_pct": {
+              "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+              "right": 7.15,
+              "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+            },
+            "expense_as_pct_of_income": {
+              "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+              "right": 10.714,
+              "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+            }
+          }
+        },
+        "margin_call_distance": {
+          "days_at_current_volatility": {
+            "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+            "right": 84,
+            "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+          },
+          "dollar_decline_to_call": {
+            "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+            "right": 32345.09,
+            "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+          },
+          "portfolio_decline_to_call_pct": {
+            "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+            "right": -70.762,
+            "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+          }
+        }
+      },
+      "current": {
+        "net_liquidation_value": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 36354.49,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "ltv_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 20.467,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "annual_interest_expense": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 388.24,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "monthly_interest_expense": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 32.35,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "interest_rate_current_pct": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 4.15,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "portfolio_value": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 45709.76,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        },
+        "margin_loan_balance": {
+          "left": "left snapshot 2026-01-03 schema 2.7 missing v3 metric",
+          "right": 9355.27,
+          "delta": "delta requires left value; left snapshot schema <3.0 missing metric"
+        }
+      }
+    }
+  },
+  "dividends": {
+    "forward_12m_total": {
+      "left": 6243.44,
+      "right": 6243.44,
+      "delta": 0.0
+    },
+    "realized_period_total": {
+      "left": 100.65,
+      "right": 38.89,
+      "delta": -61.76
+    },
+    "realized_mtd_total": {
+      "left": "period snapshots do not include realized_mtd totals",
+      "right": "period snapshots do not include realized_mtd totals",
+      "delta": "period snapshots do not include realized_mtd totals"
+    },
+    "next_30d_total": {
+      "left": 421.61,
+      "right": 421.61,
+      "delta": 0.0
+    }
+  },
+  "coverage": {
+    "derived_pct": {
+      "left": 100.0,
+      "right": 100.0,
+      "delta": 0.0
+    },
+    "missing_pct": {
+      "left": 85.7,
+      "right": 14.3,
+      "delta": -71.4
+    },
+    "note": "Data quality unchanged."
+  },
+  "macro": {
+    "snapshot": {
+      "two_year_yield": {
+        "left": 3.49,
+        "right": 3.49,
+        "delta": 0.0
+      },
+      "ten_year_yield": {
+        "left": 4.19,
+        "right": 4.19,
+        "delta": 0.0
+      }
+    },
+    "trends": {
+      "two_year_yield": {
+        "left": 3.49,
+        "right": 3.48,
+        "delta": -0.01
+      },
+      "ten_year_yield": {
+        "left": 4.19,
+        "right": 4.18,
+        "delta": -0.01
+      },
+      "vix": {
+        "left": 15.45,
+        "right": 15.24,
+        "delta": -0.21
+      },
+      "cpi_yoy": {
+        "left": 3.0,
+        "right": 3.0,
+        "delta": 0.0
+      }
+    }
+  },
+  "holdings": {
+    "added": [],
+    "removed": [],
+    "changed": [
+      {
+        "symbol": "AMLP",
+        "change_type": "price_move",
+        "impact_on_income_monthly": 0.0,
+        "fields": {
+          "market_value": {
+            "left": 1376.88,
+            "right": 1376.88,
+            "delta": 0.0
+          },
+          "weight_pct": {
+            "left": 3.012,
+            "right": 3.012,
+            "delta": 0.0
+          },
+          "sortino_1y": {
+            "left": 0.568,
+            "right": 0.466,
+            "delta": -0.102
+          },
+          "sortino_6m": {
+            "left": 0.254,
+            "right": 0.706,
+            "delta": 0.452
+          },
+          "sortino_3m": {
+            "left": 2.036,
+            "right": 5.81,
+            "delta": 3.774
+          },
+          "sortino_1m": {
+            "left": 1.024,
+            "right": 1.782,
+            "delta": 0.758
+          }
+        }
+      },
+      {
+        "symbol": "JEPI",
+        "change_type": "price_move",
+        "impact_on_income_monthly": 0.0,
+        "fields": {
+          "market_value": {
+            "left": 2282.74,
+            "right": 2282.74,
+            "delta": 0.0
+          },
+          "weight_pct": {
+            "left": 4.994,
+            "right": 4.994,
+            "delta": 0.0
+          },
+          "sortino_1y": {
+            "left": 0.797,
+            "right": 0.881,
+            "delta": 0.084
+          },
+          "sortino_6m": {
+            "left": 2.146,
+            "right": 3.027,
+            "delta": 0.881
+          },
+          "sortino_3m": {
+            "left": 2.215,
+            "right": 6.367,
+            "delta": 4.152
+          },
+          "sortino_1m": {
+            "left": 3.94,
+            "right": 11.961,
+            "delta": 8.021
+          }
+        }
+      },
+      {
+        "symbol": "JEPQ",
+        "change_type": "price_move",
+        "impact_on_income_monthly": 0.0,
+        "fields": {
+          "market_value": {
+            "left": 6894.29,
+            "right": 6894.29,
+            "delta": 0.0
+          },
+          "weight_pct": {
+            "left": 15.083,
+            "right": 15.083,
+            "delta": 0.0
+          },
+          "sortino_1y": {
+            "left": 0.967,
+            "right": 1.027,
+            "delta": 0.06
+          },
+          "sortino_6m": {
+            "left": 2.651,
+            "right": 2.968,
+            "delta": 0.317
+          },
+          "sortino_3m": {
+            "left": 1.66,
+            "right": 3.328,
+            "delta": 1.668
+          },
+          "sortino_1m": {
+            "left": 0.471,
+            "right": 2.15,
+            "delta": 1.679
+          }
+        }
+      },
+      {
+        "symbol": "NLY",
+        "change_type": "price_move",
+        "impact_on_income_monthly": 0.0,
+        "fields": {
+          "market_value": {
+            "left": 6749.73,
+            "right": 6749.73,
+            "delta": 0.0
+          },
+          "weight_pct": {
+            "left": 14.766,
+            "right": 14.766,
+            "delta": 0.0
+          },
+          "sortino_1y": {
+            "left": 2.305,
+            "right": 2.327,
+            "delta": 0.022
+          },
+          "sortino_6m": {
+            "left": 5.66,
+            "right": 5.815,
+            "delta": 0.155
+          },
+          "sortino_3m": {
+            "left": 6.148,
+            "right": 8.162,
+            "delta": 2.014
+          },
+          "sortino_1m": {
+            "left": 6.128,
+            "right": 17.006,
+            "delta": 10.878
+          }
+        }
+      },
+      {
+        "symbol": "QYLD",
+        "change_type": "price_move",
+        "impact_on_income_monthly": 0.0,
+        "fields": {
+          "market_value": {
+            "left": 3663.19,
+            "right": 3663.19,
+            "delta": 0.0
+          },
+          "weight_pct": {
+            "left": 8.014,
+            "right": 8.014,
+            "delta": 0.0
+          },
+          "sortino_1y": {
+            "left": 0.619,
+            "right": 0.633,
+            "delta": 0.014
+          },
+          "sortino_6m": {
+            "left": 3.843,
+            "right": 4.224,
+            "delta": 0.381
+          },
+          "sortino_3m": {
+            "left": 3.675,
+            "right": 6.209,
+            "delta": 2.534
+          },
+          "sortino_1m": {
+            "left": 13.672,
+            "right": 20.499,
+            "delta": 6.827
+          }
+        }
+      },
+      {
+        "symbol": "RYLD",
+        "change_type": "price_move",
+        "impact_on_income_monthly": 0.0,
+        "fields": {
+          "market_value": {
+            "left": 912.8,
+            "right": 912.8,
+            "delta": 0.0
+          },
+          "weight_pct": {
+            "left": 1.997,
+            "right": 1.997,
+            "delta": 0.0
+          },
+          "sortino_1y": {
+            "left": 0.559,
+            "right": 0.622,
+            "delta": 0.063
+          },
+          "sortino_6m": {
+            "left": 2.288,
+            "right": 2.614,
+            "delta": 0.326
+          },
+          "sortino_3m": {
+            "left": 2.076,
+            "right": 3.966,
+            "delta": 1.89
+          },
+          "sortino_1m": {
+            "left": 9.155,
+            "right": 14.539,
+            "delta": 5.384
+          }
+        }
+      },
+      {
+        "symbol": "SPYI",
+        "change_type": "price_move",
+        "impact_on_income_monthly": 0.0,
+        "fields": {
+          "market_value": {
+            "left": 5491.91,
+            "right": 5491.91,
+            "delta": 0.0
+          },
+          "weight_pct": {
+            "left": 12.015,
+            "right": 12.015,
+            "delta": 0.0
+          },
+          "sortino_1y": {
+            "left": 1.202,
+            "right": 1.238,
+            "delta": 0.036
+          },
+          "sortino_6m": {
+            "left": 2.771,
+            "right": 3.042,
+            "delta": 0.271
+          },
+          "sortino_3m": {
+            "left": 1.71,
+            "right": 4.059,
+            "delta": 2.349
+          },
+          "sortino_1m": {
+            "left": 2.456,
+            "right": 4.406,
+            "delta": 1.95
+          }
+        }
+      },
+      {
+        "symbol": "SVOL",
+        "change_type": "price_move",
+        "impact_on_income_monthly": 0.0,
+        "fields": {
+          "market_value": {
+            "left": 9204.28,
+            "right": 9204.28,
+            "delta": 0.0
+          },
+          "weight_pct": {
+            "left": 20.136,
+            "right": 20.136,
+            "delta": 0.0
+          },
+          "sortino_1y": {
+            "left": 0.356,
+            "right": 0.416,
+            "delta": 0.06
+          },
+          "sortino_6m": {
+            "left": 0.245,
+            "right": 1.936,
+            "delta": 1.691
+          },
+          "sortino_3m": {
+            "left": 0.783,
+            "right": 3.301,
+            "delta": 2.518
+          },
+          "sortino_1m": {
+            "left": 5.411,
+            "right": 11.032,
+            "delta": 5.621
+          }
+        }
+      },
+      {
+        "symbol": "TRIN",
+        "change_type": "price_move",
+        "impact_on_income_monthly": 0.0,
+        "fields": {
+          "market_value": {
+            "left": 9133.95,
+            "right": 9133.95,
+            "delta": 0.0
+          },
+          "weight_pct": {
+            "left": 19.982,
+            "right": 19.982,
+            "delta": 0.0
+          },
+          "sortino_1y": {
+            "left": 1.218,
+            "right": 1.592,
+            "delta": 0.374
+          },
+          "sortino_6m": {
+            "left": 1.87,
+            "right": 2.463,
+            "delta": 0.593
+          },
+          "sortino_3m": {
+            "left": 0.685,
+            "right": 3.19,
+            "delta": 2.505
+          },
+          "sortino_1m": {
+            "left": 23.902,
+            "right": 26.313,
+            "delta": 2.411
+          }
+        }
+      }
+    ]
+  }
+}

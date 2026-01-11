@@ -116,6 +116,7 @@ def _period_to_daily_like(period_snap: dict):
         "margin_to_portfolio_pct": margin_end.get("margin_to_portfolio_pct") or margin_end.get("ltv_pct"),
     }
 
+    rollups_daily = (interval_daily or {}).get("portfolio_rollups") or {}
     portfolio_rollups = {
         "performance": {
             "twr_1m_pct": twr_windows.get("twr_1m_pct_end"),
@@ -135,7 +136,31 @@ def _period_to_daily_like(period_snap: dict):
             "sortino_sharpe_divergence": risk_end.get("sortino_sharpe_divergence"),
             "calmar_1y": risk_end.get("calmar_1y"),
             "max_drawdown_1y_pct": risk_end.get("max_drawdown_1y_pct"),
+            "information_ratio_1y": risk_end.get("information_ratio_1y"),
+            "tracking_error_1y_pct": risk_end.get("tracking_error_1y_pct"),
+            "ulcer_index_1y": risk_end.get("ulcer_index_1y"),
+            "omega_ratio_1y": risk_end.get("omega_ratio_1y"),
+            "pain_adjusted_return": risk_end.get("pain_adjusted_return"),
+            "income_stability_score": risk_end.get("income_stability_score"),
+            "var_90_1d_pct": risk_end.get("var_90_1d_pct"),
+            "var_95_1d_pct": risk_end.get("var_95_1d_pct"),
+            "var_99_1d_pct": risk_end.get("var_99_1d_pct"),
+            "var_95_1w_pct": risk_end.get("var_95_1w_pct"),
+            "var_95_1m_pct": risk_end.get("var_95_1m_pct"),
+            "cvar_90_1d_pct": risk_end.get("cvar_90_1d_pct"),
+            "cvar_95_1d_pct": risk_end.get("cvar_95_1d_pct"),
+            "cvar_99_1d_pct": risk_end.get("cvar_99_1d_pct"),
+            "cvar_95_1w_pct": risk_end.get("cvar_95_1w_pct"),
+            "cvar_95_1m_pct": risk_end.get("cvar_95_1m_pct"),
         },
+        "income_stability": rollups_daily.get("income_stability"),
+        "income_growth": rollups_daily.get("income_growth"),
+        "tail_risk": rollups_daily.get("tail_risk"),
+        "vs_benchmark": rollups_daily.get("vs_benchmark"),
+        "return_attribution_1m": rollups_daily.get("return_attribution_1m"),
+        "return_attribution_3m": rollups_daily.get("return_attribution_3m"),
+        "return_attribution_6m": rollups_daily.get("return_attribution_6m"),
+        "return_attribution_12m": rollups_daily.get("return_attribution_12m"),
     }
 
     realized_mtd_total = None
@@ -176,6 +201,7 @@ def _period_to_daily_like(period_snap: dict):
         "goal_progress_net": goal_net_end,
         "dividends": dividends,
         "dividends_upcoming": dividends_upcoming,
+        "margin_stress": (interval_daily or {}).get("margin_stress"),
         "coverage": coverage,
         "macro": {"snapshot": macro_end, "trends": macro_avg},
         "holdings": _last_interval_holdings(period_snap),

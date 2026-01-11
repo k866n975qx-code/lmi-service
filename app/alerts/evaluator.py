@@ -15,11 +15,15 @@ from .constants import (
     HY_SPREAD_CRITICAL,
     INCOME_BUNCHING_WEEK_PCT,
     INCOME_CONCENTRATION_WARNING,
+    INCOME_STABILITY_MIN,
     INCOME_MISS_CRITICAL,
     INCOME_MISS_DAY_THRESHOLD,
     INCOME_SINGLE_SOURCE_WARNING,
+    INCOME_VOLATILITY_30D_WARN,
     MARGIN_COVERAGE_MIN,
     MARGIN_INTEREST_INCOME_WARN_PCT,
+    MARGIN_BUFFER_WARNING,
+    MARGIN_BUFFER_CRITICAL,
     MARGIN_LTV_CRITICAL,
     MARGIN_LTV_RED,
     MARGIN_LTV_YELLOW,
@@ -35,6 +39,9 @@ from .constants import (
     POSITION_LOSS_CRITICAL,
     POSITION_LOSS_SEVERE,
     SINGLE_POSITION_MAX,
+    TAIL_RISK_CVAR_1D_CRITICAL,
+    TAIL_RISK_CVAR_1W_CRITICAL,
+    TAIL_RISK_INCOME_RATIO,
     TREASURY_SPIKE,
     VOL_EXPANSION_RATIO,
     VIX_CRITICAL,
@@ -396,6 +403,29 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
             body += f"<br/>Action: Repay {_fmt_money(repay)} to reach target."
         alerts.append(_mk("margin", as_of, 10, title, body))
 
+    # 2b) Margin stress buffer
+    margin_call = (margin_stress.get("stress_scenarios") or {}).get("margin_call_distance") or {}
+    decline_pct = margin_call.get("portfolio_decline_to_call_pct")
+    if isinstance(decline_pct, (int, float)):
+        buffer_pct = abs(decline_pct)
+        if buffer_pct < MARGIN_BUFFER_CRITICAL:
+            title = "Margin Buffer Critical"
+            body = f"🔴 <b>Margin Buffer</b><br/>Decline to call: {_fmt_pct(decline_pct,1)}."
+            alerts.append(_mk("margin", as_of, 9, title, body))
+        elif buffer_pct < MARGIN_BUFFER_WARNING:
+            title = "Margin Buffer Low"
+            body = f"⚠️ <b>Margin Buffer</b><br/>Decline to call: {_fmt_pct(decline_pct,1)}."
+            alerts.append(_mk("margin", as_of, 6, title, body))
+
+    shock = (margin_stress.get("stress_scenarios") or {}).get("interest_rate_shock") or {}
+    for key, data in shock.items():
+        coverage = data.get("income_coverage_ratio")
+        if isinstance(coverage, (int, float)) and coverage < MARGIN_COVERAGE_MIN:
+            title = "Margin Interest Coverage Risk"
+            body = f"⚠️ <b>Rate Shock</b><br/>{key} coverage: {coverage:.2f}x."
+            alerts.append(_mk("margin", as_of, 6, title, body))
+            break
+
     # 3) Position blow-up
     for pos in holdings:
         sym = pos.get("symbol") or ""
@@ -525,6 +555,28 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
             body += f"<br/>Largest single source: {max_single_pct:.1f}%."
         alerts.append(_mk("income", as_of, 6, title, body))
 
+    # 7b) Income stability signals
+    stability_score = income_stability.get("stability_score")
+    trend_6m = income_stability.get("income_trend_6m")
+    income_vol = income_stability.get("income_volatility_30d_pct")
+    cuts_12m = income_stability.get("dividend_cut_count_12m")
+    if isinstance(stability_score, (int, float)) and stability_score < INCOME_STABILITY_MIN:
+        title = "Income Stability Declining"
+        body = f"⚠️ <b>Income Stability</b><br/>Score: {stability_score:.2f} (below {INCOME_STABILITY_MIN:.2f})."
+        alerts.append(_mk("income", as_of, 6, title, body))
+    if trend_6m == "declining":
+        title = "Income Trend Declining"
+        body = "📉 <b>Income Trend</b><br/>6m trend: declining."
+        alerts.append(_mk("income", as_of, 6, title, body))
+    if isinstance(income_vol, (int, float)) and income_vol > INCOME_VOLATILITY_30D_WARN:
+        title = "Income Volatility Elevated"
+        body = f"⚠️ <b>Income Volatility</b><br/>30d volatility: {income_vol:.1f}%."
+        alerts.append(_mk("income", as_of, 6, title, body))
+    if isinstance(cuts_12m, int) and cuts_12m > 0:
+        title = "Portfolio Dividend Cuts"
+        body = f"🔴 <b>Dividend Cuts</b><br/>{cuts_12m} cut(s) detected in last 12 months."
+        alerts.append(_mk("income", as_of, 8, title, body))
+
     # 8) Volatility regime change (portfolio)
     vol30 = risk.get("vol_30d_pct")
     vol90 = risk.get("vol_90d_pct")
@@ -594,6 +646,28 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
             if isinstance(max_dd, (int, float)):
                 body += f"<br/>Max DD: {_fmt_pct(max_dd,1)}."
             alerts.append(_mk("position", as_of, 8, title, body))
+
+    # 8c) Tail risk signals
+    cvar_1d = tail_risk.get("cvar_95_1d_pct")
+    cvar_1w = tail_risk.get("cvar_95_1w_pct")
+    cvar_ratio = tail_risk.get("cvar_to_income_ratio")
+    tail_category = tail_risk.get("tail_risk_category")
+    if isinstance(cvar_1d, (int, float)) and cvar_1d < TAIL_RISK_CVAR_1D_CRITICAL:
+        title = "High Tail Risk (1d)"
+        body = f"⚠️ <b>Tail Risk</b><br/>CVaR 1d: {_fmt_pct(cvar_1d,1)}."
+        alerts.append(_mk("risk", as_of, 6, title, body))
+    if isinstance(cvar_1w, (int, float)) and cvar_1w < TAIL_RISK_CVAR_1W_CRITICAL:
+        title = "High Tail Risk (1w)"
+        body = f"⚠️ <b>Tail Risk</b><br/>CVaR 1w: {_fmt_pct(cvar_1w,1)}."
+        alerts.append(_mk("risk", as_of, 7, title, body))
+    if isinstance(cvar_ratio, (int, float)) and cvar_ratio > TAIL_RISK_INCOME_RATIO:
+        title = "Tail Risk vs Income"
+        body = f"🔴 <b>Tail Risk</b><br/>Loss risk: {cvar_ratio:.1f} months of income."
+        alerts.append(_mk("risk", as_of, 8, title, body))
+    if tail_category == "severe":
+        title = "Severe Tail Risk"
+        body = "🔴 <b>Tail Risk</b><br/>Category: severe."
+        alerts.append(_mk("risk", as_of, 8, title, body))
 
     # 9) Yield compression
     current_yield = income.get("portfolio_current_yield_pct")
@@ -750,10 +824,13 @@ def build_daily_report_html(conn: sqlite3.Connection):
     rollups = snap.get("portfolio_rollups") or {}
     performance = rollups.get("performance") or {}
     risk = rollups.get("risk") or {}
+    income_stability = rollups.get("income_stability") or {}
+    tail_risk = rollups.get("tail_risk") or {}
     goal = snap.get("goal_progress") or {}
     goal_net = snap.get("goal_progress_net") or {}
     macro = (snap.get("macro") or {}).get("snapshot") or {}
     margin_guidance = snap.get("margin_guidance") or {}
+    margin_stress = snap.get("margin_stress") or {}
     holdings = snap.get("holdings") or []
 
     try:
@@ -847,6 +924,16 @@ def build_daily_report_html(conn: sqlite3.Connection):
     if profile_label:
         parts.append(f"• Volatility Profile: {profile_label}")
     parts.append(f"• Max DD: {_fmt_pct(risk.get('max_drawdown_1y_pct'),2)} | DD Days: {risk.get('drawdown_duration_1y_days', '—')}")
+    stability_score = (rollups.get("income_stability") or {}).get("stability_score")
+    stability_trend = (rollups.get("income_stability") or {}).get("income_trend_6m")
+    if isinstance(stability_score, (int, float)):
+        trend_text = stability_trend or "—"
+        parts.append(f"• Income Stability: {_fmt_ratio(stability_score,2)} | Trend: {trend_text}")
+    tail = rollups.get("tail_risk") or {}
+    cvar_1d = tail.get("cvar_95_1d_pct")
+    tail_cat = tail.get("tail_risk_category")
+    if isinstance(cvar_1d, (int, float)) or tail_cat:
+        parts.append(f"• CVaR 1d: {_fmt_pct(cvar_1d,1)} | Tail Risk: {tail_cat or '—'}")
 
     sortino_rows = []
     for h in holdings:

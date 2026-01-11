@@ -7,6 +7,7 @@ import uuid
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
+import numpy as np
 import pandas as pd
 
 from ..config import settings
@@ -16,6 +17,7 @@ from .validation import validate_period_snapshot
 from . import metrics
 
 TRADE_TYPES = {"buy", "buy_shares", "reinvest", "reinvestment", "sell", "sell_shares", "redemption"}
+DIVIDEND_CUT_THRESHOLD = 0.10
 
 
 def _last_valid_price(df):
@@ -148,6 +150,19 @@ def _frequency_from_ex_dates(ex_dates):
     if median_gap < 190:
         return "semiannual"
     return "annual"
+
+
+def _frequency_from_dates(dates: list[date]) -> str | None:
+    if not dates:
+        return None
+    dates = sorted(dates)
+    return _frequency_from_ex_dates(dates)
+
+
+def _gap_days(dates: list[date]) -> list[int]:
+    if len(dates) < 2:
+        return []
+    return [max(1, (b - a).days) for a, b in zip(dates[:-1], dates[1:]) if b > a]
 
 
 def _next_ex_date_est(ex_dates):
@@ -303,6 +318,101 @@ def _median_amount(events: list[dict]) -> float | None:
     if not amounts:
         return None
     return float(statistics.median(amounts))
+
+
+def _dividend_reliability_metrics(
+    symbol: str,
+    div_tx: list[dict],
+    provider_divs: dict,
+    pay_history: dict,
+    expected_frequency: str | None,
+    as_of_date: date,
+) -> dict:
+    totals_12 = _monthly_income_totals(div_tx, as_of_date, 12, symbol=symbol)
+    totals_6 = totals_12[-6:] if len(totals_12) >= 6 else totals_12
+
+    mean_12 = statistics.mean(totals_12) if totals_12 else 0.0
+    cv_12 = None
+    consistency_score = 0.0
+    if mean_12 > 0:
+        cv_12 = statistics.pstdev(totals_12) / mean_12
+        consistency_score = max(0.0, 1.0 - (cv_12 / 0.5))
+
+    trend_6m = _trend_label(totals_6)
+    growth_6m = None
+    if len(totals_6) >= 2:
+        growth_6m = _annualized_growth_rate(totals_6[0], totals_6[-1], len(totals_6) - 1)
+
+    mean_6 = statistics.mean(totals_6) if totals_6 else 0.0
+    vol_6m = None
+    if mean_6 > 0:
+        vol_6m = (statistics.pstdev(totals_6) / mean_6) * 100.0
+
+    pay_events = pay_history.get(symbol, [])
+    pay_dates = [ev.get("date") for ev in pay_events if ev.get("date") and ev.get("date") >= as_of_date - timedelta(days=365)]
+    pay_dates = [d for d in pay_dates if d]
+    pay_dates.sort()
+    payment_frequency_actual = _frequency_from_dates(pay_dates)
+    payment_frequency_expected = expected_frequency or payment_frequency_actual
+
+    expected_count = _payouts_per_year(payment_frequency_expected)
+    actual_count = len(pay_dates)
+    missed_payments = None
+    if expected_count is not None:
+        missed_payments = max(expected_count - actual_count, 0)
+
+    gap_days = _gap_days(pay_dates)
+    avg_gap = round(statistics.mean(gap_days), 1) if gap_days else None
+    timing_consistency = None
+    if gap_days:
+        mean_gap = statistics.mean(gap_days)
+        if mean_gap > 0:
+            timing_consistency = max(0.0, min(1.0, 1.0 - (statistics.pstdev(gap_days) / mean_gap)))
+
+    events = []
+    for ev in provider_divs.get(symbol, []):
+        ex_date = ev.get("ex_date")
+        amt = ev.get("amount")
+        if ex_date and isinstance(amt, (int, float)) and ex_date >= as_of_date - timedelta(days=365):
+            events.append((ex_date, float(amt)))
+    events.sort(key=lambda item: item[0])
+    if not events and pay_events:
+        for ev in pay_events:
+            dt = ev.get("date")
+            amt = ev.get("amount")
+            if dt and isinstance(amt, (int, float)) and dt >= as_of_date - timedelta(days=365):
+                events.append((dt, float(amt)))
+        events.sort(key=lambda item: item[0])
+
+    cuts = 0
+    last_increase = None
+    last_decrease = None
+    for prev, curr in zip(events[:-1], events[1:]):
+        prev_amt = prev[1]
+        curr_amt = curr[1]
+        if prev_amt <= 0:
+            continue
+        change = (curr_amt - prev_amt) / prev_amt
+        if change <= -DIVIDEND_CUT_THRESHOLD:
+            cuts += 1
+            last_decrease = curr[0]
+        elif change >= DIVIDEND_CUT_THRESHOLD:
+            last_increase = curr[0]
+
+    return {
+        "consistency_score": round(consistency_score, 3),
+        "payment_frequency_actual": payment_frequency_actual,
+        "payment_frequency_expected": payment_frequency_expected,
+        "missed_payments_12m": missed_payments,
+        "dividend_cuts_12m": cuts,
+        "dividend_trend_6m": trend_6m,
+        "dividend_growth_rate_6m_pct": _round_pct(growth_6m * 100 if growth_6m is not None else None),
+        "dividend_volatility_6m_pct": _round_pct(vol_6m),
+        "avg_days_between_payments": avg_gap,
+        "payment_timing_consistency": round(timing_consistency, 3) if timing_consistency is not None else None,
+        "last_increase_date": last_increase.isoformat() if last_increase else None,
+        "last_decrease_date": last_decrease.isoformat() if last_decrease else None,
+    }
 
 
 def _load_provider_dividends(conn: sqlite3.Connection):
@@ -506,6 +616,31 @@ def _load_account_balances(conn: sqlite3.Connection):
     return list(latest.values())
 
 
+def _load_daily_snapshots_range(conn: sqlite3.Connection, start_date: date, end_date: date) -> list[tuple[date, dict]]:
+    cur = conn.cursor()
+    rows = cur.execute(
+        """
+        SELECT as_of_date_local, payload_json
+        FROM snapshot_daily_current
+        WHERE as_of_date_local BETWEEN ? AND ?
+        ORDER BY as_of_date_local ASC
+        """,
+        (start_date.isoformat(), end_date.isoformat()),
+    ).fetchall()
+    out = []
+    for as_of_str, payload in rows:
+        try:
+            snap = json.loads(payload)
+        except Exception:
+            continue
+        try:
+            dt = date.fromisoformat(as_of_str)
+        except Exception:
+            continue
+        out.append((dt, snap))
+    return out
+
+
 def _is_margin_account(name: str | None, type_val: str | None, subtype: str | None):
     text = " ".join([name or "", type_val or "", subtype or ""]).lower()
     if "borrow" in text or "margin" in text or "loan" in text:
@@ -547,25 +682,514 @@ def _month_keys(end_date: date, window_months: int) -> list[tuple[int, int]]:
     return keys
 
 
-def _income_stability_score(div_tx: list[dict], as_of_date: date, window_months: int = 6) -> float:
+def _monthly_income_totals(div_tx: list[dict], as_of_date: date, window_months: int, symbol: str | None = None) -> list[float]:
     totals_by_month: dict[tuple[int, int], float] = defaultdict(float)
     for tx in div_tx:
         dt = tx.get("date")
         if dt is None or dt > as_of_date:
             continue
+        if symbol and tx.get("symbol") != symbol:
+            continue
         totals_by_month[(dt.year, dt.month)] += float(tx.get("amount") or 0.0)
-
     months = _month_keys(as_of_date, window_months)
-    totals = [totals_by_month.get(key, 0.0) for key in months]
-    if not totals:
-        return 0.0
-    mean = sum(totals) / len(totals)
+    return [totals_by_month.get(key, 0.0) for key in months]
+
+
+def _annualized_growth_rate(start: float, end: float, periods: int) -> float | None:
+    if start <= 0 or end <= 0 or periods <= 0:
+        return None
+    return (end / start) ** (12.0 / periods) - 1.0
+
+
+def _trend_label(values: list[float], threshold_pct: float = 0.02) -> str | None:
+    if not values or len(values) < 2:
+        return None
+    mean_val = statistics.mean(values)
+    if mean_val <= 0:
+        return "stable"
+    slope = np.polyfit(range(len(values)), values, 1)[0]
+    threshold = abs(mean_val) * threshold_pct
+    if slope > threshold:
+        return "growing"
+    if slope < -threshold:
+        return "declining"
+    return "stable"
+
+
+def _count_dividend_cuts_from_totals(totals: list[float], threshold: float = DIVIDEND_CUT_THRESHOLD) -> int:
+    cuts = 0
+    for prev, curr in zip(totals[:-1], totals[1:]):
+        if prev > 0 and curr < prev * (1.0 - threshold):
+            cuts += 1
+    return cuts
+
+
+def _income_volatility_30d_pct(div_tx: list[dict], as_of_date: date) -> float | None:
+    start = as_of_date - timedelta(days=29)
+    by_date: dict[date, float] = defaultdict(float)
+    for tx in div_tx:
+        dt = tx.get("date")
+        if dt is None or dt < start or dt > as_of_date:
+            continue
+        by_date[dt] += float(tx.get("amount") or 0.0)
+    totals = []
+    for i in range(30):
+        day = start + timedelta(days=i)
+        totals.append(by_date.get(day, 0.0))
+    mean = statistics.mean(totals) if totals else 0.0
     if mean <= 0:
-        return 0.0
+        return None
     stdev = statistics.pstdev(totals)
-    cv = stdev / mean if mean else 0.0
-    score = max(0.0, 100.0 - min(100.0, cv * 100.0))
-    return round(score, 2)
+    return round((stdev / mean) * 100.0, 3)
+
+
+def _income_stability_metrics(div_tx: list[dict], as_of_date: date, window_months: int = 12) -> dict:
+    totals_12 = _monthly_income_totals(div_tx, as_of_date, window_months)
+    if not totals_12:
+        return {
+            "stability_score": 0.0,
+            "coefficient_of_variation": None,
+            "income_trend_6m": None,
+            "income_growth_rate_6m_pct": None,
+            "income_growth_rate_12m_pct": None,
+            "income_volatility_30d_pct": None,
+            "consecutive_months_positive": 0,
+            "income_drawdown_max_pct": None,
+            "dividend_cut_count_12m": 0,
+            "missed_payment_count_12m": 0,
+        }
+
+    mean_12 = statistics.mean(totals_12)
+    cv = None
+    consistency_score = 0.0
+    if mean_12 > 0:
+        stdev_12 = statistics.pstdev(totals_12)
+        cv = stdev_12 / mean_12 if mean_12 else None
+        if cv is not None:
+            consistency_score = max(0.0, 1.0 - (cv / 0.5))
+
+    totals_6 = totals_12[-6:] if len(totals_12) >= 6 else totals_12
+    trend_6m = _trend_label(totals_6)
+    trend_bonus = 0.1 if trend_6m == "growing" else 0.0
+
+    cuts = _count_dividend_cuts_from_totals(totals_12)
+    missed = sum(1 for val in totals_12 if val <= 0)
+
+    score = min(1.0, max(0.0, consistency_score + trend_bonus - (cuts * 0.15) - (missed * 0.2)))
+
+    growth_6m = None
+    if len(totals_6) >= 2:
+        growth_6m = _annualized_growth_rate(totals_6[0], totals_6[-1], len(totals_6) - 1)
+    growth_12m = None
+    if len(totals_12) >= 2:
+        growth_12m = _annualized_growth_rate(totals_12[0], totals_12[-1], len(totals_12) - 1)
+
+    drawdown_max = None
+    for prev, curr in zip(totals_12[:-1], totals_12[1:]):
+        if prev > 0:
+            change = (curr / prev) - 1.0
+            if drawdown_max is None or change < drawdown_max:
+                drawdown_max = change
+
+    consecutive_positive = 0
+    for val in reversed(totals_12):
+        if val > 0:
+            consecutive_positive += 1
+        else:
+            break
+
+    return {
+        "stability_score": round(score, 3),
+        "coefficient_of_variation": round(cv, 3) if cv is not None else None,
+        "income_trend_6m": trend_6m,
+        "income_growth_rate_6m_pct": _round_pct(growth_6m * 100 if growth_6m is not None else None),
+        "income_growth_rate_12m_pct": _round_pct(growth_12m * 100 if growth_12m is not None else None),
+        "income_volatility_30d_pct": _round_pct(_income_volatility_30d_pct(div_tx, as_of_date)),
+        "consecutive_months_positive": consecutive_positive,
+        "income_drawdown_max_pct": _round_pct(drawdown_max * 100 if drawdown_max is not None else None),
+        "dividend_cut_count_12m": cuts,
+        "missed_payment_count_12m": missed,
+    }
+
+
+def _income_stability_score(div_tx: list[dict], as_of_date: date, window_months: int = 6) -> float:
+    metrics = _income_stability_metrics(div_tx, as_of_date, window_months=max(window_months, 6))
+    return float(metrics.get("stability_score") or 0.0)
+
+
+def _income_growth_metrics(div_tx: list[dict], as_of_date: date) -> dict:
+    totals_24 = _monthly_income_totals(div_tx, as_of_date, 24)
+    totals_12 = totals_24[-12:] if len(totals_24) >= 12 else totals_24
+    totals_6 = totals_12[-6:] if len(totals_12) >= 6 else totals_12
+
+    mom_abs = None
+    mom_pct = None
+    if len(totals_12) >= 2:
+        prev = totals_12[-2]
+        curr = totals_12[-1]
+        mom_abs = curr - prev
+        if prev > 0:
+            mom_pct = (curr / prev - 1.0) * 100.0
+
+    qoq_pct = None
+    if len(totals_12) >= 6:
+        last_q = sum(totals_12[-3:])
+        prev_q = sum(totals_12[-6:-3])
+        if prev_q > 0:
+            qoq_pct = (last_q / prev_q - 1.0) * 100.0
+
+    yoy_pct = None
+    if len(totals_24) >= 24:
+        last_12 = sum(totals_24[-12:])
+        prev_12 = sum(totals_24[-24:-12])
+        if prev_12 > 0:
+            yoy_pct = (last_12 / prev_12 - 1.0) * 100.0
+
+    cagr_6m = None
+    if len(totals_6) >= 2:
+        cagr_6m = _annualized_growth_rate(totals_6[0], totals_6[-1], len(totals_6) - 1)
+
+    trend_12m = None
+    if len(totals_12) >= 12:
+        first_half = totals_12[:6]
+        second_half = totals_12[6:]
+        mean_val = statistics.mean(totals_12) if totals_12 else 0.0
+        if mean_val > 0:
+            slope_1 = np.polyfit(range(len(first_half)), first_half, 1)[0]
+            slope_2 = np.polyfit(range(len(second_half)), second_half, 1)[0]
+            delta = slope_2 - slope_1
+            threshold = abs(mean_val) * 0.01
+            if delta > threshold:
+                trend_12m = "accelerating"
+            elif delta < -threshold:
+                trend_12m = "decelerating"
+            else:
+                trend_12m = "stable"
+        else:
+            trend_12m = "stable"
+
+    return {
+        "mom_pct": _round_pct(mom_pct),
+        "mom_absolute": _round_money(mom_abs),
+        "qoq_pct": _round_pct(qoq_pct),
+        "yoy_pct": _round_pct(yoy_pct),
+        "cagr_6m_pct": _round_pct(cagr_6m * 100 if cagr_6m is not None else None),
+        "trend_12m": trend_12m,
+    }
+
+
+def _tail_risk_category(cvar_1d_pct: float | None) -> str | None:
+    if cvar_1d_pct is None:
+        return None
+    if cvar_1d_pct > -2.0:
+        return "low"
+    if cvar_1d_pct > -4.0:
+        return "moderate"
+    if cvar_1d_pct > -6.0:
+        return "high"
+    return "severe"
+
+
+def _ulcer_index_category(val: float | None) -> str | None:
+    if val is None:
+        return None
+    if val < 5.0:
+        return "low"
+    if val < 10.0:
+        return "moderate"
+    return "high"
+
+
+def _drawdown_analysis(values: pd.Series) -> tuple[dict | None, dict | None]:
+    if values is None or values.empty:
+        return None, None
+    v = values.dropna()
+    if v.empty:
+        return None, None
+    if not isinstance(v.index, pd.DatetimeIndex):
+        v = v.copy()
+        v.index = pd.to_datetime(v.index)
+    v = v.sort_index()
+
+    peak_val = v.iloc[0]
+    peak_date = v.index[0]
+    trough_val = peak_val
+    trough_date = peak_date
+    in_drawdown = False
+    episodes = []
+
+    for dt, val in v.items():
+        if val >= peak_val:
+            if in_drawdown:
+                recovery_date = dt
+                depth_pct = (trough_val / peak_val - 1.0) * 100.0
+                recovery_days = (recovery_date - trough_date).days
+                duration_days = (recovery_date - peak_date).days
+                episodes.append(
+                    {
+                        "depth_pct": depth_pct,
+                        "recovery_days": recovery_days,
+                        "duration_days": duration_days,
+                        "peak_date": peak_date,
+                        "trough_date": trough_date,
+                        "recovery_date": recovery_date,
+                    }
+                )
+                in_drawdown = False
+            peak_val = val
+            peak_date = dt
+            trough_val = val
+            trough_date = dt
+        else:
+            in_drawdown = True
+            if val < trough_val:
+                trough_val = val
+                trough_date = dt
+
+    current_val = v.iloc[-1]
+    current_date = v.index[-1]
+    peak_series = v.cummax()
+    current_peak = peak_series.iloc[-1]
+    peak_candidates = v[v == current_peak]
+    current_peak_date = peak_candidates.index[-1] if not peak_candidates.empty else v.index[-1]
+
+    if current_val < current_peak:
+        current_drawdown_pct = (current_val / current_peak - 1.0) * 100.0
+        days_since_peak = (current_date - current_peak_date).days
+        values_since_peak = v.loc[current_peak_date:]
+        trough_since_peak = values_since_peak.min()
+        recovery_progress = None
+        if trough_since_peak < current_peak:
+            if current_val > trough_since_peak:
+                recovery_progress = (current_val - trough_since_peak) / (current_peak - trough_since_peak) * 100.0
+            else:
+                recovery_progress = 0.0
+        drawdown_status = {
+            "currently_in_drawdown": True,
+            "current_drawdown_depth_pct": _round_pct(current_drawdown_pct),
+            "current_drawdown_duration_days": days_since_peak,
+            "days_since_peak": days_since_peak,
+            "peak_value": _round_money(current_peak),
+            "peak_date": current_peak_date.date().isoformat(),
+            "recovery_progress_pct": _round_pct(recovery_progress),
+        }
+    else:
+        drawdown_status = {
+            "currently_in_drawdown": False,
+            "current_drawdown_depth_pct": 0.0,
+            "current_drawdown_duration_days": 0,
+            "days_since_peak": 0,
+            "peak_value": _round_money(current_val),
+            "peak_date": current_date.date().isoformat(),
+            "recovery_progress_pct": 100.0,
+        }
+
+    total_drawdowns = len(episodes) + (1 if drawdown_status.get("currently_in_drawdown") else 0)
+    recovered = len(episodes)
+    recovery_days_list = [ep["recovery_days"] for ep in episodes if ep["recovery_days"] > 0]
+    speed_list = []
+    for ep in episodes:
+        if ep["recovery_days"] > 0:
+            speed_list.append(abs(ep["depth_pct"]) / ep["recovery_days"])
+
+    recovery_metrics = {
+        "avg_recovery_time_days": round(sum(recovery_days_list) / len(recovery_days_list), 1) if recovery_days_list else None,
+        "fastest_recovery_days": min(recovery_days_list) if recovery_days_list else None,
+        "slowest_recovery_days": max(recovery_days_list) if recovery_days_list else None,
+        "recovery_success_rate_pct": round((recovered / total_drawdowns) * 100.0, 1) if total_drawdowns else None,
+        "median_recovery_speed_pct_per_day": round(statistics.median(speed_list), 2) if speed_list else None,
+    }
+
+    if drawdown_status.get("currently_in_drawdown"):
+        speed = recovery_metrics.get("median_recovery_speed_pct_per_day")
+        remaining_pct = abs(drawdown_status.get("current_drawdown_depth_pct") or 0.0)
+        if speed and speed > 0:
+            recovery_metrics["estimated_days_to_recovery"] = int(math.ceil(remaining_pct / speed))
+        else:
+            recovery_metrics["estimated_days_to_recovery"] = None
+    else:
+        recovery_metrics["estimated_days_to_recovery"] = 0
+
+    return drawdown_status, recovery_metrics
+
+
+def _window_slice(series: pd.Series, end_dt: pd.Timestamp, window_days: int) -> pd.Series | None:
+    if series is None or series.empty:
+        return None
+    if not isinstance(series.index, pd.DatetimeIndex):
+        series = series.copy()
+        series.index = pd.to_datetime(series.index)
+    series = series.sort_index()
+    start_dt = end_dt - pd.Timedelta(days=window_days)
+    window = series.loc[series.index >= start_dt]
+    return window if not window.empty else None
+
+
+def _sum_dividends(div_tx: list[dict], symbol: str, start_date: date, end_date: date) -> float:
+    total = 0.0
+    for tx in div_tx:
+        if tx.get("symbol") != symbol:
+            continue
+        dt = tx.get("date")
+        if dt is None or dt < start_date or dt > end_date:
+            continue
+        total += float(tx.get("amount") or 0.0)
+    return total
+
+
+def _return_attribution(
+    holdings: dict,
+    price_series: dict,
+    div_tx: list[dict],
+    end_dt: pd.Timestamp,
+    window_days: int,
+) -> tuple[dict, dict]:
+    portfolio_series = _portfolio_value_series(holdings, price_series)
+    window_portfolio = _window_slice(portfolio_series, end_dt, window_days)
+    if window_portfolio is None or window_portfolio.empty:
+        return {}, {}
+
+    start_val = float(window_portfolio.iloc[0])
+    end_val = float(window_portfolio.iloc[-1])
+    start_date = window_portfolio.index[0].date()
+    end_date = window_portfolio.index[-1].date()
+
+    per_symbol = {}
+    income_total = 0.0
+    price_total = 0.0
+
+    for sym, h in holdings.items():
+        series = price_series.get(sym)
+        window = _window_slice(series, end_dt, window_days) if series is not None else None
+        if window is None or window.empty:
+            continue
+        shares = float(h.get("shares") or 0.0)
+        if shares == 0:
+            continue
+        start_price = float(window.iloc[0])
+        end_price = float(window.iloc[-1])
+        position_start_value = start_price * shares
+        price_return_dollars = (end_price - start_price) * shares
+        income_dollars = _sum_dividends(div_tx, sym, start_date, end_date)
+        total_return_dollars = price_return_dollars + income_dollars
+
+        weight_pct = (position_start_value / start_val * 100.0) if start_val else None
+        contribution_pct = (total_return_dollars / start_val * 100.0) if start_val else None
+        income_contribution_pct = (income_dollars / start_val * 100.0) if start_val else None
+        price_contribution_pct = (price_return_dollars / start_val * 100.0) if start_val else None
+
+        roi_on_cost = None
+        if h.get("cost_basis"):
+            roi_on_cost = (total_return_dollars / float(h["cost_basis"])) * 100.0
+        roi_annualized = None
+        if roi_on_cost is not None:
+            base = 1.0 + (roi_on_cost / 100.0)
+            if base > 0:
+                roi_annualized = (base ** (365.0 / window_days) - 1.0) * 100.0
+
+        per_symbol[sym] = {
+            "return_contribution_pct": _round_pct(contribution_pct),
+            "return_contribution_dollars": _round_money(total_return_dollars),
+            "income_contribution": {"pct": _round_pct(income_contribution_pct), "dollars": _round_money(income_dollars)},
+            "price_contribution": {"pct": _round_pct(price_contribution_pct), "dollars": _round_money(price_return_dollars)},
+            "roi_on_cost_pct": _round_pct(roi_on_cost),
+            "roi_annualized_pct": _round_pct(roi_annualized),
+            "position_weight_pct": _round_pct(weight_pct),
+        }
+
+        income_total += income_dollars
+        price_total += price_return_dollars
+
+    total_return_dollars = price_total + income_total
+    total_return_pct = (total_return_dollars / start_val * 100.0) if start_val else None
+    income_pct = (income_total / start_val * 100.0) if start_val else None
+    price_pct = (price_total / start_val * 100.0) if start_val else None
+
+    summary = {
+        "total_return_pct": _round_pct(total_return_pct),
+        "total_return_dollars": _round_money(total_return_dollars),
+        "income_contribution_pct": _round_pct(income_pct),
+        "income_contribution_dollars": _round_money(income_total),
+        "price_contribution_pct": _round_pct(price_pct),
+        "price_contribution_dollars": _round_money(price_total),
+        "window": {"start": start_date.isoformat(), "end": end_date.isoformat(), "days": window_days},
+    }
+
+    return summary, per_symbol
+
+
+def _return_attribution_all_periods(
+    holdings: dict,
+    price_series: dict,
+    div_tx: list[dict],
+    end_dt: pd.Timestamp,
+) -> tuple[dict, dict]:
+    periods = {"1m": 30, "3m": 90, "6m": 180, "12m": 365}
+    portfolio_rollups = {}
+    per_symbol = defaultdict(dict)
+
+    for label, days in periods.items():
+        summary, per_symbol_metrics = _return_attribution(holdings, price_series, div_tx, end_dt, days)
+        if not summary:
+            continue
+
+        ranked = sorted(
+            per_symbol_metrics.items(),
+            key=lambda item: (item[1].get("return_contribution_pct") or 0.0),
+            reverse=True,
+        )
+        for idx, (sym, metrics_out) in enumerate(ranked, start=1):
+            metrics_out["rank_this_period"] = idx
+
+        prev_end_dt = end_dt - pd.Timedelta(days=days)
+        _prev_summary, prev_metrics = _return_attribution(holdings, price_series, div_tx, prev_end_dt, days)
+        prev_ranked = sorted(
+            prev_metrics.items(),
+            key=lambda item: (item[1].get("return_contribution_pct") or 0.0),
+            reverse=True,
+        )
+        prev_ranks = {sym: idx for idx, (sym, _metrics) in enumerate(prev_ranked, start=1)}
+
+        top = []
+        bottom = []
+        for sym, metrics_out in ranked[:3]:
+            top.append(
+                {
+                    "symbol": sym,
+                    "contribution_pct": metrics_out.get("return_contribution_pct"),
+                    "contribution_dollars": metrics_out.get("return_contribution_dollars"),
+                    "contribution_breakdown": {
+                        "income": (metrics_out.get("income_contribution") or {}).get("pct"),
+                        "price": (metrics_out.get("price_contribution") or {}).get("pct"),
+                    },
+                }
+            )
+        bottom_ranked = sorted(
+            per_symbol_metrics.items(),
+            key=lambda item: (item[1].get("return_contribution_pct") or 0.0),
+        )
+        for sym, metrics_out in bottom_ranked[:3]:
+            bottom.append(
+                {
+                    "symbol": sym,
+                    "contribution_pct": metrics_out.get("return_contribution_pct"),
+                    "contribution_dollars": metrics_out.get("return_contribution_dollars"),
+                    "contribution_breakdown": {
+                        "income": (metrics_out.get("income_contribution") or {}).get("pct"),
+                        "price": (metrics_out.get("price_contribution") or {}).get("pct"),
+                    },
+                }
+            )
+
+        summary["top_contributors"] = top
+        summary["bottom_contributors"] = bottom
+        portfolio_rollups[f"return_attribution_{label}"] = summary
+
+        for sym, metrics_out in per_symbol_metrics.items():
+            metrics_out["rank_last_period"] = prev_ranks.get(sym)
+            per_symbol[sym][label] = metrics_out
+
+    return portfolio_rollups, per_symbol
 
 
 def _symbol_metrics(series, benchmark_series):
@@ -575,7 +1199,9 @@ def _symbol_metrics(series, benchmark_series):
     benchmark_returns = metrics.time_weighted_returns(benchmark_series) if benchmark_series is not None else None
     beta, corr = metrics.beta_and_corr(returns, benchmark_returns, window_days=365)
     max_dd, dd_dur = metrics.max_drawdown(series, window_days=365)
+    var_90, cvar_90 = metrics.var_cvar(returns, alpha=0.10, window_days=365)
     var_95, cvar_95 = metrics.var_cvar(returns, alpha=0.05, window_days=365)
+    var_99, cvar_99 = metrics.var_cvar(returns, alpha=0.01, window_days=365)
     vol_30d = metrics.annualized_volatility(returns, window_days=30)
     vol_90d = metrics.annualized_volatility(returns, window_days=90)
     downside = metrics.downside_deviation(returns, window_days=365)
@@ -608,8 +1234,16 @@ def _symbol_metrics(series, benchmark_series):
         "risk_quality_category": risk_quality_category,
         "volatility_profile": volatility_profile,
         "drawdown_duration_1y_days": dd_dur,
+        "var_90_1d_pct": _round_pct(var_90 * 100 if var_90 is not None else None),
         "var_95_1d_pct": _round_pct(var_95 * 100 if var_95 is not None else None),
+        "var_99_1d_pct": _round_pct(var_99 * 100 if var_99 is not None else None),
+        "var_95_1w_pct": _round_pct(metrics.scale_by_time(var_95, 5) * 100 if var_95 is not None else None),
+        "var_95_1m_pct": _round_pct(metrics.scale_by_time(var_95, 21) * 100 if var_95 is not None else None),
+        "cvar_90_1d_pct": _round_pct(cvar_90 * 100 if cvar_90 is not None else None),
         "cvar_95_1d_pct": _round_pct(cvar_95 * 100 if cvar_95 is not None else None),
+        "cvar_99_1d_pct": _round_pct(cvar_99 * 100 if cvar_99 is not None else None),
+        "cvar_95_1w_pct": _round_pct(metrics.scale_by_time(cvar_95, 5) * 100 if cvar_95 is not None else None),
+        "cvar_95_1m_pct": _round_pct(metrics.scale_by_time(cvar_95, 21) * 100 if cvar_95 is not None else None),
         "corr_1y": _round_pct(corr),
         "twr_1m_pct": _round_pct(twr_1m * 100 if twr_1m is not None else None),
         "twr_3m_pct": _round_pct(twr_3m * 100 if twr_3m is not None else None),
@@ -675,6 +1309,147 @@ def _build_margin_guidance(total_market_value, margin_loan_balance, projected_mo
             "apr_future_date": settings.margin_apr_future_date,
         },
         "selected_mode": "balanced",
+    }
+
+
+def _trend_direction(values: list[float], threshold: float) -> str | None:
+    if len(values) < 2:
+        return None
+    slope = np.polyfit(range(len(values)), values, 1)[0]
+    if slope > threshold:
+        return "rising"
+    if slope < -threshold:
+        return "declining"
+    return "stable"
+
+
+def _margin_call_distance(total_market_value, margin_loan_balance, risk: dict, threshold: float = 0.30) -> dict | None:
+    if not total_market_value or not margin_loan_balance:
+        return None
+    margin_call_value = margin_loan_balance / (1 - threshold)
+    decline_pct = (margin_call_value / total_market_value - 1.0) * 100.0
+    decline_dollars = abs(total_market_value - margin_call_value)
+    daily_vol_pct = None
+    vol_30d = risk.get("vol_30d_pct")
+    if isinstance(vol_30d, (int, float)):
+        daily_vol_pct = vol_30d / math.sqrt(252)
+    days_at_vol = None
+    if daily_vol_pct and daily_vol_pct > 0:
+        days_at_vol = abs(decline_pct) / (daily_vol_pct * 2.0)
+    buffer_pct = abs(decline_pct)
+    if buffer_pct > 40:
+        status = "safe"
+    elif buffer_pct > 20:
+        status = "caution"
+    else:
+        status = "danger"
+    return {
+        "portfolio_decline_to_call_pct": _round_pct(decline_pct),
+        "dollar_decline_to_call": _round_money(decline_dollars),
+        "days_at_current_volatility": int(round(days_at_vol)) if isinstance(days_at_vol, (int, float)) else None,
+        "buffer_status": status,
+    }
+
+
+def _interest_rate_scenarios(margin_loan_balance: float, current_rate_pct: float, monthly_income: float) -> dict:
+    scenarios = {}
+    for shock in (1.0, 2.0, 3.0):
+        new_rate_pct = current_rate_pct + shock
+        monthly_expense = (margin_loan_balance * new_rate_pct / 100.0) / 12.0
+        annual_expense = monthly_expense * 12.0
+        coverage = _safe_divide(monthly_income, monthly_expense) if monthly_expense else None
+        scenarios[f"rate_plus_{int(shock * 100)}bp"] = {
+            "new_rate_pct": round(new_rate_pct, 2),
+            "monthly_expense": _round_money(monthly_expense),
+            "annual_expense": _round_money(annual_expense),
+            "income_coverage_ratio": _round_pct(coverage),
+            "expense_as_pct_of_income": _round_pct(_safe_divide(monthly_expense, monthly_income) * 100 if monthly_income else None),
+        }
+    return scenarios
+
+
+def _margin_trend_summary(daily_snaps: list[tuple[date, dict]]) -> dict | None:
+    if not daily_snaps:
+        return None
+    ltv_vals = []
+    expense_vals = []
+    for _dt, snap in daily_snaps:
+        totals = (snap.get("totals") or {}) if snap else {}
+        mv = totals.get("market_value")
+        margin = totals.get("margin_loan_balance")
+        if isinstance(mv, (int, float)) and isinstance(margin, (int, float)) and mv:
+            ltv_vals.append((margin / mv) * 100.0)
+        if isinstance(margin, (int, float)):
+            expense_vals.append((margin * settings.margin_apr_current) / 12.0)
+
+    if not ltv_vals:
+        return None
+
+    return {
+        "ltv_avg": _round_pct(sum(ltv_vals) / len(ltv_vals)),
+        "ltv_max": _round_pct(max(ltv_vals)),
+        "ltv_min": _round_pct(min(ltv_vals)),
+        "ltv_std": _round_pct(statistics.pstdev(ltv_vals) if len(ltv_vals) > 1 else 0.0),
+        "ltv_trend": _trend_direction(ltv_vals, 0.01),
+        "interest_expense_avg": _round_money(sum(expense_vals) / len(expense_vals)) if expense_vals else None,
+        "interest_expense_trend": _trend_direction(expense_vals, 1.0) if expense_vals else None,
+    }
+
+
+def _build_margin_stress(
+    total_market_value: float | None,
+    margin_loan_balance: float | None,
+    projected_monthly_income: float | None,
+    risk: dict,
+    performance: dict,
+    daily_snaps: list[tuple[date, dict]],
+) -> dict:
+    total_market_value = total_market_value or 0.0
+    margin_loan_balance = margin_loan_balance or 0.0
+    projected_monthly_income = projected_monthly_income or 0.0
+    rate_current_pct = round(settings.margin_apr_current * 100, 2)
+
+    monthly_interest = (margin_loan_balance * settings.margin_apr_current) / 12.0
+    annual_interest = monthly_interest * 12.0
+
+    current = {
+        "ltv_pct": _round_pct(_safe_divide(margin_loan_balance, total_market_value) * 100 if total_market_value else None),
+        "margin_loan_balance": _round_money(margin_loan_balance),
+        "portfolio_value": _round_money(total_market_value),
+        "net_liquidation_value": _round_money(total_market_value - margin_loan_balance) if total_market_value else None,
+        "monthly_interest_expense": _round_money(monthly_interest),
+        "annual_interest_expense": _round_money(annual_interest),
+        "interest_rate_current_pct": rate_current_pct,
+    }
+
+    stress_scenarios = {
+        "margin_call_distance": _margin_call_distance(total_market_value, margin_loan_balance, risk) or {},
+        "interest_rate_shock": _interest_rate_scenarios(margin_loan_balance, rate_current_pct, projected_monthly_income),
+    }
+
+    roi_on_margin = None
+    performance_val = performance.get("twr_12m_pct") if isinstance(performance, dict) else None
+    if isinstance(performance_val, (int, float)):
+        roi_on_margin = performance_val
+
+    interest_pct_of_income = _safe_divide(monthly_interest, projected_monthly_income) * 100 if projected_monthly_income else None
+    return_dollars = None
+    if isinstance(performance_val, (int, float)) and total_market_value:
+        return_dollars = total_market_value * (performance_val / 100.0)
+    interest_pct_of_returns = _safe_divide(annual_interest, return_dollars) * 100 if return_dollars else None
+
+    efficiency = {
+        "roi_on_margin_capital_1y_pct": _round_pct(roi_on_margin),
+        "interest_expense_as_pct_of_income": _round_pct(interest_pct_of_income),
+        "interest_expense_as_pct_of_returns": _round_pct(interest_pct_of_returns),
+        "net_benefit_of_leverage_1y_pct": _round_pct(roi_on_margin - rate_current_pct) if roi_on_margin is not None else None,
+    }
+
+    return {
+        "current": current,
+        "stress_scenarios": stress_scenarios,
+        "efficiency": efficiency,
+        "historical_trends_90d": _margin_trend_summary(daily_snaps),
     }
 
 
@@ -1106,8 +1881,16 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
             "risk_quality_score",
             "risk_quality_category",
             "volatility_profile",
+            "var_90_1d_pct",
             "var_95_1d_pct",
+            "var_99_1d_pct",
+            "var_95_1w_pct",
+            "var_95_1m_pct",
+            "cvar_90_1d_pct",
             "cvar_95_1d_pct",
+            "cvar_99_1d_pct",
+            "cvar_95_1w_pct",
+            "cvar_95_1m_pct",
             "corr_1y",
             "beta_3y",
             "twr_1m_pct",
@@ -1116,6 +1899,19 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
             "twr_12m_pct",
         ]:
             ultimate_provenance[key] = _provenance_entry("derived", "internal", "price_history_metrics", [sym], fetched_at)
+
+        dividend_reliability = _dividend_reliability_metrics(
+            sym,
+            div_tx,
+            provider_divs,
+            pay_history,
+            frequency,
+            as_of_date_local,
+        )
+        dividend_reliability_provenance = {
+            key: _provenance_entry("derived", "internal", "dividend_reliability", [sym], fetched_at)
+            for key in dividend_reliability
+        }
 
         holding = {
             "symbol": sym,
@@ -1135,10 +1931,12 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
             "current_yield_pct": _round_pct(_safe_divide(forward_12m_dividend, mv) * 100 if mv is not None else None),
             "yield_on_cost_pct": _round_pct(_safe_divide(forward_12m_dividend, h["cost_basis"]) * 100 if h.get("cost_basis") else None),
             "ultimate": ultimate,
+            "dividend_reliability": dividend_reliability,
             "dividends_30d": _round_money(div_30d),
             "dividends_qtd": _round_money(div_qtd),
             "dividends_ytd": _round_money(div_ytd),
             "ultimate_provenance": ultimate_provenance,
+            "dividend_reliability_provenance": dividend_reliability_provenance,
         }
         holdings_out.append(holding)
 
@@ -1289,15 +2087,90 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
     performance = metrics.portfolio_performance(portfolio_values)
     risk = metrics.portfolio_risk(portfolio_values, bench_values)
     risk["portfolio_risk_quality"] = _risk_quality_category(risk.get("sortino_1y"), risk.get("sharpe_1y"))
-    income_stability_score = _income_stability_score(div_tx, as_of_date_local)
-    risk["income_stability_score"] = income_stability_score
+    income_stability = _income_stability_metrics(div_tx, as_of_date_local, window_months=12)
+    income_growth = _income_growth_metrics(div_tx, as_of_date_local)
+    risk["income_stability_score"] = income_stability.get("stability_score")
+
+    drawdown_status, recovery_metrics = _drawdown_analysis(portfolio_values)
+    if drawdown_status:
+        risk["drawdown_status"] = drawdown_status
+    if recovery_metrics:
+        risk["recovery_metrics"] = recovery_metrics
+
+    ulcer_val = risk.get("ulcer_index_1y")
+    risk["ulcer_index_category"] = _ulcer_index_category(ulcer_val)
+    pain_adjusted_return = _safe_divide(performance.get("twr_12m_pct"), ulcer_val)
+    risk["pain_adjusted_return"] = _round_pct(pain_adjusted_return)
+    risk["omega_threshold"] = 0.0
+
+    tail_risk = {
+        "cvar_95_1d_pct": risk.get("cvar_95_1d_pct"),
+        "cvar_95_1w_pct": risk.get("cvar_95_1w_pct"),
+        "cvar_95_1m_pct": risk.get("cvar_95_1m_pct"),
+        "cvar_90_1d_pct": risk.get("cvar_90_1d_pct"),
+        "cvar_99_1d_pct": risk.get("cvar_99_1d_pct"),
+        "var_95_1d_pct": risk.get("var_95_1d_pct"),
+        "var_95_1w_pct": risk.get("var_95_1w_pct"),
+        "var_95_1m_pct": risk.get("var_95_1m_pct"),
+        "cvar_to_income_ratio": None,
+        "worst_expected_loss_1w": None,
+    }
+    if isinstance(total_market_value, (int, float)):
+        cvar_1w = risk.get("cvar_95_1w_pct")
+        if isinstance(cvar_1w, (int, float)):
+            tail_risk["worst_expected_loss_1w"] = _round_money(total_market_value * abs(cvar_1w) / 100.0)
+        cvar_1m = risk.get("cvar_95_1m_pct")
+        projected_income = income.get("projected_monthly_income") or 0.0
+        if isinstance(cvar_1m, (int, float)) and projected_income:
+            expected_loss = total_market_value * abs(cvar_1m) / 100.0
+            tail_risk["cvar_to_income_ratio"] = _round_pct(_safe_divide(expected_loss, projected_income))
+        else:
+            tail_risk["cvar_to_income_ratio"] = None
+    tail_risk["tail_risk_category"] = _tail_risk_category(risk.get("cvar_95_1d_pct"))
+
+    bench_twr_12m = metrics.twr(bench_values, window_days=365) if bench_values is not None else None
+    bench_twr_12m_pct = bench_twr_12m * 100 if bench_twr_12m is not None else None
+    excess_return = None
+    if isinstance(performance.get("twr_12m_pct"), (int, float)) and isinstance(bench_twr_12m_pct, (int, float)):
+        excess_return = performance.get("twr_12m_pct") - bench_twr_12m_pct
+    vs_benchmark = {
+        "benchmark": benchmark_symbol,
+        "excess_return_1y_pct": _round_pct(excess_return),
+        "tracking_error_1y_pct": risk.get("tracking_error_1y_pct"),
+        "information_ratio_1y": risk.get("information_ratio_1y"),
+        "active_share_pct": 100.0,
+        "correlation_to_benchmark": risk.get("corr_1y"),
+    }
+
+    end_dt = portfolio_values.index.max() if not portfolio_values.empty else None
+    return_attribution_rollups = {}
+    return_attribution_by_symbol = {}
+    if end_dt is not None:
+        return_attribution_rollups, return_attribution_by_symbol = _return_attribution_all_periods(
+            holdings,
+            price_series,
+            div_tx,
+            end_dt,
+        )
+        for holding in holdings_out:
+            sym = holding.get("symbol")
+            if not sym:
+                continue
+            per_period = return_attribution_by_symbol.get(sym, {})
+            for label, metrics_out in per_period.items():
+                holding[f"contribution_analysis_{label}"] = metrics_out
 
     portfolio_rollups = {
         "performance": performance,
         "benchmark": benchmark_symbol,
         "risk": risk,
+        "income_stability": income_stability,
+        "income_growth": income_growth,
+        "tail_risk": tail_risk,
+        "vs_benchmark": vs_benchmark,
         "meta": {"version": f"v{as_of_date_str}", "method": "approx-holdings"},
     }
+    portfolio_rollups.update(return_attribution_rollups)
 
     totals_prov = {}
     for key in ["cost_basis", "margin_loan_balance", "market_value", "net_liquidation_value", "margin_to_portfolio_pct", "unrealized_pnl", "unrealized_pct"]:
@@ -1314,10 +2187,16 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
     portfolio_rollups_prov["risk"]["income_stability_score"] = _provenance_entry(
         "derived",
         "internal",
-        "income_stability_score",
-        ["dividend_transactions", "window_months:6"],
+        "income_stability_metrics",
+        ["dividend_transactions", "window_months:12"],
         now_utc_iso(),
     )
+    portfolio_rollups_prov["income_stability"] = {k: _provenance_entry("derived", "internal", "income_stability_metrics", ["dividend_transactions"], now_utc_iso()) for k in income_stability}
+    portfolio_rollups_prov["income_growth"] = {k: _provenance_entry("derived", "internal", "income_growth_metrics", ["dividend_transactions"], now_utc_iso()) for k in income_growth}
+    portfolio_rollups_prov["tail_risk"] = {k: _provenance_entry("derived", "internal", "tail_risk_metrics", ["portfolio_rollups", "income"], now_utc_iso()) for k in tail_risk}
+    portfolio_rollups_prov["vs_benchmark"] = {k: _provenance_entry("derived", "internal", "benchmark_comparison", ["portfolio_values", "benchmark_values"], now_utc_iso()) for k in vs_benchmark}
+    for key in return_attribution_rollups:
+        portfolio_rollups_prov[key] = _provenance_entry("derived", "internal", "return_attribution", ["holdings", "dividends", "prices"], now_utc_iso())
 
     income_provenance = income_prov
     holdings_provenance = _provenance_entry("derived", "internal", "reconstruct_holdings", ["investment_transactions"], now_utc_iso())
@@ -1325,6 +2204,24 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
     dividends_upcoming_provenance = _provenance_entry("derived", "internal", "project_upcoming_dividends", ["holdings"], now_utc_iso())
     margin_guidance = _build_margin_guidance(total_market_value, margin_loan_balance, income["projected_monthly_income"] or 0.0)
     margin_guidance_provenance = _provenance_entry("derived", "internal", "margin_guidance_calculator", ["totals", "income"], now_utc_iso())
+
+    history_start = as_of_date_local - timedelta(days=89)
+    recent_snaps = _load_daily_snapshots_range(conn, history_start, as_of_date_local)
+    margin_stress = _build_margin_stress(
+        total_market_value,
+        margin_loan_balance,
+        income["projected_monthly_income"] or 0.0,
+        risk,
+        performance,
+        recent_snaps,
+    )
+    margin_stress_provenance = _provenance_entry(
+        "derived",
+        "internal",
+        "margin_stress_analysis",
+        ["totals", "income", "portfolio_rollups", "daily_snapshots"],
+        now_utc_iso(),
+    )
 
     goal_progress = _build_goal_progress(
         income["projected_monthly_income"] or 0.0,
@@ -1369,13 +2266,13 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         "cache_control": {"revalidate": "when-stale", "no_store": False},
         "served_from": "db",
         "notes": [],
-        "changes": ["Updated risk_quality_category to use two-factor classification (Sortino + Score)"],
+        "changes": ["Expanded portfolio metrics (income stability, tail risk, attribution, margin stress)"],
         "cache": {
             "pricing": {"ttl_seconds": settings.cache_ttl_hours * 3600, "bypassed": False},
             "yf_dividends": {"ttl_seconds": settings.cache_ttl_hours * 3600, "bypassed": False},
         },
         "snapshot_age_days": 0,
-        "schema_version": "2.9",
+        "schema_version": "3.0",
         "filled_from_existing": False,
     }
 
@@ -1406,6 +2303,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         "goal_progress": goal_progress,
         "goal_progress_net": goal_progress_net,
         "margin_guidance": margin_guidance,
+        "margin_stress": margin_stress,
         "coverage": coverage,
         "holdings_provenance": holdings_provenance,
         "totals_provenance": totals_prov,
@@ -1414,6 +2312,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         "dividends_provenance": dividends_provenance,
         "dividends_upcoming_provenance": dividends_upcoming_provenance,
         "margin_guidance_provenance": margin_guidance_provenance,
+        "margin_stress_provenance": margin_stress_provenance,
         "goal_progress_provenance": goal_progress_provenance,
         "macro": macro,
         "meta": meta,

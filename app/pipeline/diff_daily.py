@@ -410,9 +410,58 @@ def build_daily_diff(
             "sortino_1m",
             "sortino_sharpe_ratio",
             "sortino_sharpe_divergence",
+            "information_ratio_1y",
+            "tracking_error_1y_pct",
+            "ulcer_index_1y",
+            "omega_ratio_1y",
+            "pain_adjusted_return",
+            "income_stability_score",
+            "var_90_1d_pct",
             "calmar_1y",
             "max_drawdown_1y_pct",
+            "var_95_1d_pct",
+            "var_99_1d_pct",
+            "var_95_1w_pct",
+            "var_95_1m_pct",
+            "cvar_90_1d_pct",
+            "cvar_95_1d_pct",
+            "cvar_99_1d_pct",
+            "cvar_95_1w_pct",
+            "cvar_95_1m_pct",
         ],
+    )
+
+    rollup_income_stability = _numeric_tree(
+        left.get("portfolio_rollups", {}).get("income_stability", {}),
+        right.get("portfolio_rollups", {}).get("income_stability", {}),
+    )
+    rollup_income_growth = _numeric_tree(
+        left.get("portfolio_rollups", {}).get("income_growth", {}),
+        right.get("portfolio_rollups", {}).get("income_growth", {}),
+    )
+    rollup_tail_risk = _numeric_tree(
+        left.get("portfolio_rollups", {}).get("tail_risk", {}),
+        right.get("portfolio_rollups", {}).get("tail_risk", {}),
+    )
+    rollup_vs_benchmark = _numeric_tree(
+        left.get("portfolio_rollups", {}).get("vs_benchmark", {}),
+        right.get("portfolio_rollups", {}).get("vs_benchmark", {}),
+    )
+    rollup_return_attribution_1m = _numeric_tree(
+        left.get("portfolio_rollups", {}).get("return_attribution_1m", {}),
+        right.get("portfolio_rollups", {}).get("return_attribution_1m", {}),
+    )
+    rollup_return_attribution_3m = _numeric_tree(
+        left.get("portfolio_rollups", {}).get("return_attribution_3m", {}),
+        right.get("portfolio_rollups", {}).get("return_attribution_3m", {}),
+    )
+    rollup_return_attribution_6m = _numeric_tree(
+        left.get("portfolio_rollups", {}).get("return_attribution_6m", {}),
+        right.get("portfolio_rollups", {}).get("return_attribution_6m", {}),
+    )
+    rollup_return_attribution_12m = _numeric_tree(
+        left.get("portfolio_rollups", {}).get("return_attribution_12m", {}),
+        right.get("portfolio_rollups", {}).get("return_attribution_12m", {}),
     )
 
     goal_progress = _section_diff(
@@ -437,6 +486,7 @@ def build_daily_diff(
         "ltv_pct": (right.get("totals") or {}).get("margin_to_portfolio_pct"),
     }
     margin = _section_diff(margin_left, margin_right, ["margin_loan_balance", "margin_to_portfolio_pct", "ltv_pct"])
+    margin_stress = _numeric_tree(left.get("margin_stress", {}), right.get("margin_stress", {}))
 
     dividends_compact = _section_diff(
         {
@@ -549,10 +599,22 @@ def build_daily_diff(
         "portfolio_metrics": {
             "totals": totals,
             "income": income,
-            "rollups": {"performance": rollup_perf, "risk": rollup_risk},
+            "rollups": {
+                "performance": rollup_perf,
+                "risk": rollup_risk,
+                "income_stability": rollup_income_stability,
+                "income_growth": rollup_income_growth,
+                "tail_risk": rollup_tail_risk,
+                "vs_benchmark": rollup_vs_benchmark,
+                "return_attribution_1m": rollup_return_attribution_1m,
+                "return_attribution_3m": rollup_return_attribution_3m,
+                "return_attribution_6m": rollup_return_attribution_6m,
+                "return_attribution_12m": rollup_return_attribution_12m,
+            },
             "goal_progress": goal_progress,
             "goal_progress_net": goal_progress_net,
             "margin": margin,
+            "margin_stress": margin_stress,
         },
         "dividends": dividends_compact,
         "coverage": coverage,
