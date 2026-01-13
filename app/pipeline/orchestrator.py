@@ -131,6 +131,7 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
         bench_symbols = [settings.benchmark_primary, settings.benchmark_secondary]
         price_symbols = sorted({*symbols, *[s for s in bench_symbols if s]})
         md.load(price_symbols, deadline=deadline)
+        md.load_quotes(price_symbols, deadline=deadline)
         _step_done("market_data", started, symbols_count=len(price_symbols))
 
         # 4) Build daily snapshot (validates internally)
@@ -170,8 +171,13 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
                 market_value_changed = True
             else:
                 market_value_changed = existing_mv != current_mv
+        prices_as_of_changed = False
+        if has_daily:
+            existing_prices_as_of = (existing_payload or {}).get("prices_as_of_utc") or (existing_payload or {}).get("prices_as_of")
+            current_prices_as_of = daily.get("prices_as_of_utc") or daily.get("prices_as_of")
+            prices_as_of_changed = existing_prices_as_of != current_prices_as_of
 
-        should_persist_daily = force_daily or not has_daily or market_value_changed
+        should_persist_daily = force_daily or not has_daily or market_value_changed or prices_as_of_changed
 
         if should_persist_daily:
             ok, reasons = validate_daily_snapshot(daily)
@@ -188,6 +194,7 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
                 new_transactions=new_tx_count,
                 existing_daily=has_daily,
                 market_value_changed=market_value_changed,
+                prices_as_of_changed=prices_as_of_changed,
             )
             if wrote_daily:
                 upsert_facts_from_sources(conn, run_id, daily, sources)

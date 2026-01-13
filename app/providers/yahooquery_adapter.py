@@ -53,6 +53,36 @@ class YahooQueryAdapter:
         except Exception:
             return {}
 
+    def quotes_batch(self, symbols: list[str]) -> dict[str, dict]:
+        if not self.enabled or self.yq is None:
+            return {}
+        if not symbols:
+            return {}
+        try:
+            t = self.yq.Ticker(symbols)
+            data = t.price
+            if not isinstance(data, dict):
+                return {}
+            out: dict[str, dict] = {}
+            for sym in symbols:
+                payload = data.get(sym) or {}
+                price = (
+                    payload.get("regularMarketPrice")
+                    or payload.get("postMarketPrice")
+                    or payload.get("preMarketPrice")
+                )
+                ts = (
+                    payload.get("regularMarketTime")
+                    or payload.get("postMarketTime")
+                    or payload.get("preMarketTime")
+                )
+                if price is None:
+                    continue
+                out[sym] = {"price": float(price), "timestamp": ts}
+            return out
+        except Exception:
+            return {}
+
     def dividends(self, symbol: str) -> Optional[pd.DataFrame]:
         if not self.enabled or self.yq is None: return None
         try:

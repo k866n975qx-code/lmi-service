@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     cache_dir: str = Field(default="./.cache", alias="CACHE_DIR")
     cache_db_path: str = Field(default="./data/cache.sqlite3", alias="CACHE_DB_PATH")
     cache_ttl_hours: int = Field(default=24, alias="CACHE_TTL_HOURS")
+    quote_ttl_minutes: int = Field(default=60, alias="QUOTE_TTL_MINUTES")
     market_batch_size: int = Field(default=25, alias="MARKET_BATCH_SIZE")
     market_rate_limit_seconds: float = Field(default=0.2, alias="MARKET_RATE_LIMIT_SECONDS")
     market_retry_attempts: int = Field(default=2, alias="MARKET_RETRY_ATTEMPTS")

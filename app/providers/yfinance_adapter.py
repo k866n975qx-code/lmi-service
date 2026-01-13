@@ -78,6 +78,28 @@ class YFinanceAdapter:
         except Exception:
             return {}
 
+    def quotes_batch(self, symbols: list[str]) -> dict[str, dict]:
+        if not self.enabled or self.yf is None:
+            return {}
+        if not symbols:
+            return {}
+        try:
+            tickers = self.yf.Tickers(" ".join(symbols))
+            out: dict[str, dict] = {}
+            for sym in symbols:
+                t = getattr(tickers, "tickers", {}).get(sym)
+                if not t:
+                    continue
+                info = getattr(t, "fast_info", None) or {}
+                price = info.get("last_price") or info.get("lastPrice")
+                ts = info.get("last_trade_time") or info.get("lastTradeTime")
+                if price is None:
+                    continue
+                out[sym] = {"price": float(price), "timestamp": ts}
+            return out
+        except Exception:
+            return {}
+
     def dividends(self, symbol: str) -> Optional[pd.DataFrame]:
         if not self.enabled or self.yf is None:
             return None

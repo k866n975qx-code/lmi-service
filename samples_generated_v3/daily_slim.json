@@ -1,7 +1,7 @@
 {
-  "as_of": "2026-01-10",
-  "as_of_utc": "2026-01-11T05:21:47.603111+00:00",
-  "as_of_date_local": "2026-01-10",
+  "as_of": "2026-01-12",
+  "as_of_utc": "2026-01-12T08:00:13.310882+00:00",
+  "as_of_date_local": "2026-01-12",
   "plaid_account_id": 317631,
   "prices_as_of": "2026-01-09",
   "holdings": [
@@ -70,7 +70,7 @@
         "twr_12m_pct": 5.211
       },
       "dividend_reliability": {
-        "consistency_score": 0.0,
+        "consistency_score": 0,
         "payment_frequency_actual": "insufficient dividend payment history (<2 dates in last 12m; found 1)",
         "payment_frequency_expected": "quarterly",
         "missed_payments_12m": 3,
@@ -83,15 +83,15 @@
         "last_increase_date": "no increase >= 10% detected in last 12m",
         "last_decrease_date": "no decrease >= 10% detected in last 12m"
       },
-      "dividends_30d": 0.0,
-      "dividends_qtd": 0.0,
-      "dividends_ytd": 0.0,
+      "dividends_30d": 0,
+      "dividends_qtd": 0,
+      "dividends_ytd": 0,
       "contribution_analysis_1m": {
         "return_contribution_pct": 0.041,
         "return_contribution_dollars": 18.06,
         "income_contribution": {
-          "pct": 0.0,
-          "dollars": 0.0
+          "pct": 0,
+          "dollars": 0
         },
         "price_contribution": {
           "pct": 0.041,
@@ -220,7 +220,7 @@
         "twr_12m_pct": 9.317
       },
       "dividend_reliability": {
-        "consistency_score": 0.0,
+        "consistency_score": 0,
         "payment_frequency_actual": "monthly",
         "payment_frequency_expected": "monthly",
         "missed_payments_12m": 9,
@@ -370,7 +370,7 @@
         "twr_12m_pct": 16.329
       },
       "dividend_reliability": {
-        "consistency_score": 0.0,
+        "consistency_score": 0,
         "payment_frequency_actual": "monthly",
         "payment_frequency_expected": "monthly",
         "missed_payments_12m": 10,
@@ -379,7 +379,7 @@
         "dividend_growth_rate_6m_pct": "requires positive dividends at start/end of 6m window (start=0.00, end=22.50)",
         "dividend_volatility_6m_pct": 142.255,
         "avg_days_between_payments": 33,
-        "payment_timing_consistency": 1.0,
+        "payment_timing_consistency": 1,
         "last_increase_date": "2025-12-01",
         "last_decrease_date": "2025-08-01"
       },
@@ -520,7 +520,7 @@
         "twr_12m_pct": 44.23
       },
       "dividend_reliability": {
-        "consistency_score": 0.0,
+        "consistency_score": 0,
         "payment_frequency_actual": "insufficient dividend payment history (<2 dates in last 12m; found 0)",
         "payment_frequency_expected": "quarterly",
         "missed_payments_12m": 4,
@@ -533,15 +533,15 @@
         "last_increase_date": "no increase >= 10% detected in last 12m",
         "last_decrease_date": "no decrease >= 10% detected in last 12m"
       },
-      "dividends_30d": 0.0,
-      "dividends_qtd": 0.0,
-      "dividends_ytd": 0.0,
+      "dividends_30d": 0,
+      "dividends_qtd": 0,
+      "dividends_ytd": 0,
       "contribution_analysis_1m": {
         "return_contribution_pct": 1.048,
         "return_contribution_dollars": 460.76,
         "income_contribution": {
-          "pct": 0.0,
-          "dollars": 0.0
+          "pct": 0,
+          "dollars": 0
         },
         "price_contribution": {
           "pct": 1.048,
@@ -557,8 +557,8 @@
         "return_contribution_pct": 2.15,
         "return_contribution_dollars": 907.37,
         "income_contribution": {
-          "pct": 0.0,
-          "dollars": 0.0
+          "pct": 0,
+          "dollars": 0
         },
         "price_contribution": {
           "pct": 2.15,
@@ -574,8 +574,8 @@
         "return_contribution_pct": 3.546,
         "return_contribution_dollars": 1415.06,
         "income_contribution": {
-          "pct": 0.0,
-          "dollars": 0.0
+          "pct": 0,
+          "dollars": 0
         },
         "price_contribution": {
           "pct": 3.546,
@@ -591,8 +591,8 @@
         "return_contribution_pct": 5.642,
         "return_contribution_dollars": 2163.45,
         "income_contribution": {
-          "pct": 0.0,
-          "dollars": 0.0
+          "pct": 0,
+          "dollars": 0
         },
         "price_contribution": {
           "pct": 5.642,
@@ -670,7 +670,7 @@
         "twr_12m_pct": 9.683
       },
       "dividend_reliability": {
-        "consistency_score": 0.0,
+        "consistency_score": 0,
         "payment_frequency_actual": "monthly",
         "payment_frequency_expected": "monthly",
         "missed_payments_12m": 10,
@@ -679,13 +679,13 @@
         "dividend_growth_rate_6m_pct": "requires positive dividends at start/end of 6m window (start=0.00, end=0.00)",
         "dividend_volatility_6m_pct": 223.607,
         "avg_days_between_payments": 28,
-        "payment_timing_consistency": 1.0,
+        "payment_timing_consistency": 1,
         "last_increase_date": "no increase >= 10% detected in last 12m",
         "last_decrease_date": "2025-02-24"
       },
       "dividends_30d": 11.17,
-      "dividends_qtd": 0.0,
-      "dividends_ytd": 0.0,
+      "dividends_qtd": 0,
+      "dividends_ytd": 0,
       "contribution_analysis_1m": {
         "return_contribution_pct": 0.266,
         "return_contribution_dollars": 116.81,
@@ -705,7 +705,7 @@
       },
       "contribution_analysis_3m": {
         "return_contribution_pct": 0.663,
-        "return_contribution_dollars": 280.0,
+        "return_contribution_dollars": 280,
         "income_contribution": {
           "pct": 0.048,
           "dollars": 20.11
@@ -820,7 +820,7 @@
         "twr_12m_pct": 7.631
       },
       "dividend_reliability": {
-        "consistency_score": 0.0,
+        "consistency_score": 0,
         "payment_frequency_actual": "monthly",
         "payment_frequency_expected": "monthly",
         "missed_payments_12m": 10,
@@ -829,13 +829,13 @@
         "dividend_growth_rate_6m_pct": "requires positive dividends at start/end of 6m window (start=0.00, end=0.00)",
         "dividend_volatility_6m_pct": 223.607,
         "avg_days_between_payments": 28,
-        "payment_timing_consistency": 1.0,
+        "payment_timing_consistency": 1,
         "last_increase_date": "no increase >= 10% detected in last 12m",
         "last_decrease_date": "no decrease >= 10% detected in last 12m"
       },
       "dividends_30d": 7.94,
-      "dividends_qtd": 0.0,
-      "dividends_ytd": 0.0,
+      "dividends_qtd": 0,
+      "dividends_ytd": 0,
       "contribution_analysis_1m": {
         "return_contribution_pct": 0.085,
         "return_contribution_dollars": 37.2,
@@ -970,7 +970,7 @@
         "twr_12m_pct": 17.491
       },
       "dividend_reliability": {
-        "consistency_score": 0.0,
+        "consistency_score": 0,
         "payment_frequency_actual": "monthly",
         "payment_frequency_expected": "monthly",
         "missed_payments_12m": 10,
@@ -979,13 +979,13 @@
         "dividend_growth_rate_6m_pct": "requires positive dividends at start/end of 6m window (start=0.00, end=0.00)",
         "dividend_volatility_6m_pct": 141.491,
         "avg_days_between_payments": 28,
-        "payment_timing_consistency": 1.0,
+        "payment_timing_consistency": 1,
         "last_increase_date": "no increase >= 10% detected in last 12m",
         "last_decrease_date": "no decrease >= 10% detected in last 12m"
       },
       "dividends_30d": 7.39,
-      "dividends_qtd": 0.0,
-      "dividends_ytd": 0.0,
+      "dividends_qtd": 0,
+      "dividends_ytd": 0,
       "contribution_analysis_1m": {
         "return_contribution_pct": 0.176,
         "return_contribution_dollars": 77.47,
@@ -1022,14 +1022,14 @@
       },
       "contribution_analysis_6m": {
         "return_contribution_pct": 1.415,
-        "return_contribution_dollars": 564.74,
+        "return_contribution_dollars": 564.73,
         "income_contribution": {
           "pct": 0.038,
           "dollars": 15.17
         },
         "price_contribution": {
           "pct": 1.377,
-          "dollars": 549.57
+          "dollars": 549.56
         },
         "roi_on_cost_pct": 10.321,
         "roi_annualized_pct": 22.041,
@@ -1039,7 +1039,7 @@
       },
       "contribution_analysis_12m": {
         "return_contribution_pct": 2.305,
-        "return_contribution_dollars": 884.0,
+        "return_contribution_dollars": 884,
         "income_contribution": {
           "pct": 0.04,
           "dollars": 15.17
@@ -1120,7 +1120,7 @@
         "twr_12m_pct": 4.251
       },
       "dividend_reliability": {
-        "consistency_score": 0.0,
+        "consistency_score": 0,
         "payment_frequency_actual": "monthly",
         "payment_frequency_expected": "monthly",
         "missed_payments_12m": 10,
@@ -1129,13 +1129,13 @@
         "dividend_growth_rate_6m_pct": "requires positive dividends at start/end of 6m window (start=0.00, end=0.00)",
         "dividend_volatility_6m_pct": 169.725,
         "avg_days_between_payments": 33,
-        "payment_timing_consistency": 1.0,
+        "payment_timing_consistency": 1,
         "last_increase_date": "2025-05-27",
         "last_decrease_date": "no decrease >= 10% detected in last 12m"
       },
       "dividends_30d": 43.24,
-      "dividends_qtd": 0.0,
-      "dividends_ytd": 0.0,
+      "dividends_qtd": 0,
+      "dividends_ytd": 0,
       "contribution_analysis_1m": {
         "return_contribution_pct": 0.782,
         "return_contribution_dollars": 343.87,
@@ -1270,7 +1270,7 @@
         "twr_12m_pct": 26.864
       },
       "dividend_reliability": {
-        "consistency_score": 0.0,
+        "consistency_score": 0,
         "payment_frequency_actual": "insufficient dividend payment history (<2 dates in last 12m; found 0)",
         "payment_frequency_expected": "quarterly",
         "missed_payments_12m": 4,
@@ -1283,15 +1283,15 @@
         "last_increase_date": "no increase >= 10% detected in last 12m",
         "last_decrease_date": "2026-01-15"
       },
-      "dividends_30d": 0.0,
-      "dividends_qtd": 0.0,
-      "dividends_ytd": 0.0,
+      "dividends_30d": 0,
+      "dividends_qtd": 0,
+      "dividends_ytd": 0,
       "contribution_analysis_1m": {
         "return_contribution_pct": 1.416,
         "return_contribution_dollars": 622.49,
         "income_contribution": {
-          "pct": 0.0,
-          "dollars": 0.0
+          "pct": 0,
+          "dollars": 0
         },
         "price_contribution": {
           "pct": 1.416,
@@ -1307,8 +1307,8 @@
         "return_contribution_pct": 2.03,
         "return_contribution_dollars": 856.9,
         "income_contribution": {
-          "pct": 0.0,
-          "dollars": 0.0
+          "pct": 0,
+          "dollars": 0
         },
         "price_contribution": {
           "pct": 2.03,
@@ -1324,8 +1324,8 @@
         "return_contribution_pct": 3.058,
         "return_contribution_dollars": 1220.29,
         "income_contribution": {
-          "pct": 0.0,
-          "dollars": 0.0
+          "pct": 0,
+          "dollars": 0
         },
         "price_contribution": {
           "pct": 3.058,
@@ -1341,8 +1341,8 @@
         "return_contribution_pct": 5.07,
         "return_contribution_dollars": 1944.26,
         "income_contribution": {
-          "pct": 0.0,
-          "dollars": 0.0
+          "pct": 0,
+          "dollars": 0
         },
         "price_contribution": {
           "pct": 5.07,
@@ -1382,7 +1382,7 @@
       "difference": 481.4,
       "window": {
         "start": "2026-01-01",
-        "end": "2026-01-10",
+        "end": "2026-01-12",
         "label": "month_to_date"
       },
       "alt": {
@@ -1390,7 +1390,7 @@
         "mode": "paydate",
         "window": {
           "start": "2026-01-01",
-          "end": "2026-01-10"
+          "end": "2026-01-12"
         },
         "expected_events": [
           {
@@ -1416,15 +1416,15 @@
     },
     "windows": {
       "30d": {
-        "start": "2025-12-11",
-        "end": "2026-01-10",
+        "start": "2025-12-13",
+        "end": "2026-01-12",
         "total_dividends": 190.38,
         "by_date": {
+          "2025-12-15": 3.04,
           "2025-12-17": 40.41,
+          "2025-12-26": 7.39,
           "2025-12-30": 57.41,
           "2025-12-31": 43.24,
-          "2025-12-26": 7.39,
-          "2025-12-15": 3.04,
           "2026-01-05": 38.89
         },
         "by_month": {
@@ -1476,7 +1476,7 @@
       },
       "ytd": {
         "start": "2026-01-01",
-        "end": "2026-01-10",
+        "end": "2026-01-12",
         "total_dividends": 38.89,
         "by_date": {
           "2026-01-05": 38.89
@@ -1497,7 +1497,7 @@
       },
       "qtd": {
         "start": "2026-01-01",
-        "end": "2026-01-10",
+        "end": "2026-01-12",
         "total_dividends": 38.89,
         "by_date": {
           "2026-01-05": 38.89
@@ -1519,7 +1519,7 @@
     },
     "realized_mtd": {
       "start": "2026-01-01",
-      "end": "2026-01-10",
+      "end": "2026-01-12",
       "total_dividends": 38.89,
       "by_date": {
         "2026-01-05": 38.89
@@ -1579,7 +1579,7 @@
       }
     ],
     "window": {
-      "start": "2026-01-10",
+      "start": "2026-01-12",
       "end": "2026-01-31",
       "mode": "exdate"
     },
@@ -1593,7 +1593,7 @@
       "twr_1m_pct": 4.564,
       "twr_3m_pct": 10.513,
       "twr_6m_pct": 14.85,
-      "twr_12m_pct": 17.524
+      "twr_12m_pct": 17.523
     },
     "benchmark": "^GSPC",
     "risk": {
@@ -1626,31 +1626,31 @@
       "tracking_error_1y_pct": 7.022,
       "ulcer_index_1y": 5.67,
       "omega_ratio_1y": 1.206,
-      "income_stability_score": 0.0,
+      "income_stability_score": 0,
       "portfolio_risk_quality": "excellent",
       "drawdown_status": {
         "currently_in_drawdown": false,
-        "current_drawdown_depth_pct": 0.0,
+        "current_drawdown_depth_pct": 0,
         "current_drawdown_duration_days": 0,
         "days_since_peak": 0,
         "peak_value": 45709.76,
         "peak_date": "2026-01-09",
-        "recovery_progress_pct": 100.0
+        "recovery_progress_pct": 100
       },
       "recovery_metrics": {
         "avg_recovery_time_days": 17.7,
         "fastest_recovery_days": 1,
         "slowest_recovery_days": 729,
-        "recovery_success_rate_pct": 100.0,
+        "recovery_success_rate_pct": 100,
         "median_recovery_speed_pct_per_day": 0.21,
         "estimated_days_to_recovery": 0
       },
       "ulcer_index_category": "moderate",
-      "pain_adjusted_return": 3.091,
-      "omega_threshold": 0.0
+      "pain_adjusted_return": 3.09,
+      "omega_threshold": 0
     },
     "income_stability": {
-      "stability_score": 0.0,
+      "stability_score": 0,
       "coefficient_of_variation": 2.465,
       "income_trend_6m": "growing",
       "income_growth_rate_6m_pct": "requires positive dividends at start/end of 6m window (start=0.00, end=38.89)",
@@ -1684,14 +1684,14 @@
     },
     "vs_benchmark": {
       "benchmark": "^GSPC",
-      "excess_return_1y_pct": -0.184,
+      "excess_return_1y_pct": -0.185,
       "tracking_error_1y_pct": 7.022,
       "information_ratio_1y": 0.007,
-      "active_share_pct": 100.0,
+      "active_share_pct": 100,
       "correlation_to_benchmark": 0.934
     },
     "meta": {
-      "version": "v2026-01-10",
+      "version": "v2026-01-12",
       "method": "approx-holdings"
     },
     "return_attribution_1m": {
@@ -1712,7 +1712,7 @@
           "contribution_pct": 1.416,
           "contribution_dollars": 622.49,
           "contribution_breakdown": {
-            "income": 0.0,
+            "income": 0,
             "price": 1.416
           }
         },
@@ -1721,7 +1721,7 @@
           "contribution_pct": 1.048,
           "contribution_dollars": 460.76,
           "contribution_breakdown": {
-            "income": 0.0,
+            "income": 0,
             "price": 1.048
           }
         },
@@ -1741,7 +1741,7 @@
           "contribution_pct": 0.041,
           "contribution_dollars": 18.06,
           "contribution_breakdown": {
-            "income": 0.0,
+            "income": 0,
             "price": 0.041
           }
         },
@@ -1783,7 +1783,7 @@
           "contribution_pct": 2.15,
           "contribution_dollars": 907.37,
           "contribution_breakdown": {
-            "income": 0.0,
+            "income": 0,
             "price": 2.15
           }
         },
@@ -1792,7 +1792,7 @@
           "contribution_pct": 2.03,
           "contribution_dollars": 856.9,
           "contribution_breakdown": {
-            "income": 0.0,
+            "income": 0,
             "price": 2.03
           }
         },
@@ -1854,7 +1854,7 @@
           "contribution_pct": 3.546,
           "contribution_dollars": 1415.06,
           "contribution_breakdown": {
-            "income": 0.0,
+            "income": 0,
             "price": 3.546
           }
         },
@@ -1863,7 +1863,7 @@
           "contribution_pct": 3.058,
           "contribution_dollars": 1220.29,
           "contribution_breakdown": {
-            "income": 0.0,
+            "income": 0,
             "price": 3.058
           }
         },
@@ -1925,7 +1925,7 @@
           "contribution_pct": 5.642,
           "contribution_dollars": 2163.45,
           "contribution_breakdown": {
-            "income": 0.0,
+            "income": 0,
             "price": 5.642
           }
         },
@@ -1934,7 +1934,7 @@
           "contribution_pct": 5.07,
           "contribution_dollars": 1944.26,
           "contribution_breakdown": {
-            "income": 0.0,
+            "income": 0,
             "price": 5.07
           }
         },
@@ -1983,13 +1983,13 @@
     "portfolio_yield_pct": 13.659,
     "required_portfolio_value_at_goal": 175708.79,
     "additional_investment_needed": 129999.03,
-    "target_monthly": 2000.0,
+    "target_monthly": 2000,
     "assumptions": "based_on_current_yield_with_contrib_and_drip",
     "months_to_goal": 37,
     "progress_pct": 26.014,
-    "growth_window_months": 3,
+    "growth_window_months": 12,
     "shortfall": 1479.71,
-    "estimated_goal_date": "2029-02-10",
+    "estimated_goal_date": "2029-02-12",
     "current_projected_monthly": 520.29
   },
   "goal_progress_net": {
@@ -2007,7 +2007,7 @@
       "required_portfolio_value_at_goal_future": 179578.58,
       "monthly_interest_future": 44.05
     },
-    "target_monthly": 2000.0
+    "target_monthly": 2000
   },
   "margin_guidance": {
     "modes": [
@@ -2023,20 +2023,20 @@
         "income_interest_coverage_future": 11.812,
         "after_action": {
           "new_loan_balance": 9141.95,
-          "ltv_after_action_pct": 20.0,
+          "ltv_after_action_pct": 20,
           "monthly_interest_now": 31.62,
           "income_interest_coverage_now": 16.457
         },
         "constraints": {
-          "max_margin_pct": 20.0,
-          "stress_drawdown_pct": 40.0,
-          "min_income_coverage": 2.0
+          "max_margin_pct": 20,
+          "stress_drawdown_pct": 40,
+          "min_income_coverage": 2
         }
       },
       {
         "mode": "balanced",
         "action": "hold",
-        "amount": 0.0,
+        "amount": 0,
         "ltv_now_pct": 20.467,
         "ltv_stress_pct": 29.238,
         "monthly_interest_now": 32.35,
@@ -2050,15 +2050,15 @@
           "income_interest_coverage_now": 16.081
         },
         "constraints": {
-          "max_margin_pct": 25.0,
-          "stress_drawdown_pct": 30.0,
+          "max_margin_pct": 25,
+          "stress_drawdown_pct": 30,
           "min_income_coverage": 1.5
         }
       },
       {
         "mode": "aggressive",
         "action": "hold",
-        "amount": 0.0,
+        "amount": 0,
         "ltv_now_pct": 20.467,
         "ltv_stress_pct": 25.583,
         "monthly_interest_now": 32.35,
@@ -2072,8 +2072,8 @@
           "income_interest_coverage_now": 16.081
         },
         "constraints": {
-          "max_margin_pct": 30.0,
-          "stress_drawdown_pct": 20.0,
+          "max_margin_pct": 30,
+          "stress_drawdown_pct": 20,
           "min_income_coverage": 1.2
         }
       }
@@ -2127,27 +2127,27 @@
       }
     },
     "efficiency": {
-      "roi_on_margin_capital_1y_pct": 17.524,
+      "roi_on_margin_capital_1y_pct": 17.523,
       "interest_expense_as_pct_of_income": 6.218,
       "interest_expense_as_pct_of_returns": 4.847,
-      "net_benefit_of_leverage_1y_pct": 13.374
+      "net_benefit_of_leverage_1y_pct": 13.373
     },
     "historical_trends_90d": {
-      "ltv_avg": 25.246,
-      "ltv_max": 39.632,
-      "ltv_min": 20.467,
-      "ltv_std": 8.278,
-      "ltv_trend": "stable",
-      "interest_expense_avg": 30.46,
+      "ltv_avg": 35.742,
+      "ltv_max": 45.233,
+      "ltv_min": 16.687,
+      "ltv_std": 10.691,
+      "ltv_trend": "declining",
+      "interest_expense_avg": 26.4,
       "interest_expense_trend": "stable"
     }
   },
   "coverage": {
-    "derived_pct": 100.0,
-    "validated_pct": 0.0,
-    "pulled_pct": 0.0,
-    "filled_pct": 100.0,
-    "missing_pct": 0.0,
+    "derived_pct": 100,
+    "validated_pct": 0,
+    "pulled_pct": 0,
+    "filled_pct": 100,
+    "missing_pct": 0,
     "missing_paths": [],
     "conflict_paths": []
   },
@@ -2160,9 +2160,9 @@
       "gdp_nowcast": 31095.09,
       "yield_spread_10y_2y": 0.7,
       "ten_year_yield": 4.19,
-      "hy_spread_bps": 276.0,
-      "cpi_yoy": 3.0,
-      "curve_inversion_depth": 0.0,
+      "hy_spread_bps": 276,
+      "cpi_yoy": 3,
+      "curve_inversion_depth": 0,
       "fed_funds_rate": 3.72,
       "two_year_yield": 3.49,
       "real_10y_yield": 1.19,
@@ -2170,7 +2170,7 @@
       "valuation_heat_index": 0.316,
       "liquidity_index": -0.672,
       "meta": {
-        "fetched_at": "2026-01-11T05:21:50.683114+00:00",
+        "fetched_at": "2026-01-12T08:00:20.190955+00:00",
         "source": "fred",
         "schema_version": "1.0",
         "series_ids": {
@@ -2209,7 +2209,7 @@
         }
       },
       "meta": {
-        "computed_at": "2026-01-11T05:21:50.683479+00:00",
+        "computed_at": "2026-01-12T08:00:20.191682+00:00",
         "window_days": 30,
         "schema_version": "1.0"
       }
@@ -2220,22 +2220,22 @@
           "date": "2026-01-08",
           "valuation_heat_index": 0.316,
           "real_10y_yield": 1.19,
-          "curve_inversion_depth": 0.0,
+          "curve_inversion_depth": 0,
           "macro_stress_score": -0.74,
           "liquidity_index": -0.672
         }
       ],
       "meta": {
-        "updated_at": "2026-01-11T05:21:50.683485+00:00",
+        "updated_at": "2026-01-12T08:00:20.191694+00:00",
         "count": 1
       }
     }
   },
   "meta": {
-    "snapshot_created_at": "2026-01-11T05:21:47.727209+00:00",
+    "snapshot_created_at": "2026-01-12T08:00:13.605775+00:00",
     "price_partial": false,
     "source": "db",
-    "last_transaction_sync_at": "2026-01-11T05:21:24.357955+00:00",
+    "last_transaction_sync_at": "2026-01-12T07:00:31.306395+00:00",
     "served_from": "db",
     "changes": [
       "Expanded portfolio metrics (income stability, tail risk, attribution, margin stress)"

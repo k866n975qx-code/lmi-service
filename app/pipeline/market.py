@@ -1,8 +1,9 @@
 from typing import List, Dict, Any
 import time
+from datetime import datetime, timezone
 import pandas as pd
 from ..config import settings
-from ..utils import retry_call, RateLimiter
+from ..utils import retry_call, RateLimiter, now_utc_iso
 from ..providers.yfinance_adapter import YFinanceAdapter
 from ..providers.yahooquery_adapter import YahooQueryAdapter
 from ..providers.stooq_adapter import StooqAdapter
@@ -57,6 +58,7 @@ class MarketData:
         }
         self.fred = FredAdapter(api_key=settings.fred_api_key)
         self.prices: Dict[str, Any] = {}
+        self.quotes: Dict[str, Any] = {}
         self.provenance: Dict[str, list] = {}
         self.cache = CacheLayer(
             settings.cache_dir,
@@ -215,3 +217,107 @@ class MarketData:
             if not deferred:
                 continue
             _fetch_individual(name, provider, deferred)
+
+    def load_quotes(self, symbols: List[str], deadline: float | None = None):
+        symbols = [sym for sym in symbols if sym]
+        if not symbols:
+            return
+        if int(getattr(settings, "quote_ttl_minutes", 0) or 0) <= 0:
+            return
+
+        provider_name = None
+        provider = None
+        if self.providers.get("yq") and getattr(self.providers["yq"], "enabled", False):
+            provider_name = "yq"
+            provider = self.providers["yq"]
+        elif self.providers.get("yfinance") and getattr(self.providers["yfinance"], "enabled", False):
+            provider_name = "yfinance"
+            provider = self.providers["yfinance"]
+        if not provider or not hasattr(provider, "quotes_batch"):
+            return
+
+        def _to_utc_iso(ts, fallback: str) -> str:
+            if ts is None:
+                return fallback
+            if isinstance(ts, (int, float)):
+                return datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat()
+            if isinstance(ts, datetime):
+                dt = ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+                return dt.astimezone(timezone.utc).isoformat()
+            try:
+                dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt.astimezone(timezone.utc).isoformat()
+            except Exception:
+                return fallback
+
+        quote_ttl_hours = max(float(settings.quote_ttl_minutes) / 60.0, 0.0)
+        pending = set(symbols)
+
+        def _cache_key(symbol: str):
+            if not self.cache:
+                return None
+            return self.cache.make_key(provider_name, "quote", symbol, "", "", {"interval": "1h"})
+
+        def _cache_get(symbol: str):
+            if not self.cache or quote_ttl_hours <= 0:
+                return None, None
+            key = _cache_key(symbol)
+            payload, age = self.cache.get(key)
+            if not isinstance(payload, dict):
+                return None, age
+            if payload.get("price") is None:
+                return None, age
+            return payload, age
+
+        def _cache_set(symbol: str, payload: dict):
+            if not self.cache or quote_ttl_hours <= 0:
+                return
+            key = _cache_key(symbol)
+            self.cache.set(key, payload, ttl_hours=quote_ttl_hours)
+
+        if self.cache and quote_ttl_hours > 0:
+            for sym in list(pending):
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise TimeoutError("time_budget_exceeded")
+                payload, _age = _cache_get(sym)
+                if payload:
+                    self.quotes[sym] = payload
+                    pending.discard(sym)
+
+        if not pending:
+            return
+
+        if deadline is not None and time.monotonic() >= deadline:
+            raise TimeoutError("time_budget_exceeded")
+        self.rate_limiter.wait(deadline)
+        try:
+            def _call():
+                return provider.quotes_batch(sorted(pending))
+            results = retry_call(
+                _call,
+                attempts=settings.market_retry_attempts,
+                base_delay=settings.http_retry_backoff_seconds,
+                deadline=deadline,
+            )
+        except Exception:
+            results = {}
+
+        fetched_at = now_utc_iso()
+        if isinstance(results, dict):
+            for sym in pending:
+                payload = results.get(sym)
+                if not isinstance(payload, dict):
+                    continue
+                price = payload.get("price")
+                if price is None:
+                    continue
+                entry = {
+                    "price": float(price),
+                    "as_of_utc": _to_utc_iso(payload.get("timestamp"), fetched_at),
+                    "fetched_at_utc": fetched_at,
+                    "provider": provider_name,
+                }
+                self.quotes[sym] = entry
+                _cache_set(sym, entry)

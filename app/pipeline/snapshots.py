@@ -1763,18 +1763,40 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
     for tx in div_tx:
         div_by_symbol[tx["symbol"]].append(tx)
 
+    def _parse_iso(dt_str: str | None):
+        if not dt_str:
+            return None
+        try:
+            return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+
     price_series = {}
     missing_prices = []
-    prices_as_of = None
+    prices_as_of_date = None
+    prices_as_of_utc = None
+    quote_map = getattr(md, "quotes", None) or {}
     for sym in holdings:
         series = _price_series(md.prices.get(sym))
         price_series[sym] = series
+
+        quote = quote_map.get(sym) if isinstance(quote_map, dict) else None
+        quote_price = None
+        quote_as_of_dt = None
+        if isinstance(quote, dict):
+            if isinstance(quote.get("price"), (int, float)):
+                quote_price = float(quote.get("price"))
+            quote_as_of_dt = _parse_iso(quote.get("as_of_utc") or quote.get("fetched_at_utc"))
+            if quote_as_of_dt and (prices_as_of_utc is None or quote_as_of_dt > prices_as_of_utc):
+                prices_as_of_utc = quote_as_of_dt
+
         if series is None or series.empty:
-            missing_prices.append(sym)
+            if quote_price is None:
+                missing_prices.append(sym)
         else:
             last_date = series.index.max().date()
-            if prices_as_of is None or last_date > prices_as_of:
-                prices_as_of = last_date
+            if prices_as_of_date is None or last_date > prices_as_of_date:
+                prices_as_of_date = last_date
 
     benchmark_symbol = settings.benchmark_primary
     benchmark_series = _price_series(md.prices.get(benchmark_symbol))
@@ -1789,8 +1811,38 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
     for sym in sorted(holdings.keys()):
         h = holdings[sym]
         series = price_series.get(sym)
+        quote = quote_map.get(sym) if isinstance(quote_map, dict) else None
+        quote_price = None
+        quote_provider = None
+        quote_fetched_at = None
+        if isinstance(quote, dict):
+            if isinstance(quote.get("price"), (int, float)):
+                quote_price = float(quote.get("price"))
+            quote_provider = quote.get("provider")
+            quote_fetched_at = quote.get("fetched_at_utc")
+
+        fetched_at = now_utc_iso()
+        provider_name = "unknown"
+        if md.provenance.get(sym):
+            for entry in md.provenance[sym]:
+                if entry.get("success"):
+                    provider_name = entry.get("provider", "unknown")
+                    break
+            if provider_name == "unknown":
+                provider_name = md.provenance[sym][0].get("provider", "unknown")
+
         last_price = None
-        if series is not None and not series.empty:
+        last_price_provenance = _provenance_entry("pulled", provider_name, "price_history_last", [sym], fetched_at)
+        if quote_price is not None:
+            last_price = quote_price
+            last_price_provenance = _provenance_entry(
+                "pulled",
+                quote_provider or provider_name,
+                "quote",
+                [sym],
+                quote_fetched_at or fetched_at,
+            )
+        elif series is not None and not series.empty:
             last_price = float(series.iloc[-1])
         mv = last_price * float(h["shares"]) if last_price is not None else None
         total_market_value += mv or 0.0
@@ -1844,20 +1896,10 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
             "forward_12m_div_ps": _round_money(forward_12m_div_ps) if forward_12m_div_ps else None,
         }
         ultimate.update(metrics_out)
-
-        fetched_at = now_utc_iso()
-        provider_name = "unknown"
-        if md.provenance.get(sym):
-            for entry in md.provenance[sym]:
-                if entry.get("success"):
-                    provider_name = entry.get("provider", "unknown")
-                    break
-            if provider_name == "unknown":
-                provider_name = md.provenance[sym][0].get("provider", "unknown")
         ultimate_provenance = {
             "price_history": _provenance_entry("pulled", provider_name, "price_history", [sym], fetched_at),
             "benchmark_history": _provenance_entry("pulled", provider_name, "price_history", [benchmark_symbol], fetched_at),
-            "last_price": _provenance_entry("pulled", provider_name, "price_history_last", [sym], fetched_at),
+            "last_price": last_price_provenance,
             "trailing_12m_div_ps": _provenance_entry("derived", "internal", "ttm_dividends", [sym], fetched_at),
             "last_ex_date": _provenance_entry("derived", "internal", "dividend_history", [sym], fetched_at),
             "distribution_frequency": _provenance_entry("derived", "internal", "freq_from_exdate_gaps", [sym], fetched_at),
@@ -2270,6 +2312,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         "cache": {
             "pricing": {"ttl_seconds": settings.cache_ttl_hours * 3600, "bypassed": False},
             "yf_dividends": {"ttl_seconds": settings.cache_ttl_hours * 3600, "bypassed": False},
+            "quotes": {"ttl_seconds": settings.quote_ttl_minutes * 60, "bypassed": False},
         },
         "snapshot_age_days": 0,
         "schema_version": "3.0",
@@ -2285,12 +2328,18 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
 
     macro = _build_macro_snapshot(md, as_of_date_local)
 
+    if prices_as_of_date is None:
+        prices_as_of_date = as_of_date_local
+    if prices_as_of_utc:
+        prices_as_of_date = max(prices_as_of_date, prices_as_of_utc.date())
+
     daily = {
         "as_of": as_of_date_str,
         "as_of_utc": as_of_utc,
         "as_of_date_local": as_of_date_str,
         "plaid_account_id": plaid_account_id,
-        "prices_as_of": prices_as_of.isoformat() if prices_as_of else as_of_date_str,
+        "prices_as_of": prices_as_of_date.isoformat() if prices_as_of_date else as_of_date_str,
+        "prices_as_of_utc": prices_as_of_utc.isoformat() if prices_as_of_utc else None,
         "holdings": holdings_out,
         "count": len(holdings_out),
         "missing_prices": missing_prices,
