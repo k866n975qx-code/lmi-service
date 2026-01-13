@@ -10,7 +10,9 @@ from .snapshots import (
     DIVIDEND_CUT_THRESHOLD,
     _build_pay_history,
     _load_dividend_transactions,
+    _load_first_acquired_dates,
     _load_provider_dividends,
+    _months_between,
     _monthly_income_totals,
 )
 
@@ -276,23 +278,30 @@ def _dividend_reliability_reasons(
     div_tx = _load_dividend_transactions(conn)
     provider_divs = _load_provider_dividends(conn)
     pay_history = _build_pay_history(div_tx)
+    acquired_dates = _load_first_acquired_dates(conn)
     cutoff = as_of_date - timedelta(days=365)
 
     out: dict[str, dict[str, str]] = {}
     for sym in symbols:
         reasons = {}
-        pay_events = [ev for ev in pay_history.get(sym, []) if ev.get("date") and ev.get("date") >= cutoff]
+        first_acquired = acquired_dates.get(sym)
+        window_start = cutoff
+        if first_acquired and first_acquired <= as_of_date and first_acquired > cutoff:
+            window_start = first_acquired
+        window_months = max(1, _months_between(window_start, as_of_date))
+
+        pay_events = [ev for ev in pay_history.get(sym, []) if ev.get("date") and ev.get("date") >= window_start]
         pay_dates = sorted({ev.get("date") for ev in pay_events if ev.get("date")})
         pay_count = len(pay_dates)
 
-        totals_12 = _monthly_income_totals(div_tx, as_of_date, 12, symbol=sym)
+        totals_12 = _monthly_income_totals(div_tx, as_of_date, window_months, symbol=sym)
         totals_6 = totals_12[-6:] if len(totals_12) >= 6 else totals_12
         start_6 = totals_6[0] if totals_6 else 0.0
         end_6 = totals_6[-1] if totals_6 else 0.0
         mean_6 = statistics.mean(totals_6) if totals_6 else 0.0
 
         if pay_count < 2:
-            base = f"insufficient dividend payment history (<2 dates in last 12m; found {pay_count})"
+            base = f"insufficient dividend payment history (<2 dates since {window_start.isoformat()}; found {pay_count})"
             reasons["payment_frequency_actual"] = base
             reasons["payment_frequency_expected"] = base
             reasons["avg_days_between_payments"] = base
@@ -310,14 +319,14 @@ def _dividend_reliability_reasons(
         for ev in provider_divs.get(sym, []):
             ex_date = ev.get("ex_date")
             amt = ev.get("amount")
-            if ex_date and isinstance(amt, (int, float)) and ex_date >= cutoff:
+            if ex_date and isinstance(amt, (int, float)) and ex_date >= window_start:
                 events.append((ex_date, float(amt)))
         events.sort(key=lambda item: item[0])
         if not events and pay_events:
             for ev in pay_events:
                 dt = ev.get("date")
                 amt = ev.get("amount")
-                if dt and isinstance(amt, (int, float)) and dt >= cutoff:
+                if dt and isinstance(amt, (int, float)) and dt >= window_start:
                     events.append((dt, float(amt)))
             events.sort(key=lambda item: item[0])
 

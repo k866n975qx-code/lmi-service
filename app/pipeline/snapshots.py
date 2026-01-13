@@ -1,9 +1,11 @@
 import calendar
 import json
 import math
+import re
 import sqlite3
 import statistics
 import uuid
+from bisect import bisect_right
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
@@ -17,6 +19,10 @@ from .validation import validate_period_snapshot
 from . import metrics
 
 TRADE_TYPES = {"buy", "buy_shares", "reinvest", "reinvestment", "sell", "sell_shares", "redemption"}
+ACQUIRE_TYPES = {"buy", "buy_shares", "reinvest", "reinvestment"}
+SELL_TYPES = {"sell", "sell_shares", "redemption"}
+SHARE_TX_TYPES = ACQUIRE_TYPES | SELL_TYPES
+_SHARES_RE = re.compile(r"\b([0-9]*\.?[0-9]+)\s+shares?\b", re.IGNORECASE)
 DIVIDEND_CUT_THRESHOLD = 0.10
 
 
@@ -253,6 +259,121 @@ def _load_trade_counts(conn: sqlite3.Connection):
     return counts
 
 
+def _load_symbol_trade_deltas(conn: sqlite3.Connection, symbols: set[str]) -> dict[str, dict[date, float]]:
+    if not symbols:
+        return {}
+    cur = conn.cursor()
+    symbol_list = sorted({str(sym).upper() for sym in symbols if sym})
+    if not symbol_list:
+        return {}
+    sym_placeholders = ",".join("?" for _ in symbol_list)
+    type_list = sorted(SHARE_TX_TYPES)
+    type_placeholders = ",".join("?" for _ in type_list)
+    rows = cur.execute(
+        f"""
+        SELECT symbol, COALESCE(transaction_datetime, date), transaction_type, quantity, name
+        FROM investment_transactions
+        WHERE symbol IN ({sym_placeholders})
+          AND lower(transaction_type) IN ({type_placeholders})
+        ORDER BY COALESCE(transaction_datetime, date) ASC, lm_transaction_id ASC
+        """,
+        tuple(symbol_list + type_list),
+    ).fetchall()
+    deltas: dict[str, dict[date, float]] = defaultdict(lambda: defaultdict(float))
+    for symbol, dt_str, tx_type, quantity, name in rows:
+        if not symbol:
+            continue
+        dt = _parse_date(dt_str)
+        if dt is None:
+            continue
+        qty = _coerce_float(quantity)
+        if qty is None:
+            qty = _extract_quantity(name)
+        if qty is None or qty == 0:
+            continue
+        tx_type = (tx_type or "").lower()
+        if qty < 0:
+            delta = float(qty)
+        elif tx_type in ACQUIRE_TYPES:
+            delta = float(qty)
+        elif tx_type in SELL_TYPES:
+            delta = float(-qty)
+        else:
+            continue
+        sym = str(symbol).upper()
+        deltas[sym][dt] += delta
+    return deltas
+
+
+def _load_symbol_splits(conn: sqlite3.Connection, symbols: set[str]) -> dict[str, dict[date, list[float]]]:
+    if not symbols:
+        return {}
+    cur = conn.cursor()
+    symbol_list = sorted({str(sym).upper() for sym in symbols if sym})
+    if not symbol_list:
+        return {}
+    sym_placeholders = ",".join("?" for _ in symbol_list)
+    rows = cur.execute(
+        f"""
+        SELECT symbol, ex_date, ratio
+        FROM split_events
+        WHERE symbol IN ({sym_placeholders})
+        """,
+        tuple(symbol_list),
+    ).fetchall()
+    splits: dict[str, dict[date, list[float]]] = defaultdict(lambda: defaultdict(list))
+    for symbol, ex_date, ratio in rows:
+        if not symbol:
+            continue
+        dt = _parse_date(ex_date)
+        ratio_val = _coerce_float(ratio)
+        if dt is None or ratio_val is None or ratio_val <= 0:
+            continue
+        sym = str(symbol).upper()
+        splits[sym][dt].append(float(ratio_val))
+    return splits
+
+
+def _build_position_index(conn: sqlite3.Connection, symbols: set[str]) -> dict[str, tuple[list[date], list[float]]]:
+    if not symbols:
+        return {}
+    trade_deltas = _load_symbol_trade_deltas(conn, symbols)
+    split_events = _load_symbol_splits(conn, symbols)
+    index: dict[str, tuple[list[date], list[float]]] = {}
+    all_syms = set(trade_deltas.keys()) | set(split_events.keys())
+    for sym in sorted(all_syms):
+        trade_map = trade_deltas.get(sym, {})
+        split_map = split_events.get(sym, {})
+        if not trade_map and not split_map:
+            continue
+        dates = sorted(set(trade_map.keys()) | set(split_map.keys()))
+        shares = 0.0
+        date_list: list[date] = []
+        share_list: list[float] = []
+        for dt in dates:
+            ratios = split_map.get(dt) or []
+            for ratio in ratios:
+                shares *= ratio
+            shares += trade_map.get(dt, 0.0)
+            date_list.append(dt)
+            share_list.append(shares)
+        index[sym] = (date_list, share_list)
+    return index
+
+
+def _shares_at_date(position_index: dict[str, tuple[list[date], list[float]]], symbol: str, target_date: date) -> float:
+    if not position_index or not symbol or not target_date:
+        return 0.0
+    entry = position_index.get(str(symbol).upper())
+    if not entry:
+        return 0.0
+    dates, shares = entry
+    idx = bisect_right(dates, target_date) - 1
+    if idx < 0:
+        return 0.0
+    return float(shares[idx])
+
+
 def _load_dividend_transactions(conn: sqlite3.Connection):
     cur = conn.cursor()
     rows = cur.execute(
@@ -320,6 +441,50 @@ def _median_amount(events: list[dict]) -> float | None:
     return float(statistics.median(amounts))
 
 
+def _coerce_float(val):
+    if val is None:
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_quantity(text: str | None):
+    if not text:
+        return None
+    match = _SHARES_RE.search(text)
+    return float(match.group(1)) if match else None
+
+
+def _months_between(start: date, end: date) -> int:
+    if start > end:
+        return 0
+    return (end.year - start.year) * 12 + (end.month - start.month) + 1
+
+
+def _load_first_acquired_dates(conn: sqlite3.Connection) -> dict[str, date]:
+    cur = conn.cursor()
+    type_placeholders = ",".join("?" for _ in sorted(ACQUIRE_TYPES))
+    rows = cur.execute(
+        f"""
+        SELECT symbol, MIN(COALESCE(transaction_datetime, date))
+        FROM investment_transactions
+        WHERE symbol IS NOT NULL
+          AND lower(transaction_type) IN ({type_placeholders})
+        GROUP BY symbol
+        """,
+        tuple(sorted(ACQUIRE_TYPES)),
+    ).fetchall()
+    out: dict[str, date] = {}
+    for symbol, dt_str in rows:
+        sym = str(symbol).upper() if symbol else None
+        dt = _parse_date(dt_str)
+        if sym and dt:
+            out[sym] = dt
+    return out
+
+
 def _dividend_reliability_metrics(
     symbol: str,
     div_tx: list[dict],
@@ -327,8 +492,15 @@ def _dividend_reliability_metrics(
     pay_history: dict,
     expected_frequency: str | None,
     as_of_date: date,
+    first_acquired: date | None = None,
 ) -> dict:
-    totals_12 = _monthly_income_totals(div_tx, as_of_date, 12, symbol=symbol)
+    cutoff = as_of_date - timedelta(days=365)
+    window_start = cutoff
+    if first_acquired and first_acquired <= as_of_date and first_acquired > cutoff:
+        window_start = first_acquired
+    window_months = max(1, _months_between(window_start, as_of_date)) if window_start else 12
+
+    totals_12 = _monthly_income_totals(div_tx, as_of_date, window_months, symbol=symbol)
     totals_6 = totals_12[-6:] if len(totals_12) >= 6 else totals_12
 
     mean_12 = statistics.mean(totals_12) if totals_12 else 0.0
@@ -349,7 +521,7 @@ def _dividend_reliability_metrics(
         vol_6m = (statistics.pstdev(totals_6) / mean_6) * 100.0
 
     pay_events = pay_history.get(symbol, [])
-    pay_dates = [ev.get("date") for ev in pay_events if ev.get("date") and ev.get("date") >= as_of_date - timedelta(days=365)]
+    pay_dates = [ev.get("date") for ev in pay_events if ev.get("date") and ev.get("date") >= window_start]
     pay_dates = [d for d in pay_dates if d]
     pay_dates.sort()
     payment_frequency_actual = _frequency_from_dates(pay_dates)
@@ -359,6 +531,7 @@ def _dividend_reliability_metrics(
     actual_count = len(pay_dates)
     missed_payments = None
     if expected_count is not None:
+        expected_count = int(expected_count * min(window_months, 12) / 12.0)
         missed_payments = max(expected_count - actual_count, 0)
 
     gap_days = _gap_days(pay_dates)
@@ -373,14 +546,14 @@ def _dividend_reliability_metrics(
     for ev in provider_divs.get(symbol, []):
         ex_date = ev.get("ex_date")
         amt = ev.get("amount")
-        if ex_date and isinstance(amt, (int, float)) and ex_date >= as_of_date - timedelta(days=365):
+        if ex_date and isinstance(amt, (int, float)) and ex_date >= window_start:
             events.append((ex_date, float(amt)))
     events.sort(key=lambda item: item[0])
     if not events and pay_events:
         for ev in pay_events:
             dt = ev.get("date")
             amt = ev.get("amount")
-            if dt and isinstance(amt, (int, float)) and dt >= as_of_date - timedelta(days=365):
+            if dt and isinstance(amt, (int, float)) and dt >= window_start:
                 events.append((dt, float(amt)))
         events.sort(key=lambda item: item[0])
 
@@ -517,11 +690,17 @@ def _estimate_expected_pay_events(
     window_end: date,
     pay_history: dict,
     ex_date_est_by_symbol: dict[str, date] | None = None,
+    position_index: dict[str, tuple[list[date], list[float]]] | None = None,
 ):
     default_lag = _median_pay_lag_days(provider_divs)
     expected = []
     total_raw = 0.0
     ex_date_est_by_symbol = ex_date_est_by_symbol or {}
+    def _shares_for(sym: str, ex_date: date) -> float:
+        if position_index:
+            return _shares_at_date(position_index, sym, ex_date)
+        return float(holdings[sym]["shares"])
+
     for sym in sorted(holdings.keys()):
         history = pay_history.get(sym, [])
         actual_events = [ev for ev in history if window_start <= ev["date"] <= window_end]
@@ -569,7 +748,6 @@ def _estimate_expected_pay_events(
         if not events:
             continue
         lag_days = _symbol_pay_lag_days(events, default_lag)
-        shares = float(holdings[sym]["shares"])
         for ev in events:
             ex = ev.get("ex_date")
             amt = ev.get("amount")
@@ -577,6 +755,9 @@ def _estimate_expected_pay_events(
                 continue
             pay = ev.get("pay_date") or (ex + timedelta(days=lag_days))
             if pay < window_start or pay > window_end:
+                continue
+            shares = _shares_for(sym, ex)
+            if shares <= 0:
                 continue
             amount_est = amt * shares
             total_raw += float(amount_est)
@@ -1757,8 +1938,10 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
     provider_divs = _load_provider_dividends(conn)
     lm_ex_dates = _load_lm_ex_dates(conn)
     account_balances = _load_account_balances(conn)
+    first_acquired_dates = _load_first_acquired_dates(conn)
 
     holding_symbols = set(holdings.keys())
+    position_index = _build_position_index(conn, holding_symbols)
     div_by_symbol = defaultdict(list)
     for tx in div_tx:
         div_by_symbol[tx["symbol"]].append(tx)
@@ -1949,6 +2132,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
             pay_history,
             frequency,
             as_of_date_local,
+            first_acquired_dates.get(sym),
         )
         dividend_reliability_provenance = {
             key: _provenance_entry("derived", "internal", "dividend_reliability", [sym], fetched_at)
@@ -2081,6 +2265,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         as_of_date_local,
         pay_history,
         ex_date_est_by_symbol,
+        position_index,
     )
     projected_vs_received["alt"]["projected"] = projected_alt or 0.0
     projected_vs_received["alt"]["expected_events"] = expected_events
@@ -2107,7 +2292,9 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
                 if per_share is not None:
                     events = [{"ex_date": next_est, "amount": per_share}]
         for ev in events:
-            shares = float(holdings[sym]["shares"])
+            shares = _shares_at_date(position_index, sym, ev["ex_date"])
+            if shares <= 0:
+                continue
             amount_est = ev["amount"] * shares
             upcoming_events.append(
                 {"symbol": sym, "ex_date_est": ev["ex_date"].isoformat(), "amount_est": _round_money(amount_est)}
