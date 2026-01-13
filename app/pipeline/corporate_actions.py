@@ -373,9 +373,9 @@ def estimate_dividend_schedule(
         """
         SELECT symbol, ex_date, amount
         FROM dividend_events_lm
-        WHERE run_id=?
+        WHERE source='lunchmoney'
+          AND (ex_date_est IS NULL OR pay_date_est IS NULL OR match_method IS NULL)
         """,
-        (run_id,),
     ).fetchall()
     if not lm_rows:
         return 0
@@ -479,7 +479,7 @@ def estimate_dividend_schedule(
                 """
                 UPDATE dividend_events_lm
                 SET ex_date_est=?, pay_date_est=?, match_source=?, match_method=?, match_days_delta=?
-                WHERE symbol=? AND ex_date=? AND amount=? AND run_id=?
+                WHERE symbol=? AND ex_date=? AND amount=? AND source='lunchmoney'
                 """,
                 (
                     best["ex_date"].isoformat() if best["ex_date"] else None,
@@ -490,7 +490,6 @@ def estimate_dividend_schedule(
                     sym,
                     cash_date_str,
                     amount,
-                    run_id,
                 ),
             )
             updated += cur.rowcount
