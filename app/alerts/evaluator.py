@@ -27,6 +27,8 @@ from .constants import (
     MARGIN_LTV_CRITICAL,
     MARGIN_LTV_RED,
     MARGIN_LTV_YELLOW,
+    MISSING_DIVIDEND_GRACE_DAYS,
+    MISSING_DIVIDEND_MIN_PAYMENTS,
     MAX_DRAWDOWN_WARNING,
     MILESTONE_MONTHLY_INCOME,
     MILESTONE_NET_VALUES,
@@ -186,6 +188,23 @@ def _dividend_last_two(conn: sqlite3.Connection, symbol: str):
     if len(vals) >= 2:
         return vals[0], vals[1]
     return (vals[0] if vals else None), None
+
+def _dividend_tx_counts(conn: sqlite3.Connection, symbols: list[str]) -> dict[str, int]:
+    symbols = sorted({str(sym).upper() for sym in symbols if sym})
+    if not symbols:
+        return {}
+    placeholders = ",".join("?" for _ in symbols)
+    cur = conn.cursor()
+    rows = cur.execute(
+        f"""
+        SELECT symbol, COUNT(*)
+        FROM investment_transactions
+        WHERE transaction_type='dividend' AND symbol IN ({placeholders})
+        GROUP BY symbol
+        """,
+        symbols,
+    ).fetchall()
+    return {str(sym).upper(): int(count) for sym, count in rows if sym}
 
 def _holdings_map(holdings: list[dict]) -> dict:
     out = {}
@@ -476,16 +495,24 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
     alt = (dividends.get("projected_vs_received") or {}).get("alt") or {}
     expected_events = alt.get("expected_events") or []
     received_by_symbol = (dividends.get("realized_mtd") or {}).get("by_symbol") or {}
+    eligible_symbols = None
+    if MISSING_DIVIDEND_MIN_PAYMENTS > 0 and expected_events:
+        symbols = [ev.get("symbol") for ev in expected_events if ev.get("symbol")]
+        counts = _dividend_tx_counts(conn, symbols)
+        eligible_symbols = {sym for sym, count in counts.items() if count >= MISSING_DIVIDEND_MIN_PAYMENTS}
     for ev in expected_events:
         sym = ev.get("symbol")
         pay_date_str = ev.get("pay_date_est")
         if not sym or not pay_date_str:
             continue
+        sym = str(sym).upper()
+        if eligible_symbols is not None and sym not in eligible_symbols:
+            continue
         try:
             pay_dt = date.fromisoformat(pay_date_str)
         except Exception:
             continue
-        if (as_of_dt - pay_dt).days <= 5:
+        if (as_of_dt - pay_dt).days <= MISSING_DIVIDEND_GRACE_DAYS:
             continue
         if sym not in received_by_symbol:
             missing_events.append(f"{sym} (pay {pay_date_str})")

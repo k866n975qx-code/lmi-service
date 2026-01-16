@@ -292,7 +292,17 @@ def _dividend_reliability_reasons(
 
         pay_events = [ev for ev in pay_history.get(sym, []) if ev.get("date") and ev.get("date") >= window_start]
         pay_dates = sorted({ev.get("date") for ev in pay_events if ev.get("date")})
-        pay_count = len(pay_dates)
+
+        provider_events = provider_divs.get(sym, [])
+        ex_dates = sorted(
+            {
+                ev.get("ex_date")
+                for ev in provider_events
+                if ev.get("ex_date") and window_start <= ev.get("ex_date") <= as_of_date
+            }
+        )
+        hist_dates = ex_dates or pay_dates
+        hist_count = len(hist_dates)
 
         totals_12 = _monthly_income_totals(div_tx, as_of_date, window_months, symbol=sym)
         totals_6 = totals_12[-6:] if len(totals_12) >= 6 else totals_12
@@ -300,8 +310,11 @@ def _dividend_reliability_reasons(
         end_6 = totals_6[-1] if totals_6 else 0.0
         mean_6 = statistics.mean(totals_6) if totals_6 else 0.0
 
-        if pay_count < 2:
-            base = f"insufficient dividend payment history (<2 dates since {window_start.isoformat()}; found {pay_count})"
+        if hist_count < 2:
+            if ex_dates:
+                base = f"insufficient dividend history (<2 ex-dates since {window_start.isoformat()}; found {hist_count})"
+            else:
+                base = f"insufficient dividend payment history (<2 dates since {window_start.isoformat()}; found {hist_count})"
             reasons["payment_frequency_actual"] = base
             reasons["payment_frequency_expected"] = base
             reasons["avg_days_between_payments"] = base

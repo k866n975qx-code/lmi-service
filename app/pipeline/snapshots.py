@@ -158,6 +158,15 @@ def _frequency_from_ex_dates(ex_dates):
     return "annual"
 
 
+def _frequency_from_recent_ex_dates(ex_dates: list[date], recent: int = 6) -> str | None:
+    if len(ex_dates) < 2:
+        return None
+    dates = sorted(ex_dates)
+    if recent and len(dates) > recent:
+        dates = dates[-recent:]
+    return _frequency_from_ex_dates(dates)
+
+
 def _frequency_from_dates(dates: list[date]) -> str | None:
     if not dates:
         return None
@@ -524,17 +533,34 @@ def _dividend_reliability_metrics(
     pay_dates = [ev.get("date") for ev in pay_events if ev.get("date") and ev.get("date") >= window_start]
     pay_dates = [d for d in pay_dates if d]
     pay_dates.sort()
-    payment_frequency_actual = _frequency_from_dates(pay_dates)
+
+    provider_events = provider_divs.get(symbol, [])
+    ex_dates = [
+        ev.get("ex_date")
+        for ev in provider_events
+        if ev.get("ex_date") and window_start <= ev.get("ex_date") <= as_of_date
+    ]
+    ex_dates = [d for d in ex_dates if d]
+    ex_dates.sort()
+
+    payment_frequency_actual = (
+        _frequency_from_recent_ex_dates(ex_dates, recent=6)
+        or _frequency_from_ex_dates(ex_dates)
+        or _frequency_from_dates(pay_dates)
+    )
     payment_frequency_expected = expected_frequency or payment_frequency_actual
+    if payment_frequency_actual and expected_frequency and expected_frequency != payment_frequency_actual:
+        payment_frequency_expected = payment_frequency_actual
 
     expected_count = _payouts_per_year(payment_frequency_expected)
-    actual_count = len(pay_dates)
+    actual_count = len(ex_dates) if ex_dates else len(pay_dates)
     missed_payments = None
     if expected_count is not None:
         expected_count = int(expected_count * min(window_months, 12) / 12.0)
         missed_payments = max(expected_count - actual_count, 0)
 
-    gap_days = _gap_days(pay_dates)
+    timing_dates = pay_dates if len(pay_dates) >= 2 else ex_dates
+    gap_days = _gap_days(timing_dates)
     avg_gap = round(statistics.mean(gap_days), 1) if gap_days else None
     timing_consistency = None
     if gap_days:
@@ -618,6 +644,34 @@ def _load_provider_dividends(conn: sqlite3.Connection):
     return out
 
 
+def _load_symbol_pay_lag_days(conn: sqlite3.Connection) -> dict[str, int]:
+    cur = conn.cursor()
+    rows = cur.execute(
+        """
+        SELECT symbol, ex_date_est, pay_date_est
+        FROM dividend_events_lm
+        WHERE ex_date_est IS NOT NULL AND pay_date_est IS NOT NULL
+        """
+    ).fetchall()
+    lags: dict[str, list[int]] = defaultdict(list)
+    for symbol, ex_date_est, pay_date_est in rows:
+        sym = str(symbol).upper() if symbol else None
+        ex_dt = _parse_date(ex_date_est)
+        pay_dt = _parse_date(pay_date_est)
+        if not sym or not ex_dt or not pay_dt:
+            continue
+        delta = (pay_dt - ex_dt).days
+        if delta < 0 or delta > 60:
+            continue
+        lags[sym].append(delta)
+    out: dict[str, int] = {}
+    for sym, vals in lags.items():
+        if not vals:
+            continue
+        out[sym] = max(1, int(round(statistics.median(vals))))
+    return out
+
+
 def _load_lm_ex_dates(conn: sqlite3.Connection):
     cur = conn.cursor()
     rows = cur.execute(
@@ -691,6 +745,7 @@ def _estimate_expected_pay_events(
     pay_history: dict,
     ex_date_est_by_symbol: dict[str, date] | None = None,
     position_index: dict[str, tuple[list[date], list[float]]] | None = None,
+    pay_lag_by_symbol: dict[str, int] | None = None,
 ):
     default_lag = _median_pay_lag_days(provider_divs)
     expected = []
@@ -747,7 +802,11 @@ def _estimate_expected_pay_events(
         events = provider_divs.get(sym, [])
         if not events:
             continue
-        lag_days = _symbol_pay_lag_days(events, default_lag)
+        lag_days = None
+        if pay_lag_by_symbol:
+            lag_days = pay_lag_by_symbol.get(sym)
+        if lag_days is None:
+            lag_days = _symbol_pay_lag_days(events, default_lag)
         for ev in events:
             ex = ev.get("ex_date")
             amt = ev.get("amount")
@@ -1936,6 +1995,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
     div_tx = _load_dividend_transactions(conn)
     pay_history = _build_pay_history(div_tx)
     provider_divs = _load_provider_dividends(conn)
+    pay_lag_by_symbol = _load_symbol_pay_lag_days(conn)
     lm_ex_dates = _load_lm_ex_dates(conn)
     account_balances = _load_account_balances(conn)
     first_acquired_dates = _load_first_acquired_dates(conn)
@@ -2266,6 +2326,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         pay_history,
         ex_date_est_by_symbol,
         position_index,
+        pay_lag_by_symbol,
     )
     projected_vs_received["alt"]["projected"] = projected_alt or 0.0
     projected_vs_received["alt"]["expected_events"] = expected_events
