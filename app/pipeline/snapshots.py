@@ -24,6 +24,8 @@ SELL_TYPES = {"sell", "sell_shares", "redemption"}
 SHARE_TX_TYPES = ACQUIRE_TYPES | SELL_TYPES
 _SHARES_RE = re.compile(r"\b([0-9]*\.?[0-9]+)\s+shares?\b", re.IGNORECASE)
 DIVIDEND_CUT_THRESHOLD = 0.10
+DIVIDEND_CUT_LOOKAHEAD_DAYS = 90
+SPECIAL_DIVIDEND_FACTOR = 2.5
 
 
 def _last_valid_price(df):
@@ -149,11 +151,17 @@ def _frequency_from_ex_dates(ex_dates):
     if not gaps:
         return None
     median_gap = gaps[len(gaps) // 2]
-    if median_gap < 45:
+    return _frequency_from_gap_days(median_gap)
+
+
+def _frequency_from_gap_days(gap_days: int | None) -> str | None:
+    if gap_days is None:
+        return None
+    if gap_days < 45:
         return "monthly"
-    if median_gap < 100:
+    if gap_days < 100:
         return "quarterly"
-    if median_gap < 190:
+    if gap_days < 190:
         return "semiannual"
     return "annual"
 
@@ -178,6 +186,30 @@ def _gap_days(dates: list[date]) -> list[int]:
     if len(dates) < 2:
         return []
     return [max(1, (b - a).days) for a, b in zip(dates[:-1], dates[1:]) if b > a]
+
+
+def _annualized_dividend_series(events: list[tuple[date, float]]) -> list[dict]:
+    if not events:
+        return []
+    events = sorted(events, key=lambda item: item[0])
+    dates = [dt for dt, _amt in events]
+    out = []
+    for idx, (dt, amt) in enumerate(events):
+        gap_prev = (dt - dates[idx - 1]).days if idx > 0 else None
+        if gap_prev is None or gap_prev <= 0:
+            gap_prev = (dates[idx + 1] - dt).days if idx + 1 < len(dates) else None
+        freq = _frequency_from_gap_days(gap_prev)
+        per_year = _payouts_per_year(freq) or 1
+        out.append({"date": dt, "amount": amt, "annualized": amt * per_year, "special": False})
+    history = []
+    for ev in out:
+        if len(history) >= 3:
+            window = history[-6:]
+            median = statistics.median(window)
+            if median > 0 and ev["annualized"] > median * SPECIAL_DIVIDEND_FACTOR:
+                ev["special"] = True
+        history.append(ev["annualized"])
+    return out
 
 
 def _next_ex_date_est(ex_dates):
@@ -535,13 +567,13 @@ def _dividend_reliability_metrics(
     pay_dates.sort()
 
     provider_events = provider_divs.get(symbol, [])
-    ex_dates = [
-        ev.get("ex_date")
-        for ev in provider_events
-        if ev.get("ex_date") and window_start <= ev.get("ex_date") <= as_of_date
-    ]
-    ex_dates = [d for d in ex_dates if d]
-    ex_dates.sort()
+    ex_dates = sorted(
+        {
+            ev.get("ex_date")
+            for ev in provider_events
+            if ev.get("ex_date") and window_start <= ev.get("ex_date") <= as_of_date
+        }
+    )
 
     payment_frequency_actual = (
         _frequency_from_recent_ex_dates(ex_dates, recent=6)
@@ -552,12 +584,17 @@ def _dividend_reliability_metrics(
     if payment_frequency_actual and expected_frequency and expected_frequency != payment_frequency_actual:
         payment_frequency_expected = payment_frequency_actual
 
-    expected_count = _payouts_per_year(payment_frequency_expected)
-    actual_count = len(ex_dates) if ex_dates else len(pay_dates)
-    missed_payments = None
-    if expected_count is not None:
-        expected_count = int(expected_count * min(window_months, 12) / 12.0)
-        missed_payments = max(expected_count - actual_count, 0)
+    missed_payments = 0
+    if pay_dates:
+        expected_count = len(ex_dates) if ex_dates else None
+        if expected_count is None and len(pay_dates) >= 2:
+            gap_days = _median_gap_days(pay_dates)
+            if gap_days:
+                span_days = (as_of_date - pay_dates[0]).days
+                if span_days >= 0:
+                    expected_count = int(span_days // gap_days) + 1
+        if expected_count is not None:
+            missed_payments = max(expected_count - len(pay_dates), 0)
 
     timing_dates = pay_dates if len(pay_dates) >= 2 else ex_dates
     gap_days = _gap_days(timing_dates)
@@ -568,35 +605,39 @@ def _dividend_reliability_metrics(
         if mean_gap > 0:
             timing_consistency = max(0.0, min(1.0, 1.0 - (statistics.pstdev(gap_days) / mean_gap)))
 
+    cut_window_end = as_of_date + timedelta(days=DIVIDEND_CUT_LOOKAHEAD_DAYS)
     events = []
     for ev in provider_divs.get(symbol, []):
         ex_date = ev.get("ex_date")
         amt = ev.get("amount")
-        if ex_date and isinstance(amt, (int, float)) and ex_date >= window_start:
+        if ex_date and isinstance(amt, (int, float)) and window_start <= ex_date <= cut_window_end:
             events.append((ex_date, float(amt)))
     events.sort(key=lambda item: item[0])
     if not events and pay_events:
         for ev in pay_events:
             dt = ev.get("date")
             amt = ev.get("amount")
-            if dt and isinstance(amt, (int, float)) and dt >= window_start:
+            if dt and isinstance(amt, (int, float)) and window_start <= dt <= as_of_date:
                 events.append((dt, float(amt)))
         events.sort(key=lambda item: item[0])
 
     cuts = 0
     last_increase = None
     last_decrease = None
-    for prev, curr in zip(events[:-1], events[1:]):
-        prev_amt = prev[1]
-        curr_amt = curr[1]
-        if prev_amt <= 0:
+    cut_series = _annualized_dividend_series(events)
+    for prev, curr in zip(cut_series[:-1], cut_series[1:]):
+        if prev.get("special") or curr.get("special"):
+            continue
+        prev_amt = prev.get("annualized")
+        curr_amt = curr.get("annualized")
+        if prev_amt is None or curr_amt is None or prev_amt <= 0:
             continue
         change = (curr_amt - prev_amt) / prev_amt
         if change <= -DIVIDEND_CUT_THRESHOLD:
             cuts += 1
-            last_decrease = curr[0]
+            last_decrease = curr.get("date")
         elif change >= DIVIDEND_CUT_THRESHOLD:
-            last_increase = curr[0]
+            last_increase = curr.get("date")
 
     return {
         "consistency_score": round(consistency_score, 3),
