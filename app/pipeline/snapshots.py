@@ -188,17 +188,32 @@ def _gap_days(dates: list[date]) -> list[int]:
     return [max(1, (b - a).days) for a, b in zip(dates[:-1], dates[1:]) if b > a]
 
 
-def _annualized_dividend_series(events: list[tuple[date, float]]) -> list[dict]:
+def _annualized_dividend_series(
+    events: list[tuple[date, float]],
+    history_dates: list[date] | None = None,
+) -> list[dict]:
     if not events:
         return []
     events = sorted(events, key=lambda item: item[0])
     dates = [dt for dt, _amt in events]
+    history = sorted({dt for dt in (history_dates or dates) if dt})
+    history_index = {dt: idx for idx, dt in enumerate(history)}
     out = []
     for idx, (dt, amt) in enumerate(events):
-        gap_prev = (dt - dates[idx - 1]).days if idx > 0 else None
+        gap_prev = None
+        gap_next = None
+        hist_idx = history_index.get(dt)
+        if hist_idx is not None:
+            if hist_idx > 0:
+                gap_prev = (dt - history[hist_idx - 1]).days
+            if hist_idx + 1 < len(history):
+                gap_next = (history[hist_idx + 1] - dt).days
         if gap_prev is None or gap_prev <= 0:
-            gap_prev = (dates[idx + 1] - dt).days if idx + 1 < len(dates) else None
-        freq = _frequency_from_gap_days(gap_prev)
+            gap_prev = (dt - dates[idx - 1]).days if idx > 0 else None
+        if gap_next is None or gap_next <= 0:
+            gap_next = (dates[idx + 1] - dt).days if idx + 1 < len(dates) else None
+        gap_days = gap_prev if gap_prev and gap_prev > 0 else gap_next
+        freq = _frequency_from_gap_days(gap_days)
         per_year = _payouts_per_year(freq) or 1
         out.append({"date": dt, "amount": amt, "annualized": amt * per_year, "special": False})
     history = []
@@ -534,6 +549,7 @@ def _dividend_reliability_metrics(
     expected_frequency: str | None,
     as_of_date: date,
     first_acquired: date | None = None,
+    position_index: dict[str, tuple[list[date], list[float]]] | None = None,
 ) -> dict:
     cutoff = as_of_date - timedelta(days=365)
     window_start = cutoff
@@ -584,13 +600,27 @@ def _dividend_reliability_metrics(
     if payment_frequency_actual and expected_frequency and expected_frequency != payment_frequency_actual:
         payment_frequency_expected = payment_frequency_actual
 
+    default_pay_lag = _median_pay_lag_days(provider_divs)
+    symbol_pay_lag = _symbol_pay_lag_days(provider_events, default_pay_lag)
+    due_cutoff = as_of_date - timedelta(days=symbol_pay_lag) if symbol_pay_lag else as_of_date
+    ex_dates_due = sorted(
+        {
+            ev.get("ex_date")
+            for ev in provider_events
+            if ev.get("ex_date") and window_start <= ev.get("ex_date") <= due_cutoff
+        }
+    )
+
+    if position_index:
+        ex_dates_due = [dt for dt in ex_dates_due if _shares_at_date(position_index, symbol, dt) > 0]
+
     missed_payments = 0
     if pay_dates:
-        expected_count = len(ex_dates) if ex_dates else None
+        expected_count = len(ex_dates_due) if ex_dates_due else None
         if expected_count is None and len(pay_dates) >= 2:
             gap_days = _median_gap_days(pay_dates)
             if gap_days:
-                span_days = (as_of_date - pay_dates[0]).days
+                span_days = (due_cutoff - pay_dates[0]).days
                 if span_days >= 0:
                     expected_count = int(span_days // gap_days) + 1
         if expected_count is not None:
@@ -624,7 +654,14 @@ def _dividend_reliability_metrics(
     cuts = 0
     last_increase = None
     last_decrease = None
-    cut_series = _annualized_dividend_series(events)
+    history_dates = sorted(
+        {
+            ev.get("ex_date")
+            for ev in provider_divs.get(symbol, [])
+            if ev.get("ex_date")
+        }
+    )
+    cut_series = _annualized_dividend_series(events, history_dates)
     for prev, curr in zip(cut_series[:-1], cut_series[1:]):
         if prev.get("special") or curr.get("special"):
             continue
@@ -1024,7 +1061,14 @@ def _income_volatility_30d_pct(div_tx: list[dict], as_of_date: date) -> float | 
     return round((stdev / mean) * 100.0, 3)
 
 
-def _income_stability_metrics(div_tx: list[dict], as_of_date: date, window_months: int = 12) -> dict:
+def _income_stability_metrics(
+    div_tx: list[dict],
+    as_of_date: date,
+    window_months: int = 12,
+    start_date: date | None = None,
+) -> dict:
+    if start_date and start_date <= as_of_date:
+        window_months = max(1, min(window_months, _months_between(start_date, as_of_date)))
     totals_12 = _monthly_income_totals(div_tx, as_of_date, window_months)
     if not totals_12:
         return {
@@ -1093,8 +1137,18 @@ def _income_stability_metrics(div_tx: list[dict], as_of_date: date, window_month
     }
 
 
-def _income_stability_score(div_tx: list[dict], as_of_date: date, window_months: int = 6) -> float:
-    metrics = _income_stability_metrics(div_tx, as_of_date, window_months=max(window_months, 6))
+def _income_stability_score(
+    div_tx: list[dict],
+    as_of_date: date,
+    window_months: int = 6,
+    start_date: date | None = None,
+) -> float:
+    metrics = _income_stability_metrics(
+        div_tx,
+        as_of_date,
+        window_months=max(window_months, 6),
+        start_date=start_date,
+    )
     return float(metrics.get("stability_score") or 0.0)
 
 
@@ -2134,14 +2188,29 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
 
         div_events = provider_divs.get(sym, [])
         ex_dates = _effective_ex_dates(sym, provider_divs, lm_ex_dates)
+        ex_dates_past = [dt for dt in ex_dates if dt <= as_of_date_local]
+        ex_dates_future = [dt for dt in ex_dates if dt > as_of_date_local]
         trailing_12m_div_ps = sum(
             ev["amount"]
             for ev in div_events
-            if ev["ex_date"] >= as_of_date_local - timedelta(days=365)
+            if (as_of_date_local - timedelta(days=365)) <= ev["ex_date"] <= as_of_date_local
         )
-        last_ex_date = ex_dates[-1] if ex_dates else None
-        frequency = _frequency_from_ex_dates(ex_dates)
-        next_ex_date_est = _next_ex_date_est(ex_dates)
+        last_ex_date = ex_dates_past[-1] if ex_dates_past else (ex_dates[-1] if ex_dates else None)
+        first_acquired = first_acquired_dates.get(sym)
+        freq_start = as_of_date_local - timedelta(days=365)
+        if first_acquired and freq_start < first_acquired <= as_of_date_local:
+            freq_start = first_acquired
+        freq_end = as_of_date_local + timedelta(days=DIVIDEND_CUT_LOOKAHEAD_DAYS)
+        freq_ex_dates = [dt for dt in ex_dates if freq_start <= dt <= freq_end]
+        frequency = (
+            _frequency_from_recent_ex_dates(freq_ex_dates, recent=6)
+            or _frequency_from_ex_dates(freq_ex_dates)
+            or _frequency_from_recent_ex_dates(ex_dates_past, recent=6)
+            or _frequency_from_ex_dates(ex_dates_past)
+            or _frequency_from_recent_ex_dates(ex_dates, recent=6)
+            or _frequency_from_ex_dates(ex_dates)
+        )
+        next_ex_date_est = ex_dates_future[0] if ex_dates_future else _next_ex_date_est(ex_dates_past)
         if next_ex_date_est is None and last_ex_date:
             next_ex_date_est = _fallback_next_ex_date(last_ex_date, pay_history.get(sym, []))
         ex_dates_by_symbol[sym] = ex_dates
@@ -2234,6 +2303,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
             frequency,
             as_of_date_local,
             first_acquired_dates.get(sym),
+            position_index,
         )
         dividend_reliability_provenance = {
             key: _provenance_entry("derived", "internal", "dividend_reliability", [sym], fetched_at)
@@ -2418,7 +2488,29 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
     performance = metrics.portfolio_performance(portfolio_values)
     risk = metrics.portfolio_risk(portfolio_values, bench_values)
     risk["portfolio_risk_quality"] = _risk_quality_category(risk.get("sortino_1y"), risk.get("sharpe_1y"))
-    income_stability = _income_stability_metrics(div_tx, as_of_date_local, window_months=12)
+    portfolio_start = min(first_acquired_dates.values()) if first_acquired_dates else None
+    income_stability = _income_stability_metrics(
+        div_tx,
+        as_of_date_local,
+        window_months=12,
+        start_date=portfolio_start,
+    )
+    per_ticker_cut_count = 0
+    per_ticker_missed_count = 0
+    per_ticker_seen = False
+    for holding in holdings_out:
+        rel = holding.get("dividend_reliability") or {}
+        cut = rel.get("dividend_cuts_12m")
+        missed = rel.get("missed_payments_12m")
+        if isinstance(cut, (int, float)):
+            per_ticker_cut_count += int(cut)
+            per_ticker_seen = True
+        if isinstance(missed, (int, float)):
+            per_ticker_missed_count += int(missed)
+            per_ticker_seen = True
+    if per_ticker_seen:
+        income_stability["dividend_cut_count_12m"] = per_ticker_cut_count
+        income_stability["missed_payment_count_12m"] = per_ticker_missed_count
     income_growth = _income_growth_metrics(div_tx, as_of_date_local)
     risk["income_stability_score"] = income_stability.get("stability_score")
 

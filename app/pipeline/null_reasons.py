@@ -105,7 +105,15 @@ def _replace_nulls(obj: Any, path: list[Any], root: dict, context: _NullReasonCo
         return [_replace_nulls(val, path + [idx], root, context) for idx, val in enumerate(obj)]
     if obj is None:
         return _reason_for_null(path, root, context)
+    if _is_zero(obj):
+        reason = _reason_for_zero(path, root, context)
+        if reason:
+            return reason
     return obj
+
+
+def _is_zero(val: Any) -> bool:
+    return isinstance(val, (int, float)) and not isinstance(val, bool) and float(val) == 0.0
 
 
 def _reason_for_null(path: list[Any], root: dict, context: _NullReasonContext) -> str:
@@ -145,6 +153,23 @@ def _reason_for_null(path: list[Any], root: dict, context: _NullReasonContext) -
             return _diff_fallback_reason(path[-1], context)
 
     return "value not available in source data"
+
+
+def _reason_for_zero(path: list[Any], root: dict, context: _NullReasonContext) -> str | None:
+    if "dividend_reliability" in path:
+        symbol = _find_holding_symbol(root, path)
+        field = path[-1] if path else None
+        if symbol and field:
+            reason = context.dividend_reasons_by_symbol.get(symbol, {}).get(field)
+            if reason:
+                return reason
+
+    if "income_growth" in path or "income_stability" in path:
+        field = path[-1] if path else None
+        if field in context.portfolio_income_reasons:
+            return context.portfolio_income_reasons[field]
+
+    return None
 
 
 def _diff_reason(side: str, context: _NullReasonContext) -> str:
@@ -319,6 +344,10 @@ def _dividend_reliability_reasons(
             reasons["payment_frequency_expected"] = base
             reasons["avg_days_between_payments"] = base
             reasons["payment_timing_consistency"] = base
+            reasons["dividend_cuts_12m"] = base
+            reasons["missed_payments_12m"] = base
+        elif not pay_dates:
+            reasons["missed_payments_12m"] = f"no dividend payments recorded since {window_start.isoformat()}"
 
         if start_6 <= 0 or end_6 <= 0:
             reasons["dividend_growth_rate_6m_pct"] = (
@@ -380,6 +409,10 @@ def _portfolio_income_reasons(conn: sqlite3.Connection, as_of_date: date) -> dic
     start_12 = totals_12[0] if totals_12 else 0.0
     end_12 = totals_12[-1] if totals_12 else 0.0
     reasons = {}
+
+    if not div_tx:
+        reasons["dividend_cut_count_12m"] = "no dividend payments recorded yet"
+        reasons["missed_payment_count_12m"] = "no dividend payments recorded yet"
 
     if len(totals_12) < 6:
         reasons["qoq_pct"] = "insufficient dividend history for 2 quarters (need 6 months)"
