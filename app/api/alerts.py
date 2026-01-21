@@ -133,7 +133,7 @@ def _income_text(snap: dict) -> str:
     lines = ["<b>Upcoming Dividends</b>"]
     for ev in events[:10]:
         sym = ev.get("symbol")
-        ex = ev.get("ex_date_est") or ev.get("ex_date")
+        ex = ev.get("pay_date_est") or ev.get("pay_date") or ev.get("ex_date_est") or ev.get("ex_date")
         amt = ev.get("amount_est")
         lines.append(f"• {sym} {ex} ~{_fmt_money(amt)}")
     total = sum(ev.get("amount_est") or 0 for ev in events if isinstance(ev.get("amount_est"), (int, float)))

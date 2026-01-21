@@ -26,6 +26,7 @@ _SHARES_RE = re.compile(r"\b([0-9]*\.?[0-9]+)\s+shares?\b", re.IGNORECASE)
 DIVIDEND_CUT_THRESHOLD = 0.10
 DIVIDEND_CUT_LOOKAHEAD_DAYS = 90
 SPECIAL_DIVIDEND_FACTOR = 2.5
+DIVIDEND_PAY_MATCH_WINDOW_DAYS = 3
 
 
 def _last_valid_price(df):
@@ -471,6 +472,17 @@ def _build_pay_history(div_tx: list[dict], max_events: int = 12):
     return history
 
 
+def _payment_received(pay_history: dict[str, list[dict]], symbol: str, pay_date: date, tolerance_days: int) -> bool:
+    if not symbol or not pay_date:
+        return False
+    events = pay_history.get(str(symbol).upper(), [])
+    for ev in events:
+        dt = ev.get("date")
+        if dt and abs((dt - pay_date).days) <= tolerance_days:
+            return True
+    return False
+
+
 def _median_gap_days(dates: list[date]) -> int | None:
     if len(dates) < 2:
         return None
@@ -821,14 +833,49 @@ def _estimate_expected_pay_events(
     window_start: date,
     window_end: date,
     pay_history: dict,
+    as_of_date: date | None = None,
     ex_date_est_by_symbol: dict[str, date] | None = None,
     position_index: dict[str, tuple[list[date], list[float]]] | None = None,
     pay_lag_by_symbol: dict[str, int] | None = None,
 ):
     default_lag = _median_pay_lag_days(provider_divs)
+    if as_of_date is None:
+        as_of_date = window_end
     expected = []
     total_raw = 0.0
     ex_date_est_by_symbol = ex_date_est_by_symbol or {}
+
+    def _best_ex_date_for_pay(sym: str, pay_date: date):
+        events = provider_divs.get(sym, [])
+        matches = []
+        for ev in events:
+            ex = ev.get("ex_date")
+            pay = ev.get("pay_date")
+            if not ex or not pay:
+                continue
+            delta = abs((pay - pay_date).days)
+            if delta <= DIVIDEND_PAY_MATCH_WINDOW_DAYS:
+                matches.append((delta, ex))
+        if matches:
+            matches.sort(key=lambda item: item[0])
+            return matches[0][1]
+        est = ex_date_est_by_symbol.get(sym)
+        if est and est <= pay_date and (pay_date - est).days <= 60:
+            return est
+        past_ex = [ev.get("ex_date") for ev in events if ev.get("ex_date") and ev.get("ex_date") <= pay_date]
+        if past_ex:
+            return max(past_ex)
+        lag_days = None
+        if pay_lag_by_symbol:
+            lag_days = pay_lag_by_symbol.get(sym)
+        if lag_days is None:
+            lag_days = _symbol_pay_lag_days(events, default_lag)
+        return pay_date - timedelta(days=lag_days) if lag_days else None
+    def _pay_date_seen(seen: list[date], candidate: date) -> bool:
+        for dt in seen:
+            if abs((candidate - dt).days) <= DIVIDEND_PAY_MATCH_WINDOW_DAYS:
+                return True
+        return False
     def _shares_for(sym: str, ex_date: date) -> float:
         if position_index:
             return _shares_at_date(position_index, sym, ex_date)
@@ -836,76 +883,108 @@ def _estimate_expected_pay_events(
 
     for sym in sorted(holdings.keys()):
         history = pay_history.get(sym, [])
-        actual_events = [ev for ev in history if window_start <= ev["date"] <= window_end]
-        if actual_events:
-            for ev in actual_events:
-                ex_date_est = ex_date_est_by_symbol.get(sym)
-                if not ex_date_est:
+        events = provider_divs.get(sym, [])
+        pay_dates_seen = []
+        window_has_event = False
+
+        # Actual payments in the window: count toward projection, but do not list.
+        for ev in history:
+            pay_date = ev.get("date")
+            if not pay_date or pay_date < window_start or pay_date > window_end:
+                continue
+            amount_est = ev.get("amount")
+            if isinstance(amount_est, (int, float)):
+                total_raw += float(amount_est)
+            pay_dates_seen.append(pay_date)
+            window_has_event = True
+
+        # Provider-backed payments in the window.
+        if events:
+            lag_days = None
+            if pay_lag_by_symbol:
+                lag_days = pay_lag_by_symbol.get(sym)
+            if lag_days is None:
+                lag_days = _symbol_pay_lag_days(events, default_lag)
+            for ev in events:
+                ex = ev.get("ex_date")
+                amt = ev.get("amount")
+                if ex is None or amt is None:
                     continue
-                amount_est = ev.get("amount")
+                pay = ev.get("pay_date") or (ex + timedelta(days=lag_days))
+                if pay < window_start or pay > window_end:
+                    continue
+                window_has_event = True
+                if _pay_date_seen(pay_dates_seen, pay):
+                    continue
+                shares = _shares_for(sym, ex)
+                if shares <= 0:
+                    continue
+                amount_est = amt * shares
+                total_raw += float(amount_est)
+                if pay <= as_of_date and _payment_received(pay_history, sym, pay, DIVIDEND_PAY_MATCH_WINDOW_DAYS):
+                    pay_dates_seen.append(pay)
+                    continue
+                status = "overdue" if pay < as_of_date else "pending"
                 expected.append(
                     {
                         "symbol": sym,
-                        "ex_date_est": ex_date_est.isoformat(),
-                        "pay_date_est": ev["date"].isoformat(),
+                        "ex_date_est": ex.isoformat(),
+                        "pay_date_est": pay.isoformat(),
                         "amount_est": _round_money(amount_est),
+                        "status": status,
                     }
                 )
+                pay_dates_seen.append(pay)
+
+        # Estimate a missing payment when no events land in the window.
+        if not window_has_event and len(history) >= 2:
+            ex_date_est = ex_date_est_by_symbol.get(sym)
+            next_pay = None
+            if ex_date_est:
+                lag_days = pay_lag_by_symbol.get(sym) if pay_lag_by_symbol else None
+                if lag_days is None:
+                    lag_days = _symbol_pay_lag_days(provider_divs.get(sym, []), default_lag)
+                if lag_days:
+                    candidate = ex_date_est + timedelta(days=lag_days)
+                    if window_start <= candidate <= window_end:
+                        next_pay = candidate
+            if next_pay is None:
+                dates = [ev.get("date") for ev in history if ev.get("date")]
+                median_gap = _median_gap_days(dates)
+                if median_gap:
+                    next_pay = dates[-1] + timedelta(days=median_gap)
+            if next_pay and window_start <= next_pay <= window_end and not _pay_date_seen(pay_dates_seen, next_pay):
+                if ex_date_est is None:
+                    ex_date_est = _best_ex_date_for_pay(sym, next_pay)
+                amount_est = None
+                if ex_date_est:
+                    per_share = None
+                    events = provider_divs.get(sym, [])
+                    if events:
+                        closest = min(
+                            events,
+                            key=lambda ev: abs((ev.get("ex_date") or ex_date_est) - ex_date_est).days,
+                        )
+                        per_share = closest.get("amount")
+                    if per_share is not None:
+                        shares = _shares_for(sym, ex_date_est)
+                        if shares > 0:
+                            amount_est = float(per_share) * shares
+                if amount_est is None:
+                    amount_est = _median_amount(history[-6:])
                 if isinstance(amount_est, (int, float)):
                     total_raw += float(amount_est)
-            continue
-
-        if len(history) >= 2:
-            dates = [ev["date"] for ev in history]
-            median_gap = _median_gap_days(dates)
-            if median_gap:
-                next_pay = dates[-1] + timedelta(days=median_gap)
-                if window_start <= next_pay <= window_end:
-                    ex_date_est = ex_date_est_by_symbol.get(sym)
-                    if not ex_date_est:
-                        continue
-                    amount_est = _median_amount(history[-6:])
+                if not _payment_received(pay_history, sym, next_pay, DIVIDEND_PAY_MATCH_WINDOW_DAYS):
+                    status = "overdue" if next_pay < as_of_date else "pending"
                     expected.append(
                         {
                             "symbol": sym,
-                            "ex_date_est": ex_date_est.isoformat(),
+                            "ex_date_est": ex_date_est.isoformat() if ex_date_est else None,
                             "pay_date_est": next_pay.isoformat(),
                             "amount_est": _round_money(amount_est),
+                            "status": status,
                         }
                     )
-                    if isinstance(amount_est, (int, float)):
-                        total_raw += float(amount_est)
-            continue
-
-        events = provider_divs.get(sym, [])
-        if not events:
-            continue
-        lag_days = None
-        if pay_lag_by_symbol:
-            lag_days = pay_lag_by_symbol.get(sym)
-        if lag_days is None:
-            lag_days = _symbol_pay_lag_days(events, default_lag)
-        for ev in events:
-            ex = ev.get("ex_date")
-            amt = ev.get("amount")
-            if ex is None or amt is None:
-                continue
-            pay = ev.get("pay_date") or (ex + timedelta(days=lag_days))
-            if pay < window_start or pay > window_end:
-                continue
-            shares = _shares_for(sym, ex)
-            if shares <= 0:
-                continue
-            amount_est = amt * shares
-            total_raw += float(amount_est)
-            expected.append(
-                {
-                    "symbol": sym,
-                    "ex_date_est": ex.isoformat(),
-                    "pay_date_est": pay.isoformat(),
-                    "amount_est": _round_money(amount_est),
-                }
-            )
     expected.sort(key=lambda ev: (ev.get("pay_date_est") or "", ev.get("symbol") or ""))
     return expected, _round_money(total_raw)
 
@@ -1346,6 +1425,19 @@ def _drawdown_analysis(values: pd.Series) -> tuple[dict | None, dict | None]:
         recovery_metrics["estimated_days_to_recovery"] = 0
 
     return drawdown_status, recovery_metrics
+
+
+def _append_current_value(values: pd.Series | None, current_value: float | None, current_date: date | None) -> pd.Series | None:
+    if current_value is None or current_date is None:
+        return values
+    ts = pd.Timestamp(current_date)
+    if values is None or values.empty:
+        return pd.Series([float(current_value)], index=[ts])
+    series = values.copy()
+    if not isinstance(series.index, pd.DatetimeIndex):
+        series.index = pd.to_datetime(series.index)
+    series.loc[ts] = float(current_value)
+    return series.sort_index()
 
 
 def _window_slice(series: pd.Series, end_dt: pd.Timestamp, window_days: int) -> pd.Series | None:
@@ -2401,6 +2493,8 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
 
     projected_monthly_income = income["projected_monthly_income"] or 0.0
     received_mtd = realized_mtd["total_dividends"]
+    pay_window_start = _month_start(as_of_date_local)
+    pay_window_end = _month_end(as_of_date_local)
     projected_vs_received = {
         "pct_of_projection": _round_pct(_safe_divide(received_mtd, projected_monthly_income) * 100 if projected_monthly_income else None),
         "projected": _round_money(projected_monthly_income),
@@ -2414,7 +2508,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         "alt": {
             "projected": 0.0,
             "mode": "paydate",
-            "window": {"start": _month_start(as_of_date_local).isoformat(), "end": as_of_date_local.isoformat()},
+            "window": {"start": pay_window_start.isoformat(), "end": pay_window_end.isoformat()},
             "expected_events": [],
         },
     }
@@ -2432,9 +2526,10 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
     expected_events, projected_alt = _estimate_expected_pay_events(
         provider_divs,
         holdings,
-        _month_start(as_of_date_local),
-        as_of_date_local,
+        pay_window_start,
+        pay_window_end,
         pay_history,
+        as_of_date_local,
         ex_date_est_by_symbol,
         position_index,
         pay_lag_by_symbol,
@@ -2448,35 +2543,23 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         "realized_mtd": realized_mtd,
     }
 
-    # dividends upcoming
-    window_start = as_of_date_local
-    window_end = _month_end(as_of_date_local)
+    # dividends upcoming (pay-date based, exclude paid events)
+    window_start = pay_window_start
+    window_end = pay_window_end
     upcoming_events = []
-    for sym in sorted(holding_symbols):
-        events = [ev for ev in provider_divs.get(sym, []) if window_start <= ev["ex_date"] <= window_end]
-        if not events:
-            ex_dates = ex_dates_by_symbol.get(sym) or _effective_ex_dates(sym, provider_divs, lm_ex_dates)
-            next_est = _next_ex_date_est(ex_dates)
-            if next_est is None and ex_dates:
-                next_est = _fallback_next_ex_date(ex_dates[-1], pay_history.get(sym, []))
-            if next_est and window_start <= next_est <= window_end:
-                per_share, _freq = _estimate_upcoming_per_share(provider_divs.get(sym, []), as_of_date_local)
-                if per_share is not None:
-                    events = [{"ex_date": next_est, "amount": per_share}]
-        for ev in events:
-            shares = _shares_at_date(position_index, sym, ev["ex_date"])
-            if shares <= 0:
-                continue
-            amount_est = ev["amount"] * shares
-            upcoming_events.append(
-                {"symbol": sym, "ex_date_est": ev["ex_date"].isoformat(), "amount_est": _round_money(amount_est)}
-            )
+    for ev in expected_events:
+        pay_dt = _parse_date(ev.get("pay_date_est")) or _parse_date(ev.get("ex_date_est"))
+        if not pay_dt:
+            continue
+        if pay_dt < window_start or pay_dt > window_end:
+            continue
+        upcoming_events.append(ev)
 
     projected_upcoming = sum(ev["amount_est"] for ev in upcoming_events if ev.get("amount_est") is not None)
     dividends_upcoming = {
         "projected": _round_money(projected_upcoming),
         "events": upcoming_events,
-        "window": {"start": window_start.isoformat(), "end": window_end.isoformat(), "mode": "exdate"},
+        "window": {"start": window_start.isoformat(), "end": window_end.isoformat(), "mode": "paydate"},
         "meta": {
             "matches_projected": True,
             "sum_of_events": _round_money(projected_upcoming),
@@ -2514,7 +2597,8 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
     income_growth = _income_growth_metrics(div_tx, as_of_date_local)
     risk["income_stability_score"] = income_stability.get("stability_score")
 
-    drawdown_status, recovery_metrics = _drawdown_analysis(portfolio_values)
+    drawdown_values = _append_current_value(portfolio_values, total_market_value, as_of_date_local)
+    drawdown_status, recovery_metrics = _drawdown_analysis(drawdown_values)
     if drawdown_status:
         risk["drawdown_status"] = drawdown_status
     if recovery_metrics:

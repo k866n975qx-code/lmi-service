@@ -164,6 +164,12 @@ def _month_day_info(d: date):
     import calendar
     return d.day, calendar.monthrange(d.year, d.month)[1]
 
+def _should_check_income_failure(d: date) -> bool:
+    day, days_in_month = _month_day_info(d)
+    if day == days_in_month:
+        return True
+    return d.weekday() == 0
+
 def _frequency_per_year(freq: str | None) -> int:
     if not freq:
         return 12
@@ -476,59 +482,60 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
         alerts.append(_mk("position", as_of, severity, title, body))
 
     # 4) Income failure late-month
-    day, days_in_month = _month_day_info(as_of_dt)
-    proj_monthly = income.get("projected_monthly_income")
-    realized_mtd = _realized_mtd_total(dividends)
-    expected_mtd = None
-    if isinstance(proj_monthly, (int, float)):
-        expected_mtd = proj_monthly * (day / float(days_in_month))
-    income_failure = False
-    failure_lines = []
-    if day >= INCOME_MISS_DAY_THRESHOLD and isinstance(expected_mtd, (int, float)) and isinstance(realized_mtd, (int, float)):
-        if realized_mtd < expected_mtd * INCOME_MISS_CRITICAL:
-            shortfall = expected_mtd - realized_mtd
+    if _should_check_income_failure(as_of_dt):
+        day, days_in_month = _month_day_info(as_of_dt)
+        proj_monthly = income.get("projected_monthly_income")
+        realized_mtd = _realized_mtd_total(dividends)
+        expected_mtd = None
+        if isinstance(proj_monthly, (int, float)):
+            expected_mtd = proj_monthly * (day / float(days_in_month))
+        income_failure = False
+        failure_lines = []
+        if day >= INCOME_MISS_DAY_THRESHOLD and isinstance(expected_mtd, (int, float)) and isinstance(realized_mtd, (int, float)):
+            if realized_mtd < expected_mtd * INCOME_MISS_CRITICAL:
+                shortfall = expected_mtd - realized_mtd
+                income_failure = True
+                failure_lines.append(f"Projected by today: {_fmt_money(expected_mtd)}")
+                failure_lines.append(f"Received: {_fmt_money(realized_mtd)} (short {_fmt_money(shortfall)}).")
+
+        missing_events = []
+        alt = (dividends.get("projected_vs_received") or {}).get("alt") or {}
+        expected_events = alt.get("expected_events") or []
+        received_by_symbol = (dividends.get("realized_mtd") or {}).get("by_symbol") or {}
+        eligible_symbols = None
+        if MISSING_DIVIDEND_MIN_PAYMENTS > 0 and expected_events:
+            symbols = [ev.get("symbol") for ev in expected_events if ev.get("symbol")]
+            counts = _dividend_tx_counts(conn, symbols)
+            eligible_symbols = {sym for sym, count in counts.items() if count >= MISSING_DIVIDEND_MIN_PAYMENTS}
+        for ev in expected_events:
+            sym = ev.get("symbol")
+            pay_date_str = ev.get("pay_date_est")
+            if not sym or not pay_date_str:
+                continue
+            sym = str(sym).upper()
+            if eligible_symbols is not None and sym not in eligible_symbols:
+                continue
+            try:
+                pay_dt = date.fromisoformat(pay_date_str)
+            except Exception:
+                continue
+            if (as_of_dt - pay_dt).days <= MISSING_DIVIDEND_GRACE_DAYS:
+                continue
+            if sym not in received_by_symbol:
+                missing_events.append(f"{sym} (pay {pay_date_str})")
+        if missing_events:
             income_failure = True
-            failure_lines.append(f"Projected by today: {_fmt_money(expected_mtd)}")
-            failure_lines.append(f"Received: {_fmt_money(realized_mtd)} (short {_fmt_money(shortfall)}).")
+            miss_list = ", ".join(missing_events[:6])
+            if len(missing_events) > 6:
+                miss_list += f" (+{len(missing_events) - 6} more)"
+            failure_lines.append(f"Missing payments: {miss_list}")
 
-    missing_events = []
-    alt = (dividends.get("projected_vs_received") or {}).get("alt") or {}
-    expected_events = alt.get("expected_events") or []
-    received_by_symbol = (dividends.get("realized_mtd") or {}).get("by_symbol") or {}
-    eligible_symbols = None
-    if MISSING_DIVIDEND_MIN_PAYMENTS > 0 and expected_events:
-        symbols = [ev.get("symbol") for ev in expected_events if ev.get("symbol")]
-        counts = _dividend_tx_counts(conn, symbols)
-        eligible_symbols = {sym for sym, count in counts.items() if count >= MISSING_DIVIDEND_MIN_PAYMENTS}
-    for ev in expected_events:
-        sym = ev.get("symbol")
-        pay_date_str = ev.get("pay_date_est")
-        if not sym or not pay_date_str:
-            continue
-        sym = str(sym).upper()
-        if eligible_symbols is not None and sym not in eligible_symbols:
-            continue
-        try:
-            pay_dt = date.fromisoformat(pay_date_str)
-        except Exception:
-            continue
-        if (as_of_dt - pay_dt).days <= MISSING_DIVIDEND_GRACE_DAYS:
-            continue
-        if sym not in received_by_symbol:
-            missing_events.append(f"{sym} (pay {pay_date_str})")
-    if missing_events:
-        income_failure = True
-        miss_list = ", ".join(missing_events[:6])
-        if len(missing_events) > 6:
-            miss_list += f" (+{len(missing_events) - 6} more)"
-        failure_lines.append(f"Missing payments: {miss_list}")
-
-    if income_failure:
-        title = "Income Failure"
-        body = "🚨 <b>Income Failure</b>"
-        if failure_lines:
-            body += "<br/>" + "<br/>".join(failure_lines)
-        alerts.append(_mk("income", as_of, 9, title, body))
+        if income_failure:
+            title = "Income Failure"
+            body = "🚨 <b>Income Failure</b>"
+            if failure_lines:
+                body += "<br/>" + "<br/>".join(failure_lines)
+            alerts.append(_mk("income", as_of, 9, title, body))
 
     # 5) Macro regime shift
     ten_year = macro.get("ten_year_yield")
