@@ -2923,6 +2923,189 @@ def maybe_persist_periodic(conn: sqlite3.Connection, run_id: str, daily: dict):
         )
         conn.commit()
 
+        # Clean up rolling snapshots for this completed period
+        rolling_type = f"{period}_ROLLING"
+        deleted = cur.execute(
+            """
+            DELETE FROM snapshots
+            WHERE period_type=? AND period_start_date=?
+            """,
+            (rolling_type, str(start)),
+        )
+        deleted_count = deleted.rowcount
+        if deleted_count > 0:
+            conn.commit()
+            log.info("rolling_snapshots_cleaned", period=period, start=str(start), deleted=deleted_count)
+
+
+def persist_rolling_summaries(conn: sqlite3.Connection, run_id: str, daily: dict):
+    """
+    Persist rolling period summaries (week-to-date, month-to-date, etc.) whenever daily snapshot updates.
+    These summaries are stored with period_type WEEK_ROLLING, MONTH_ROLLING, etc.
+    """
+    log = structlog.get_logger()
+    as_of_date_local = daily.get("as_of_date_local") or daily["as_of"][:10]
+    dt = date.fromisoformat(as_of_date_local)
+
+    # Define rolling period types
+    rolling_periods = [
+        ("WEEK_ROLLING", "weekly"),
+        ("MONTH_ROLLING", "monthly"),
+        ("QUARTER_ROLLING", "quarterly"),
+        ("YEAR_ROLLING", "yearly"),
+    ]
+
+    for period_db_type, period_snapshot_type in rolling_periods:
+        try:
+            # Calculate period bounds for this rolling type
+            start, end = _period_bounds(period_db_type.replace("_ROLLING", ""), dt)
+
+            # Skip if this date is the period end - a final snapshot should exist or will be created
+            # Rolling summaries are only for incomplete periods
+            if dt == end:
+                log.debug("rolling_snapshot_skipped_period_complete", period=period_db_type, date=str(dt))
+                continue
+
+            # Build the rolling summary using existing build_period_snapshot logic
+            from .periods import build_period_snapshot
+            snapshot = build_period_snapshot(
+                conn,
+                snapshot_type=period_snapshot_type,
+                as_of=str(dt),
+                mode="to_date"
+            )
+        except Exception as exc:
+            log.error("rolling_snapshot_build_failed", run_id=run_id, period=period_db_type, err=str(exc))
+            continue
+
+        # Validate the snapshot
+        ok, reasons = validate_period_snapshot(snapshot)
+        if not ok:
+            log.error("rolling_snapshot_invalid", run_id=run_id, period=period_db_type, reasons=reasons)
+            continue
+
+        # Check if it changed before persisting (check latest rolling snapshot for this period)
+        payload_sha = sha256_json(snapshot)
+        cur = conn.cursor()
+        existing = cur.execute(
+            """
+            SELECT payload_sha256, period_end_date
+            FROM snapshots
+            WHERE period_type=? AND period_start_date=?
+            ORDER BY period_end_date DESC
+            LIMIT 1
+            """,
+            (period_db_type, str(start)),
+        ).fetchone()
+
+        if existing and existing[0] == payload_sha and existing[1] == str(dt):
+            log.debug("rolling_snapshot_unchanged", period=period_db_type, start=str(start), end=str(dt))
+            continue
+
+        # Delete any existing rolling snapshot for this period (we only keep the latest one)
+        deleted = cur.execute(
+            """
+            DELETE FROM snapshots
+            WHERE period_type=? AND period_start_date=?
+            """,
+            (period_db_type, str(start)),
+        )
+        if deleted.rowcount > 0:
+            log.debug("rolling_snapshot_replaced", period=period_db_type, start=str(start), old_count=deleted.rowcount)
+
+        # Persist the new rolling summary
+        cur.execute(
+            """
+            INSERT INTO snapshots(snapshot_id, period_type, period_start_date, period_end_date, built_from_run_id, payload_json, payload_sha256, created_at_utc)
+            VALUES(?,?,?,?,?,?,?,?)
+            """,
+            (str(uuid.uuid4()), period_db_type, str(start), str(dt), run_id, json.dumps(snapshot), payload_sha, now_utc_iso()),
+        )
+        conn.commit()
+        log.info("rolling_snapshot_persisted", period=period_db_type, start=str(start), end=str(dt))
+
+
+def backfill_rolling_summaries(conn: sqlite3.Connection, start_date: str | None = None, end_date: str | None = None):
+    """
+    Backfill rolling summaries for all existing daily snapshots.
+    Useful for initial setup or after pulling a fresh DB from server.
+
+    Args:
+        conn: Database connection
+        start_date: Optional start date (YYYY-MM-DD) to limit backfill range
+        end_date: Optional end date (YYYY-MM-DD) to limit backfill range
+    """
+    log = structlog.get_logger()
+    cur = conn.cursor()
+
+    # Get all daily snapshot dates
+    query = "SELECT as_of_date_local, payload_json FROM snapshot_daily_current"
+    params = []
+
+    if start_date and end_date:
+        query += " WHERE as_of_date_local BETWEEN ? AND ?"
+        params = [start_date, end_date]
+    elif start_date:
+        query += " WHERE as_of_date_local >= ?"
+        params = [start_date]
+    elif end_date:
+        query += " WHERE as_of_date_local <= ?"
+        params = [end_date]
+
+    query += " ORDER BY as_of_date_local ASC"
+
+    rows = cur.execute(query, params).fetchall()
+    total = len(rows)
+
+    if total == 0:
+        log.info("backfill_no_daily_snapshots")
+        return
+
+    log.info("backfill_rolling_summaries_started", total_dates=total, start_date=start_date, end_date=end_date)
+
+    run_id = "backfill_" + now_utc_iso().replace(":", "").replace("-", "").replace(".", "")[:19]
+    processed = 0
+    failed = 0
+
+    for as_of_date_local, payload_json in rows:
+        try:
+            daily = json.loads(payload_json)
+            dt = date.fromisoformat(as_of_date_local)
+
+            # Create rolling summaries for this date (skips if period end)
+            persist_rolling_summaries(conn, run_id, daily)
+
+            # If this is a period end date, clean up rolling snapshots for completed periods
+            for period in ["WEEK", "MONTH", "QUARTER", "YEAR"]:
+                start, end = _period_bounds(period, dt)
+                if dt == end:
+                    # Check if final snapshot exists for this period
+                    final_exists = cur.execute(
+                        "SELECT 1 FROM snapshots WHERE period_type=? AND period_start_date=? AND period_end_date=?",
+                        (period, str(start), str(end)),
+                    ).fetchone()
+
+                    if final_exists:
+                        # Clean up rolling snapshots for this completed period
+                        rolling_type = f"{period}_ROLLING"
+                        deleted = cur.execute(
+                            "DELETE FROM snapshots WHERE period_type=? AND period_start_date=?",
+                            (rolling_type, str(start)),
+                        )
+                        if deleted.rowcount > 0:
+                            conn.commit()
+                            log.debug("backfill_cleanup_rolling", period=period, start=str(start), deleted=deleted.rowcount)
+
+            processed += 1
+            if processed % 10 == 0:
+                log.info("backfill_progress", processed=processed, total=total)
+        except Exception as exc:
+            failed += 1
+            log.error("backfill_date_failed", date=as_of_date_local, err=str(exc))
+            continue
+
+    log.info("backfill_rolling_summaries_complete", processed=processed, failed=failed, total=total)
+
 
 def diff_payloads(a: dict, b: dict):
     def _strip_provenance(obj):

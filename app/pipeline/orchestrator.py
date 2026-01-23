@@ -4,7 +4,7 @@ from ..db import get_conn, migrate
 from ..config import settings
 from .holdings import reconstruct_holdings
 from .market import MarketData
-from .snapshots import build_daily_snapshot, persist_daily_snapshot, maybe_persist_periodic
+from .snapshots import build_daily_snapshot, persist_daily_snapshot, maybe_persist_periodic, persist_rolling_summaries
 from ..alerts.evaluator import evaluate_alerts
 from ..alerts.storage import migrate_alerts as migrate_alerts_table
 from ..alerts.notifier import send_alerts_sync
@@ -198,6 +198,11 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
             )
             if wrote_daily:
                 upsert_facts_from_sources(conn, run_id, daily, sources)
+                # Update rolling summaries (week-to-date, month-to-date, etc.)
+                try:
+                    persist_rolling_summaries(conn, run_id, daily)
+                except Exception as rolling_err:
+                    log.warning("rolling_summaries_failed", run_id=run_id, err=str(rolling_err))
                 # Alert evaluation + immediate notifications (dedup handles repeats)
                 try:
                     migrate_alerts_table(conn)

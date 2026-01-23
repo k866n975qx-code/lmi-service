@@ -6,7 +6,7 @@ import os
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from .schemas import SyncRun, StatusResponse, SyncWindowRequest
 from ..pipeline.orchestrator import trigger_sync, trigger_sync_window, get_status, get_snapshot
-from ..pipeline.periods import build_period_snapshot, _period_bounds
+from ..pipeline.periods import _period_bounds
 from ..pipeline.diff_daily import diff_daily_from_db
 from ..pipeline.diff_periods import diff_periods_from_db
 from ..pipeline.snapshot_views import slim_snapshot
@@ -22,6 +22,13 @@ _PERIOD_MAP = {
     "monthly": "MONTH",
     "quarterly": "QUARTER",
     "yearly": "YEAR",
+}
+
+_PERIOD_ROLLING_MAP = {
+    "weekly": "WEEK_ROLLING",
+    "monthly": "MONTH_ROLLING",
+    "quarterly": "QUARTER_ROLLING",
+    "yearly": "YEAR_ROLLING",
 }
 
 @router.get(
@@ -197,6 +204,82 @@ def get_daily_portfolio(as_of: str, slim: bool = True):
     return replace_nulls_with_reasons(payload, kind="daily", conn=conn)
 
 @router.get(
+    '/period-summary/{kind}/latest',
+    summary="Get latest persisted period summary",
+    description=(
+        "Returns the most recent completed period summary (final snapshot). "
+        "Example: /period-summary/weekly/latest returns the last completed week. "
+        "Schema: samples/period.json. "
+        "Use slim=false for full payload."
+    ),
+    tags=["Periods"],
+)
+def get_latest_period_summary(kind: str, slim: bool = True):
+    kind = kind.lower()
+    if kind not in ('weekly', 'monthly', 'quarterly', 'yearly'):
+        raise HTTPException(400, 'kind must be weekly|monthly|quarterly|yearly')
+
+    conn = get_conn(settings.db_path)
+    cur = conn.cursor()
+
+    # Get the most recent final snapshot for this period type
+    row = cur.execute(
+        """
+        SELECT payload_json
+        FROM snapshots
+        WHERE period_type = ?
+        ORDER BY period_end_date DESC
+        LIMIT 1
+        """,
+        (_PERIOD_MAP[kind],),
+    ).fetchone()
+
+    if not row:
+        raise HTTPException(404, f'no {kind} snapshots found')
+
+    snap = json.loads(row[0])
+    snap = slim_snapshot(snap) if slim else snap
+    return replace_nulls_with_reasons(snap, kind="period", conn=conn)
+
+@router.get(
+    '/period-summary/{kind}/rolling',
+    summary="Get current rolling period summary",
+    description=(
+        "Returns the current incomplete period summary (rolling snapshot). "
+        "Example: /period-summary/monthly/rolling returns month-to-date. "
+        "Schema: samples/period.json. "
+        "Use slim=false for full payload."
+    ),
+    tags=["Periods"],
+)
+def get_rolling_period_summary(kind: str, slim: bool = True):
+    kind = kind.lower()
+    if kind not in ('weekly', 'monthly', 'quarterly', 'yearly'):
+        raise HTTPException(400, 'kind must be weekly|monthly|quarterly|yearly')
+
+    conn = get_conn(settings.db_path)
+    cur = conn.cursor()
+
+    # Get the current rolling snapshot for this period type
+    row = cur.execute(
+        """
+        SELECT payload_json
+        FROM snapshots
+        WHERE period_type = ?
+        ORDER BY period_end_date DESC
+        LIMIT 1
+        """,
+        (_PERIOD_ROLLING_MAP[kind],),
+    ).fetchone()
+
+    if not row:
+        raise HTTPException(404, f'no rolling {kind} snapshot found')
+
+    snap = json.loads(row[0])
+    snap = slim_snapshot(snap) if slim else snap
+    return replace_nulls_with_reasons(snap, kind="period", conn=conn)
+
+@router.get(
     '/period-summary/{kind}/{as_of}',
     summary="Get stored period summary by as-of date",
     description=(
@@ -221,41 +304,6 @@ def get_period_summary(kind: str, as_of: str, slim: bool = True):
     snap = slim_snapshot(snap) if slim else snap
     conn = get_conn(settings.db_path)
     return replace_nulls_with_reasons(snap, kind="period", conn=conn)
-
-@router.get(
-    '/period-summary/{kind}/{as_of}/{mode}',
-    summary="Get period summary (final or to-date)",
-    description=(
-        "Returns a period summary in final or to_date mode. "
-        "Schema: samples/period.json. "
-        "Use slim=false for full payload."
-    ),
-    tags=["Periods"],
-)
-def get_period_summary_mode(kind: str, as_of: str, mode: str, slim: bool = True):
-    kind = kind.lower()
-    mode = mode.lower()
-    if kind not in ('weekly', 'monthly', 'quarterly', 'yearly'):
-        raise HTTPException(400, 'kind must be weekly|monthly|quarterly|yearly')
-    if mode not in ('to_date', 'final'):
-        raise HTTPException(400, 'mode must be to_date|final')
-    conn = get_conn(settings.db_path)
-    try:
-        if mode == "final":
-            try:
-                as_of_date = date.fromisoformat(as_of)
-            except ValueError:
-                raise HTTPException(400, 'as_of must be YYYY-MM-DD')
-            start, end = _period_bounds(kind, as_of_date)
-            snap = get_snapshot(_PERIOD_MAP[kind], start.isoformat(), end.isoformat())
-            if snap:
-                snap = slim_snapshot(snap) if slim else snap
-                return replace_nulls_with_reasons(snap, kind="period", conn=conn)
-        snap = build_period_snapshot(conn, snapshot_type=kind, as_of=as_of, mode=mode)
-        snap = slim_snapshot(snap) if slim else snap
-        return replace_nulls_with_reasons(snap, kind="period", conn=conn)
-    except ValueError as e:
-        raise HTTPException(404, str(e))
 
 @router.get(
     '/compare/daily/{left_date}/{right_date}',
