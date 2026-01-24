@@ -1958,15 +1958,22 @@ def _build_goal_tiers(
     total_market_value,
     margin_loan_balance,
     target_monthly,
+    performance_metrics,
     as_of_date: date | None = None,
 ):
     """
-    Build comprehensive dividend goal tracking across 5 tiers:
-    1. Pure Passive: No contributions, no DRIP, 0% appreciation
-    2. Market Growth: No contributions, no DRIP, 3% appreciation
-    3. DRIP Strategy: No contributions, DRIP enabled, 5% appreciation
-    4. Active Growth: Contributions + DRIP, 7% appreciation
-    5. Maximum Optimization: Contributions + DRIP + LTV maintained, 10% appreciation
+    Build comprehensive dividend goal tracking across 6 tiers:
+    1. Modest Appreciation: Price appreciation only (6m TWR)
+    2. Conservative Build: Contributions + 6m TWR (no DRIP)
+    3. DRIP Build: DRIP + contribution + 6m TWR
+    4. Leveraged Growth: DRIP + contribution + midrange + margin
+    5. Optimized Growth: DRIP + contribution + midrange + margin
+    6. Maximum Growth: DRIP + contribution + 12m TWR + margin
+
+    Price appreciation in 3 steps based on actual portfolio TWR:
+    - Modest (Tiers 1-3): 6-month TWR
+    - Midrange (Tiers 4-5): Average of 6m and 12m TWR
+    - Max (Tier 6): 12-month TWR
     """
     if not target_monthly or target_monthly <= 0 or not total_market_value:
         return None
@@ -1980,11 +1987,20 @@ def _build_goal_tiers(
     # Current state (for reference in calculations)
     current_ltv = _safe_divide(margin_loan_balance or 0.0, total_market_value)
 
+    # Extract appreciation rates from actual portfolio performance (3 steps)
+    twr_6m = performance_metrics.get("twr_6m_pct") or 10.0
+    twr_12m = performance_metrics.get("twr_12m_pct") or 15.0
+
+    modest_appreciation = twr_6m  # Tiers 1-3
+    midrange_appreciation = (twr_6m + twr_12m) / 2.0  # Tiers 4-5
+    max_appreciation = twr_12m  # Tier 6
+
     tiers = []
 
     # Helper to calculate months to goal with compounding
     def calculate_timeline(
         initial_portfolio_value,
+        initial_margin_balance,
         monthly_contrib,
         monthly_div_income,
         drip_enabled,
@@ -2006,62 +2022,71 @@ def _build_goal_tiers(
 
         # Simulate month-by-month growth
         portfolio_value = initial_portfolio_value
+        margin_balance = initial_margin_balance or 0.0
         months = 0
-        max_months = 600  # 50 years cap
+        max_months = 1200  # 100 years - user doesn't care about caps
 
         monthly_appreciation = annual_appreciation_pct / 12.0 / 100.0
+        margin_apr = settings.margin_apr_current  # e.g., 0.0415
+        monthly_margin_rate = margin_apr / 12.0
 
         while portfolio_value < required_portfolio and months < max_months:
             months += 1
 
-            # Price appreciation
+            # 1. Apply price appreciation to existing portfolio
             portfolio_value *= (1 + monthly_appreciation)
 
-            # Add contributions
-            portfolio_value += monthly_contrib
+            # 2. Add margin interest to balance
+            if maintain_ltv and margin_balance > 0:
+                margin_interest = margin_balance * monthly_margin_rate
+                margin_balance += margin_interest
 
-            # DRIP: reinvest dividends
+            # 3. Calculate DRIP amount
+            drip_amount = 0.0
             if drip_enabled:
-                monthly_income_generated = portfolio_value * portfolio_yield_pct / 12.0
-                portfolio_value += monthly_income_generated
+                drip_amount = portfolio_value * portfolio_yield_pct / 12.0
 
-            # LTV maintenance: borrow to maintain target LTV
+            # 4. Calculate additional margin needed to maintain target LTV
+            additional_margin = 0.0
             if maintain_ltv and ltv_target > 0:
-                # Calculate how much we can borrow to maintain target LTV
-                # portfolio_value = equity
-                # target_ltv = loan / (equity + loan)
-                # Solving for loan: loan = equity * target_ltv / (1 - target_ltv)
-                current_equity = portfolio_value
-                target_loan = current_equity * ltv_target / (1 - ltv_target)
-                additional_loan = max(0, target_loan - (margin_loan_balance or 0))
+                # User's formula: additional_margin = (0.3 * (portfolio_value + drip + contribution) - margin_balance) / 0.7
+                # This maintains 30% LTV: (margin_balance + additional_margin) / (portfolio_value + drip + contribution + additional_margin) = 0.3
+                total_before_margin = portfolio_value + drip_amount + monthly_contrib
+                additional_margin = (ltv_target * total_before_margin - margin_balance) / (1.0 - ltv_target)
+                additional_margin = max(0.0, additional_margin)  # Can't unborrow
+                margin_balance += additional_margin
 
-                # Borrow and invest at portfolio yield
-                portfolio_value += additional_loan
+            # 5. Total amount invested this month
+            amount_purchased = drip_amount + monthly_contrib + additional_margin
+
+            # 6. Add to portfolio
+            portfolio_value += amount_purchased
 
         if months >= max_months:
             return None, required_portfolio, portfolio_value
 
         return months, required_portfolio, portfolio_value
 
-    # Tier 1: Pure Passive (No action)
+    # Tier 1: Modest Appreciation Only
     tier1_months, tier1_required, tier1_final = calculate_timeline(
         initial_portfolio_value=total_market_value,
+        initial_margin_balance=margin_loan_balance,
         monthly_contrib=0.0,
         monthly_div_income=monthly_drip,
         drip_enabled=False,
-        annual_appreciation_pct=0.0,
+        annual_appreciation_pct=modest_appreciation,
         target_monthly_income=target_monthly,
         maintain_ltv=False,
     )
 
     tiers.append({
         "tier": 1,
-        "name": "Pure Passive",
-        "description": "No contributions, no DRIP, no appreciation",
+        "name": "Modest Appreciation",
+        "description": f"{modest_appreciation:.1f}% appreciation only (no contributions, no DRIP)",
         "assumptions": {
             "monthly_contribution": 0.0,
             "drip_enabled": False,
-            "annual_appreciation_pct": 0.0,
+            "annual_appreciation_pct": _round_pct(modest_appreciation),
             "ltv_maintained": False,
         },
         "months_to_goal": tier1_months,
@@ -2071,25 +2096,26 @@ def _build_goal_tiers(
         "additional_investment_needed": _round_money(tier1_required - total_market_value if tier1_required else None),
     })
 
-    # Tier 2: Market Growth
+    # Tier 2: Conservative Build
     tier2_months, tier2_required, tier2_final = calculate_timeline(
         initial_portfolio_value=total_market_value,
-        monthly_contrib=0.0,
+        initial_margin_balance=margin_loan_balance,
+        monthly_contrib=monthly_contribution,
         monthly_div_income=monthly_drip,
         drip_enabled=False,
-        annual_appreciation_pct=3.0,
+        annual_appreciation_pct=modest_appreciation,
         target_monthly_income=target_monthly,
         maintain_ltv=False,
     )
 
     tiers.append({
         "tier": 2,
-        "name": "Market Growth",
-        "description": "No contributions, no DRIP, 3% appreciation",
+        "name": "Conservative Build",
+        "description": f"${monthly_contribution}/mo contributions, {modest_appreciation:.1f}% appreciation (no DRIP)",
         "assumptions": {
-            "monthly_contribution": 0.0,
+            "monthly_contribution": _round_money(monthly_contribution),
             "drip_enabled": False,
-            "annual_appreciation_pct": 3.0,
+            "annual_appreciation_pct": _round_pct(modest_appreciation),
             "ltv_maintained": False,
         },
         "months_to_goal": tier2_months,
@@ -2099,25 +2125,26 @@ def _build_goal_tiers(
         "additional_investment_needed": _round_money(tier2_required - total_market_value if tier2_required else None),
     })
 
-    # Tier 3: DRIP Strategy
+    # Tier 3: DRIP Build
     tier3_months, tier3_required, tier3_final = calculate_timeline(
         initial_portfolio_value=total_market_value,
-        monthly_contrib=0.0,
+        initial_margin_balance=margin_loan_balance,
+        monthly_contrib=monthly_contribution,
         monthly_div_income=monthly_drip,
         drip_enabled=True,
-        annual_appreciation_pct=5.0,
+        annual_appreciation_pct=modest_appreciation,
         target_monthly_income=target_monthly,
         maintain_ltv=False,
     )
 
     tiers.append({
         "tier": 3,
-        "name": "DRIP Strategy",
-        "description": "No contributions, DRIP enabled, 5% appreciation",
+        "name": "DRIP Build",
+        "description": f"DRIP + ${monthly_contribution}/mo + {modest_appreciation:.1f}% appreciation",
         "assumptions": {
-            "monthly_contribution": 0.0,
+            "monthly_contribution": _round_money(monthly_contribution),
             "drip_enabled": True,
-            "annual_appreciation_pct": 5.0,
+            "annual_appreciation_pct": _round_pct(modest_appreciation),
             "ltv_maintained": False,
         },
         "months_to_goal": tier3_months,
@@ -2127,26 +2154,29 @@ def _build_goal_tiers(
         "additional_investment_needed": _round_money(tier3_required - total_market_value if tier3_required else None),
     })
 
-    # Tier 4: Active Growth
+    # Tier 4: Leveraged Growth (Modest)
     tier4_months, tier4_required, tier4_final = calculate_timeline(
         initial_portfolio_value=total_market_value,
+        initial_margin_balance=margin_loan_balance,
         monthly_contrib=monthly_contribution,
         monthly_div_income=monthly_drip,
         drip_enabled=True,
-        annual_appreciation_pct=7.0,
+        annual_appreciation_pct=modest_appreciation,
         target_monthly_income=target_monthly,
-        maintain_ltv=False,
+        maintain_ltv=True,
+        ltv_target=target_ltv_pct,
     )
 
     tiers.append({
         "tier": 4,
-        "name": "Active Growth",
-        "description": f"${monthly_contribution}/mo contributions, DRIP enabled, 7% appreciation",
+        "name": "Leveraged Growth",
+        "description": f"DRIP + ${monthly_contribution}/mo + {modest_appreciation:.1f}% + {settings.goal_target_ltv_pct}% LTV",
         "assumptions": {
             "monthly_contribution": _round_money(monthly_contribution),
             "drip_enabled": True,
-            "annual_appreciation_pct": 7.0,
-            "ltv_maintained": False,
+            "annual_appreciation_pct": _round_pct(modest_appreciation),
+            "ltv_maintained": True,
+            "target_ltv_pct": _round_pct(settings.goal_target_ltv_pct),
         },
         "months_to_goal": tier4_months,
         "estimated_goal_date": _add_months(as_of_date, tier4_months).isoformat() if as_of_date and tier4_months is not None else None,
@@ -2155,13 +2185,14 @@ def _build_goal_tiers(
         "additional_investment_needed": _round_money(tier4_required - total_market_value if tier4_required else None),
     })
 
-    # Tier 5: Maximum Optimization
+    # Tier 5: Optimized Growth (Midrange)
     tier5_months, tier5_required, tier5_final = calculate_timeline(
         initial_portfolio_value=total_market_value,
+        initial_margin_balance=margin_loan_balance,
         monthly_contrib=monthly_contribution,
         monthly_div_income=monthly_drip,
         drip_enabled=True,
-        annual_appreciation_pct=10.0,
+        annual_appreciation_pct=midrange_appreciation,
         target_monthly_income=target_monthly,
         maintain_ltv=True,
         ltv_target=target_ltv_pct,
@@ -2169,12 +2200,12 @@ def _build_goal_tiers(
 
     tiers.append({
         "tier": 5,
-        "name": "Maximum Optimization",
-        "description": f"${monthly_contribution}/mo contributions, DRIP, 10% appreciation, {settings.goal_target_ltv_pct}% LTV maintained",
+        "name": "Optimized Growth",
+        "description": f"DRIP + ${monthly_contribution}/mo + {midrange_appreciation:.1f}% + {settings.goal_target_ltv_pct}% LTV",
         "assumptions": {
             "monthly_contribution": _round_money(monthly_contribution),
             "drip_enabled": True,
-            "annual_appreciation_pct": 10.0,
+            "annual_appreciation_pct": _round_pct(midrange_appreciation),
             "ltv_maintained": True,
             "target_ltv_pct": _round_pct(settings.goal_target_ltv_pct),
         },
@@ -2183,6 +2214,37 @@ def _build_goal_tiers(
         "required_portfolio_value": _round_money(tier5_required),
         "final_portfolio_value": _round_money(tier5_final),
         "additional_investment_needed": _round_money(tier5_required - total_market_value if tier5_required else None),
+    })
+
+    # Tier 6: Maximum Growth
+    tier6_months, tier6_required, tier6_final = calculate_timeline(
+        initial_portfolio_value=total_market_value,
+        initial_margin_balance=margin_loan_balance,
+        monthly_contrib=monthly_contribution,
+        monthly_div_income=monthly_drip,
+        drip_enabled=True,
+        annual_appreciation_pct=max_appreciation,
+        target_monthly_income=target_monthly,
+        maintain_ltv=True,
+        ltv_target=target_ltv_pct,
+    )
+
+    tiers.append({
+        "tier": 6,
+        "name": "Maximum Growth",
+        "description": f"DRIP + ${monthly_contribution}/mo + {max_appreciation:.1f}% + {settings.goal_target_ltv_pct}% LTV",
+        "assumptions": {
+            "monthly_contribution": _round_money(monthly_contribution),
+            "drip_enabled": True,
+            "annual_appreciation_pct": _round_pct(max_appreciation),
+            "ltv_maintained": True,
+            "target_ltv_pct": _round_pct(settings.goal_target_ltv_pct),
+        },
+        "months_to_goal": tier6_months,
+        "estimated_goal_date": _add_months(as_of_date, tier6_months).isoformat() if as_of_date and tier6_months is not None else None,
+        "required_portfolio_value": _round_money(tier6_required),
+        "final_portfolio_value": _round_money(tier6_final),
+        "additional_investment_needed": _round_money(tier6_required - total_market_value if tier6_required else None),
     })
 
     return {
@@ -2996,22 +3058,23 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         total_market_value,
         margin_loan_balance,
         settings.goal_target_monthly,
+        performance,
         as_of_date_local,
     )
 
-    # Extract most optimistic tier (tier 5) for display alongside existing goal_progress
+    # Extract most optimistic tier (tier 6) for display alongside existing goal_progress
     goal_progress_optimistic = None
     if goal_tiers and goal_tiers.get("tiers"):
-        tier5 = next((t for t in goal_tiers["tiers"] if t["tier"] == 5), None)
-        if tier5:
+        tier6 = next((t for t in goal_tiers["tiers"] if t["tier"] == 6), None)
+        if tier6:
             goal_progress_optimistic = {
-                "tier_name": tier5["name"],
-                "description": tier5["description"],
-                "months_to_goal": tier5["months_to_goal"],
-                "estimated_goal_date": tier5["estimated_goal_date"],
-                "required_portfolio_value": tier5["required_portfolio_value"],
-                "final_portfolio_value": tier5["final_portfolio_value"],
-                "assumptions": tier5["assumptions"],
+                "tier_name": tier6["name"],
+                "description": tier6["description"],
+                "months_to_goal": tier6["months_to_goal"],
+                "estimated_goal_date": tier6["estimated_goal_date"],
+                "required_portfolio_value": tier6["required_portfolio_value"],
+                "final_portfolio_value": tier6["final_portfolio_value"],
+                "assumptions": tier6["assumptions"],
             }
 
     goal_progress_provenance = _provenance_entry(

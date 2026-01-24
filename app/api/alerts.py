@@ -62,7 +62,7 @@ def _help_text() -> str:
         "/holdings - top holdings by weight\n"
         "/risk - risk metrics\n"
         "/goal - goal progress\n"
-        "/goals - dividend goal tiers (5 scenarios)\n"
+        "/goals - dividend goal tiers (6 scenarios)\n"
         "/projection - time to goal\n"
         "/settings - current bot settings\n"
         "/silence &lt;hours&gt; - pause non-critical alerts\n"

@@ -83,7 +83,7 @@ def format_goal_tiers_html(goal_tiers: dict) -> str:
         assumptions = tier.get("assumptions", {})
 
         # Emoji for each tier
-        emoji_map = {1: "🐌", 2: "🚶", 3: "🏃", 4: "🚀", 5: "🌟"}
+        emoji_map = {1: "🐌", 2: "🚶", 3: "🏃", 4: "🚀", 5: "🌟", 6: "⚡"}
         emoji = emoji_map.get(tier_num, "📌")
 
         lines.append(f"{emoji} <b>Tier {tier_num}: {name}</b>")
@@ -117,7 +117,7 @@ def format_goal_tiers_html(goal_tiers: dict) -> str:
 
         lines.append("")
 
-    lines.append("💡 <i>Use Tier 3-4 for realistic planning, Tier 5 for maximum potential</i>")
+    lines.append("💡 <i>Use Tier 3-4 for realistic planning, Tier 5-6 for maximum potential</i>")
 
     return "\n".join(lines)
 
