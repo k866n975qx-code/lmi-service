@@ -19,7 +19,7 @@ from ..alerts.notifier import (
     set_min_severity,
 )
 from ..pipeline.diff_daily import diff_daily_from_db
-from ..services.telegram import TelegramClient
+from ..services.telegram import TelegramClient, format_goal_tiers_html
 
 router = APIRouter()
 
@@ -62,6 +62,7 @@ def _help_text() -> str:
         "/holdings - top holdings by weight\n"
         "/risk - risk metrics\n"
         "/goal - goal progress\n"
+        "/goals - dividend goal tiers (5 scenarios)\n"
         "/projection - time to goal\n"
         "/settings - current bot settings\n"
         "/silence &lt;hours&gt; - pause non-critical alerts\n"
@@ -369,6 +370,16 @@ async def telegram_webhook(update: dict):
     elif cmd == "goal":
         _, snap = _latest_snapshot(conn)
         reply = _goal_text(snap) if snap else "No daily snapshot available."
+    elif cmd == "goals":
+        _, snap = _latest_snapshot(conn)
+        if not snap:
+            reply = "No daily snapshot available."
+        else:
+            goal_tiers = snap.get("goal_tiers")
+            if goal_tiers:
+                reply = format_goal_tiers_html(goal_tiers)
+            else:
+                reply = "Goal tiers not available. Run a sync to generate tier data."
     elif cmd == "projection":
         _, snap = _latest_snapshot(conn)
         reply = _projection_text(snap) if snap else "No daily snapshot available."
