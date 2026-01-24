@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     goal_target_monthly: float | None = Field(default=None, alias="GOAL_TARGET_MONTHLY")
     goal_monthly_contribution: float = Field(default=0.0, alias="GOAL_MONTHLY_CONTRIBUTION")
     goal_growth_window_months: int = Field(default=3, alias="GOAL_GROWTH_WINDOW_MONTHS")
+    goal_target_ltv_pct: float = Field(default=30.0, alias="GOAL_TARGET_LTV_PCT")
     margin_apr_current: float = Field(default=0.0415, alias="MARGIN_APR_CURRENT")
     margin_apr_future: float = Field(default=0.0565, alias="MARGIN_APR_FUTURE")
     margin_apr_future_date: str = Field(default="2026-11-01", alias="MARGIN_APR_FUTURE_DATE")

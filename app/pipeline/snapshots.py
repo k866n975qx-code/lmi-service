@@ -1953,6 +1953,258 @@ def _build_goal_progress_net(projected_monthly_income, total_market_value, margi
     }
 
 
+def _build_goal_tiers(
+    projected_monthly_income,
+    total_market_value,
+    margin_loan_balance,
+    target_monthly,
+    as_of_date: date | None = None,
+):
+    """
+    Build comprehensive dividend goal tracking across 5 tiers:
+    1. Pure Passive: No contributions, no DRIP, 0% appreciation
+    2. Market Growth: No contributions, no DRIP, 3% appreciation
+    3. DRIP Strategy: No contributions, DRIP enabled, 5% appreciation
+    4. Active Growth: Contributions + DRIP, 7% appreciation
+    5. Maximum Optimization: Contributions + DRIP + LTV maintained, 10% appreciation
+    """
+    if not target_monthly or target_monthly <= 0 or not total_market_value:
+        return None
+
+    monthly_contribution = settings.goal_monthly_contribution or 0.0
+    monthly_drip = projected_monthly_income or 0.0
+    target_ltv_pct = settings.goal_target_ltv_pct / 100.0
+    portfolio_yield_pct = _safe_divide(projected_monthly_income * 12.0, total_market_value)
+    portfolio_yield_pct_display = portfolio_yield_pct * 100 if portfolio_yield_pct is not None else None
+
+    # Current state (for reference in calculations)
+    current_ltv = _safe_divide(margin_loan_balance or 0.0, total_market_value)
+
+    tiers = []
+
+    # Helper to calculate months to goal with compounding
+    def calculate_timeline(
+        initial_portfolio_value,
+        monthly_contrib,
+        monthly_div_income,
+        drip_enabled,
+        annual_appreciation_pct,
+        target_monthly_income,
+        maintain_ltv=False,
+        ltv_target=0.0,
+    ):
+        """Calculate months to reach target income with compounding growth"""
+        if portfolio_yield_pct is None or portfolio_yield_pct <= 0:
+            return None, None, None
+
+        # Calculate required portfolio value to generate target income
+        required_portfolio = target_monthly_income * 12.0 / portfolio_yield_pct
+
+        # If we're already there
+        if initial_portfolio_value >= required_portfolio:
+            return 0, required_portfolio, initial_portfolio_value
+
+        # Simulate month-by-month growth
+        portfolio_value = initial_portfolio_value
+        months = 0
+        max_months = 600  # 50 years cap
+
+        monthly_appreciation = annual_appreciation_pct / 12.0 / 100.0
+
+        while portfolio_value < required_portfolio and months < max_months:
+            months += 1
+
+            # Price appreciation
+            portfolio_value *= (1 + monthly_appreciation)
+
+            # Add contributions
+            portfolio_value += monthly_contrib
+
+            # DRIP: reinvest dividends
+            if drip_enabled:
+                monthly_income_generated = portfolio_value * portfolio_yield_pct / 12.0
+                portfolio_value += monthly_income_generated
+
+            # LTV maintenance: borrow to maintain target LTV
+            if maintain_ltv and ltv_target > 0:
+                # Calculate how much we can borrow to maintain target LTV
+                # portfolio_value = equity
+                # target_ltv = loan / (equity + loan)
+                # Solving for loan: loan = equity * target_ltv / (1 - target_ltv)
+                current_equity = portfolio_value
+                target_loan = current_equity * ltv_target / (1 - ltv_target)
+                additional_loan = max(0, target_loan - (margin_loan_balance or 0))
+
+                # Borrow and invest at portfolio yield
+                portfolio_value += additional_loan
+
+        if months >= max_months:
+            return None, required_portfolio, portfolio_value
+
+        return months, required_portfolio, portfolio_value
+
+    # Tier 1: Pure Passive (No action)
+    tier1_months, tier1_required, tier1_final = calculate_timeline(
+        initial_portfolio_value=total_market_value,
+        monthly_contrib=0.0,
+        monthly_div_income=monthly_drip,
+        drip_enabled=False,
+        annual_appreciation_pct=0.0,
+        target_monthly_income=target_monthly,
+        maintain_ltv=False,
+    )
+
+    tiers.append({
+        "tier": 1,
+        "name": "Pure Passive",
+        "description": "No contributions, no DRIP, no appreciation",
+        "assumptions": {
+            "monthly_contribution": 0.0,
+            "drip_enabled": False,
+            "annual_appreciation_pct": 0.0,
+            "ltv_maintained": False,
+        },
+        "months_to_goal": tier1_months,
+        "estimated_goal_date": _add_months(as_of_date, tier1_months).isoformat() if as_of_date and tier1_months is not None else None,
+        "required_portfolio_value": _round_money(tier1_required),
+        "final_portfolio_value": _round_money(tier1_final),
+        "additional_investment_needed": _round_money(tier1_required - total_market_value if tier1_required else None),
+    })
+
+    # Tier 2: Market Growth
+    tier2_months, tier2_required, tier2_final = calculate_timeline(
+        initial_portfolio_value=total_market_value,
+        monthly_contrib=0.0,
+        monthly_div_income=monthly_drip,
+        drip_enabled=False,
+        annual_appreciation_pct=3.0,
+        target_monthly_income=target_monthly,
+        maintain_ltv=False,
+    )
+
+    tiers.append({
+        "tier": 2,
+        "name": "Market Growth",
+        "description": "No contributions, no DRIP, 3% appreciation",
+        "assumptions": {
+            "monthly_contribution": 0.0,
+            "drip_enabled": False,
+            "annual_appreciation_pct": 3.0,
+            "ltv_maintained": False,
+        },
+        "months_to_goal": tier2_months,
+        "estimated_goal_date": _add_months(as_of_date, tier2_months).isoformat() if as_of_date and tier2_months is not None else None,
+        "required_portfolio_value": _round_money(tier2_required),
+        "final_portfolio_value": _round_money(tier2_final),
+        "additional_investment_needed": _round_money(tier2_required - total_market_value if tier2_required else None),
+    })
+
+    # Tier 3: DRIP Strategy
+    tier3_months, tier3_required, tier3_final = calculate_timeline(
+        initial_portfolio_value=total_market_value,
+        monthly_contrib=0.0,
+        monthly_div_income=monthly_drip,
+        drip_enabled=True,
+        annual_appreciation_pct=5.0,
+        target_monthly_income=target_monthly,
+        maintain_ltv=False,
+    )
+
+    tiers.append({
+        "tier": 3,
+        "name": "DRIP Strategy",
+        "description": "No contributions, DRIP enabled, 5% appreciation",
+        "assumptions": {
+            "monthly_contribution": 0.0,
+            "drip_enabled": True,
+            "annual_appreciation_pct": 5.0,
+            "ltv_maintained": False,
+        },
+        "months_to_goal": tier3_months,
+        "estimated_goal_date": _add_months(as_of_date, tier3_months).isoformat() if as_of_date and tier3_months is not None else None,
+        "required_portfolio_value": _round_money(tier3_required),
+        "final_portfolio_value": _round_money(tier3_final),
+        "additional_investment_needed": _round_money(tier3_required - total_market_value if tier3_required else None),
+    })
+
+    # Tier 4: Active Growth
+    tier4_months, tier4_required, tier4_final = calculate_timeline(
+        initial_portfolio_value=total_market_value,
+        monthly_contrib=monthly_contribution,
+        monthly_div_income=monthly_drip,
+        drip_enabled=True,
+        annual_appreciation_pct=7.0,
+        target_monthly_income=target_monthly,
+        maintain_ltv=False,
+    )
+
+    tiers.append({
+        "tier": 4,
+        "name": "Active Growth",
+        "description": f"${monthly_contribution}/mo contributions, DRIP enabled, 7% appreciation",
+        "assumptions": {
+            "monthly_contribution": _round_money(monthly_contribution),
+            "drip_enabled": True,
+            "annual_appreciation_pct": 7.0,
+            "ltv_maintained": False,
+        },
+        "months_to_goal": tier4_months,
+        "estimated_goal_date": _add_months(as_of_date, tier4_months).isoformat() if as_of_date and tier4_months is not None else None,
+        "required_portfolio_value": _round_money(tier4_required),
+        "final_portfolio_value": _round_money(tier4_final),
+        "additional_investment_needed": _round_money(tier4_required - total_market_value if tier4_required else None),
+    })
+
+    # Tier 5: Maximum Optimization
+    tier5_months, tier5_required, tier5_final = calculate_timeline(
+        initial_portfolio_value=total_market_value,
+        monthly_contrib=monthly_contribution,
+        monthly_div_income=monthly_drip,
+        drip_enabled=True,
+        annual_appreciation_pct=10.0,
+        target_monthly_income=target_monthly,
+        maintain_ltv=True,
+        ltv_target=target_ltv_pct,
+    )
+
+    tiers.append({
+        "tier": 5,
+        "name": "Maximum Optimization",
+        "description": f"${monthly_contribution}/mo contributions, DRIP, 10% appreciation, {settings.goal_target_ltv_pct}% LTV maintained",
+        "assumptions": {
+            "monthly_contribution": _round_money(monthly_contribution),
+            "drip_enabled": True,
+            "annual_appreciation_pct": 10.0,
+            "ltv_maintained": True,
+            "target_ltv_pct": _round_pct(settings.goal_target_ltv_pct),
+        },
+        "months_to_goal": tier5_months,
+        "estimated_goal_date": _add_months(as_of_date, tier5_months).isoformat() if as_of_date and tier5_months is not None else None,
+        "required_portfolio_value": _round_money(tier5_required),
+        "final_portfolio_value": _round_money(tier5_final),
+        "additional_investment_needed": _round_money(tier5_required - total_market_value if tier5_required else None),
+    })
+
+    return {
+        "tiers": tiers,
+        "current_state": {
+            "portfolio_value": _round_money(total_market_value),
+            "projected_monthly_income": _round_money(projected_monthly_income),
+            "portfolio_yield_pct": _round_pct(portfolio_yield_pct_display),
+            "current_ltv_pct": _round_pct(current_ltv * 100 if current_ltv else None),
+            "margin_loan_balance": _round_money(margin_loan_balance),
+            "target_monthly": _round_money(target_monthly),
+        },
+        "provenance": _provenance_entry(
+            "derived",
+            "internal",
+            "goal_tiers_projection",
+            ["income", "goal_settings", "monthly_contribution", "ltv_settings"],
+            now_utc_iso(),
+        ),
+    }
+
+
 def _coerce_fred_series(df, series_id: str):
     if df is None or getattr(df, "empty", True):
         return None
@@ -2737,6 +2989,31 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         as_of_date_local,
     )
     goal_progress_net = _build_goal_progress_net(income["projected_monthly_income"] or 0.0, total_market_value, margin_loan_balance, settings.goal_target_monthly)
+
+    # Build comprehensive goal tiers
+    goal_tiers = _build_goal_tiers(
+        income["projected_monthly_income"] or 0.0,
+        total_market_value,
+        margin_loan_balance,
+        settings.goal_target_monthly,
+        as_of_date_local,
+    )
+
+    # Extract most optimistic tier (tier 5) for display alongside existing goal_progress
+    goal_progress_optimistic = None
+    if goal_tiers and goal_tiers.get("tiers"):
+        tier5 = next((t for t in goal_tiers["tiers"] if t["tier"] == 5), None)
+        if tier5:
+            goal_progress_optimistic = {
+                "tier_name": tier5["name"],
+                "description": tier5["description"],
+                "months_to_goal": tier5["months_to_goal"],
+                "estimated_goal_date": tier5["estimated_goal_date"],
+                "required_portfolio_value": tier5["required_portfolio_value"],
+                "final_portfolio_value": tier5["final_portfolio_value"],
+                "assumptions": tier5["assumptions"],
+            }
+
     goal_progress_provenance = _provenance_entry(
         "derived",
         "internal",
@@ -2816,6 +3093,8 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         "portfolio_rollups": portfolio_rollups,
         "goal_progress": goal_progress,
         "goal_progress_net": goal_progress_net,
+        "goal_progress_optimistic": goal_progress_optimistic,
+        "goal_tiers": goal_tiers,
         "margin_guidance": margin_guidance,
         "margin_stress": margin_stress,
         "coverage": coverage,

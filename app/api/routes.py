@@ -14,6 +14,7 @@ from ..pipeline.null_reasons import replace_nulls_with_reasons
 from ..config import settings
 from ..db import get_conn
 from ..cache_layer import CacheLayer
+from ..services.telegram import TelegramClient, send_goal_tiers_to_telegram
 
 router = APIRouter()
 
@@ -354,3 +355,56 @@ def read_logs(lines: int = 200):
         for line in handle:
             tail.append(line.rstrip("\n"))
     return {"path": str(path), "lines": list(tail)}
+
+@router.get(
+    '/goals/tiers',
+    summary="Get dividend goal tiers",
+    description=(
+        "Returns comprehensive dividend goal tracking across 5 tiers from most conservative "
+        "(no action) to most optimistic (max contributions, DRIP, price appreciation, LTV maintained)."
+    ),
+    tags=["Goals"],
+)
+def get_goal_tiers():
+    conn = get_conn(settings.db_path)
+    cur = conn.cursor()
+    row = cur.execute(
+        "SELECT payload_json FROM snapshot_daily_current ORDER BY as_of_date_local DESC LIMIT 1"
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, 'daily snapshot not found')
+    payload = json.loads(row[0])
+    goal_tiers = payload.get("goal_tiers")
+    if not goal_tiers:
+        raise HTTPException(404, 'goal tiers not available')
+    return goal_tiers
+
+@router.post(
+    '/goals/tiers/send-telegram',
+    summary="Send goal tiers to Telegram",
+    description="Sends formatted goal tier analysis to the configured Telegram chat.",
+    tags=["Goals"],
+)
+def send_goal_tiers_telegram():
+    if not settings.telegram_bot_token or not settings.telegram_chat_id:
+        raise HTTPException(400, 'telegram not configured')
+
+    conn = get_conn(settings.db_path)
+    cur = conn.cursor()
+    row = cur.execute(
+        "SELECT payload_json FROM snapshot_daily_current ORDER BY as_of_date_local DESC LIMIT 1"
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, 'daily snapshot not found')
+    payload = json.loads(row[0])
+    goal_tiers = payload.get("goal_tiers")
+    if not goal_tiers:
+        raise HTTPException(404, 'goal tiers not available')
+
+    telegram_client = TelegramClient(settings.telegram_bot_token, settings.telegram_chat_id)
+    success = send_goal_tiers_to_telegram(goal_tiers, telegram_client)
+
+    if not success:
+        raise HTTPException(500, 'failed to send telegram message')
+
+    return {"ok": True, "sent": True}
