@@ -1,15 +1,15 @@
 {
   "comparison": {
-    "left_date": "2026-01-09",
-    "right_date": "2026-01-10",
+    "left_date": "2026-01-24",
+    "right_date": "2026-01-25",
     "days_apart": 1,
     "mode": "adjacent"
   },
   "left": {
-    "date": "2026-01-09"
+    "date": "2026-01-24"
   },
   "right": {
-    "date": "2026-01-10"
+    "date": "2026-01-25"
   },
   "summary": {
     "direction": "neutral",
@@ -18,864 +18,864 @@
     "highlights": [
       "Market value +$0.00 (+0.00%) vs 1 day ago",
       "Forward 12m income +$0.00",
-      "1M TWR +4.56%",
+      "1M TWR +4.96%",
       "No holdings added or removed"
     ],
     "period_type": "daily"
   },
   "range_metrics": {
-    "simple_return_pct": 0.0,
-    "simple_pnl": 0.0,
-    "per_day_return_pct": 0.0
+    "simple_return_pct": 0,
+    "simple_pnl": 0,
+    "per_day_return_pct": 0
   },
   "portfolio_metrics": {
     "totals": {
       "market_value": {
-        "left": 45709.76,
-        "right": 45709.76,
-        "delta": 0.0
+        "left": 57049.04,
+        "right": 57049.04,
+        "delta": 0
       },
       "net_liquidation_value": {
-        "left": 36354.49,
-        "right": 36354.49,
-        "delta": 0.0
+        "left": 40276.81,
+        "right": 40276.81,
+        "delta": 0
       },
       "cost_basis": {
-        "left": 44957.87,
-        "right": 44957.87,
-        "delta": 0.0
+        "left": 55641.69,
+        "right": 55641.69,
+        "delta": 0
       },
       "unrealized_pnl": {
-        "left": 751.9,
-        "right": 751.9,
-        "delta": 0.0
+        "left": 1407.35,
+        "right": 1407.35,
+        "delta": 0
       },
       "unrealized_pct": {
-        "left": 1.672,
-        "right": 1.672,
-        "delta": 0.0
+        "left": 2.529,
+        "right": 2.529,
+        "delta": 0
       },
       "margin_loan_balance": {
-        "left": 9355.27,
-        "right": 9355.27,
-        "delta": 0.0
+        "left": 16772.23,
+        "right": 16772.23,
+        "delta": 0
       },
       "margin_to_portfolio_pct": {
-        "left": 20.467,
-        "right": 20.467,
-        "delta": 0.0
+        "left": 29.4,
+        "right": 29.4,
+        "delta": 0
       }
     },
     "income": {
       "projected_monthly_income": {
-        "left": 520.29,
-        "right": 520.29,
-        "delta": 0.0
+        "left": 625.41,
+        "right": 625.41,
+        "delta": 0
       },
       "forward_12m_total": {
-        "left": 6243.44,
-        "right": 6243.44,
-        "delta": 0.0
+        "left": 7504.92,
+        "right": 7504.92,
+        "delta": 0
       },
       "portfolio_current_yield_pct": {
-        "left": 13.659,
-        "right": 13.659,
-        "delta": 0.0
+        "left": 13.155,
+        "right": 13.155,
+        "delta": 0
       },
       "portfolio_yield_on_cost_pct": {
-        "left": 13.887,
-        "right": 13.887,
-        "delta": 0.0
+        "left": 13.488,
+        "right": 13.488,
+        "delta": 0
       }
     },
     "rollups": {
       "performance": {
         "twr_1m_pct": {
-          "left": 4.564,
-          "right": 4.564,
-          "delta": 0.0
+          "left": 4.956,
+          "right": 4.956,
+          "delta": 0
         },
         "twr_3m_pct": {
-          "left": 10.513,
-          "right": 10.513,
-          "delta": 0.0
+          "left": 8.679,
+          "right": 8.679,
+          "delta": 0
         },
         "twr_6m_pct": {
-          "left": 14.85,
-          "right": 14.85,
-          "delta": 0.0
+          "left": 14.113,
+          "right": 14.113,
+          "delta": 0
         },
         "twr_12m_pct": {
-          "left": 17.523,
-          "right": 17.524,
-          "delta": 0.001
+          "left": 16.912,
+          "right": 16.912,
+          "delta": 0
         }
       },
       "risk": {
         "vol_30d_pct": {
-          "left": 6.676,
-          "right": 6.676,
-          "delta": 0.0
+          "left": 11.89,
+          "right": 11.89,
+          "delta": 0
         },
         "vol_90d_pct": {
-          "left": 10.455,
-          "right": 10.455,
-          "delta": 0.0
+          "left": 10.966,
+          "right": 10.966,
+          "delta": 0
         },
         "sharpe_1y": {
-          "left": 0.921,
-          "right": 0.921,
-          "delta": 0.0
+          "left": 0.881,
+          "right": 0.881,
+          "delta": 0
         },
         "sortino_1y": {
-          "left": 1.146,
-          "right": 1.146,
-          "delta": 0.0
+          "left": 1.107,
+          "right": 1.107,
+          "delta": 0
         },
         "sortino_6m": {
-          "left": 4.16,
-          "right": 4.16,
-          "delta": 0.0
+          "left": 3.576,
+          "right": 3.576,
+          "delta": 0
         },
         "sortino_3m": {
-          "left": 6.372,
-          "right": 6.372,
-          "delta": 0.0
+          "left": 4.91,
+          "right": 4.91,
+          "delta": 0
         },
         "sortino_1m": {
-          "left": 29.892,
-          "right": 29.892,
-          "delta": 0.0
+          "left": 6.427,
+          "right": 6.427,
+          "delta": 0
         },
         "sortino_sharpe_ratio": {
-          "left": 1.243,
-          "right": 1.243,
-          "delta": 0.0
+          "left": 1.257,
+          "right": 1.257,
+          "delta": 0
         },
         "sortino_sharpe_divergence": {
-          "left": 0.224,
-          "right": 0.224,
-          "delta": 0.0
+          "left": 0.226,
+          "right": 0.226,
+          "delta": 0
         },
         "information_ratio_1y": {
-          "left": "value not available in source data",
-          "right": 0.007,
-          "delta": "value not available in source data"
+          "left": 0.409,
+          "right": 0.409,
+          "delta": 0
         },
         "tracking_error_1y_pct": {
-          "left": "value not available in source data",
-          "right": 7.022,
-          "delta": "value not available in source data"
+          "left": 7.681,
+          "right": 7.682,
+          "delta": 0.001
         },
         "ulcer_index_1y": {
-          "left": "value not available in source data",
-          "right": 5.67,
-          "delta": "value not available in source data"
+          "left": 5.584,
+          "right": 5.584,
+          "delta": 0
         },
         "omega_ratio_1y": {
-          "left": "value not available in source data",
-          "right": 1.206,
-          "delta": "value not available in source data"
+          "left": 1.192,
+          "right": 1.192,
+          "delta": 0
         },
         "pain_adjusted_return": {
-          "left": "value not available in source data",
-          "right": 3.091,
-          "delta": "value not available in source data"
+          "left": 3.029,
+          "right": 3.029,
+          "delta": 0
         },
         "income_stability_score": {
-          "left": 0.0,
-          "right": 0.0,
-          "delta": 0.0
+          "left": 0,
+          "right": 0,
+          "delta": 0
         },
         "var_90_1d_pct": {
-          "left": "value not available in source data",
-          "right": -1.035,
-          "delta": "value not available in source data"
+          "left": -1.089,
+          "right": -1.089,
+          "delta": 0
         },
         "calmar_1y": {
-          "left": 0.878,
-          "right": 0.878,
-          "delta": 0.0
+          "left": 0.85,
+          "right": 0.85,
+          "delta": 0
         },
         "max_drawdown_1y_pct": {
-          "left": -19.948,
-          "right": -19.948,
-          "delta": 0.0
+          "left": -19.908,
+          "right": -19.908,
+          "delta": 0
         },
         "var_95_1d_pct": {
-          "left": -1.829,
-          "right": -1.829,
-          "delta": 0.0
+          "left": -1.942,
+          "right": -1.942,
+          "delta": 0
         },
         "var_99_1d_pct": {
-          "left": "value not available in source data",
-          "right": -3.271,
-          "delta": "value not available in source data"
+          "left": -3.276,
+          "right": -3.276,
+          "delta": 0
         },
         "var_95_1w_pct": {
-          "left": "value not available in source data",
-          "right": -4.09,
-          "delta": "value not available in source data"
+          "left": -4.342,
+          "right": -4.342,
+          "delta": 0
         },
         "var_95_1m_pct": {
-          "left": "value not available in source data",
-          "right": -8.382,
-          "delta": "value not available in source data"
+          "left": -8.899,
+          "right": -8.899,
+          "delta": 0
         },
         "cvar_90_1d_pct": {
-          "left": "value not available in source data",
-          "right": -2.19,
-          "delta": "value not available in source data"
+          "left": -2.247,
+          "right": -2.247,
+          "delta": 0
         },
         "cvar_95_1d_pct": {
-          "left": -2.985,
-          "right": -2.985,
-          "delta": 0.0
+          "left": -3.023,
+          "right": -3.023,
+          "delta": 0
         },
         "cvar_99_1d_pct": {
-          "left": "value not available in source data",
-          "right": -5.057,
-          "delta": "value not available in source data"
+          "left": -5.062,
+          "right": -5.062,
+          "delta": 0
         },
         "cvar_95_1w_pct": {
-          "left": "value not available in source data",
-          "right": -6.675,
-          "delta": "value not available in source data"
+          "left": -6.76,
+          "right": -6.76,
+          "delta": 0
         },
         "cvar_95_1m_pct": {
-          "left": "value not available in source data",
-          "right": -13.68,
-          "delta": "value not available in source data"
+          "left": -13.854,
+          "right": -13.854,
+          "delta": 0
         }
       },
       "income_stability": {
-        "stability_score": {
-          "left": "value not available in source data",
-          "right": 0.0,
-          "delta": "value not available in source data"
-        },
         "income_volatility_30d_pct": {
-          "left": "value not available in source data",
-          "right": 243.556,
-          "delta": "value not available in source data"
-        },
-        "missed_payment_count_12m": {
-          "left": "value not available in source data",
-          "right": 9,
-          "delta": "value not available in source data"
-        },
-        "coefficient_of_variation": {
-          "left": "value not available in source data",
-          "right": 2.465,
-          "delta": "value not available in source data"
-        },
-        "dividend_cut_count_12m": {
-          "left": "value not available in source data",
-          "right": 1,
-          "delta": "value not available in source data"
+          "left": 235.475,
+          "right": 241.695,
+          "delta": 6.22
         },
         "consecutive_months_positive": {
-          "left": "value not available in source data",
+          "left": 3,
           "right": 3,
-          "delta": "value not available in source data"
+          "delta": 0
+        },
+        "missed_payment_count_12m": {
+          "left": 0,
+          "right": 0,
+          "delta": 0
+        },
+        "coefficient_of_variation": {
+          "left": 0.87,
+          "right": 0.87,
+          "delta": 0
         },
         "income_drawdown_max_pct": {
-          "left": "value not available in source data",
-          "right": -80.873,
-          "delta": "value not available in source data"
+          "left": 3.969,
+          "right": 3.969,
+          "delta": 0
+        },
+        "dividend_cut_count_12m": {
+          "left": 0,
+          "right": 0,
+          "delta": 0
+        },
+        "stability_score": {
+          "left": 0,
+          "right": 0,
+          "delta": 0
         }
       },
       "income_growth": {
-        "mom_absolute": {
-          "left": "value not available in source data",
-          "right": -164.44,
-          "delta": "value not available in source data"
-        },
         "mom_pct": {
-          "left": "value not available in source data",
-          "right": -80.873,
-          "delta": "value not available in source data"
+          "left": 3.969,
+          "right": 3.969,
+          "delta": 0
+        },
+        "mom_absolute": {
+          "left": 8.07,
+          "right": 8.07,
+          "delta": 0
         }
       },
       "tail_risk": {
-        "cvar_to_income_ratio": {
-          "left": "value not available in source data",
-          "right": 12.018,
-          "delta": "value not available in source data"
-        },
-        "var_95_1w_pct": {
-          "left": "value not available in source data",
-          "right": -4.09,
-          "delta": "value not available in source data"
-        },
-        "var_95_1d_pct": {
-          "left": "value not available in source data",
-          "right": -1.829,
-          "delta": "value not available in source data"
-        },
-        "cvar_95_1m_pct": {
-          "left": "value not available in source data",
-          "right": -13.68,
-          "delta": "value not available in source data"
-        },
-        "cvar_90_1d_pct": {
-          "left": "value not available in source data",
-          "right": -2.19,
-          "delta": "value not available in source data"
+        "cvar_99_1d_pct": {
+          "left": -5.062,
+          "right": -5.062,
+          "delta": 0
         },
         "cvar_95_1w_pct": {
-          "left": "value not available in source data",
-          "right": -6.675,
-          "delta": "value not available in source data"
+          "left": -6.76,
+          "right": -6.76,
+          "delta": 0
         },
-        "cvar_95_1d_pct": {
-          "left": "value not available in source data",
-          "right": -2.985,
-          "delta": "value not available in source data"
-        },
-        "var_95_1m_pct": {
-          "left": "value not available in source data",
-          "right": -8.382,
-          "delta": "value not available in source data"
-        },
-        "cvar_99_1d_pct": {
-          "left": "value not available in source data",
-          "right": -5.057,
-          "delta": "value not available in source data"
+        "var_95_1w_pct": {
+          "left": -4.342,
+          "right": -4.342,
+          "delta": 0
         },
         "worst_expected_loss_1w": {
-          "left": "value not available in source data",
-          "right": 3051.13,
-          "delta": "value not available in source data"
+          "left": 3856.52,
+          "right": 3856.52,
+          "delta": 0
+        },
+        "cvar_95_1d_pct": {
+          "left": -3.023,
+          "right": -3.023,
+          "delta": 0
+        },
+        "cvar_90_1d_pct": {
+          "left": -2.247,
+          "right": -2.247,
+          "delta": 0
+        },
+        "var_95_1m_pct": {
+          "left": -8.899,
+          "right": -8.899,
+          "delta": 0
+        },
+        "cvar_to_income_ratio": {
+          "left": 12.637,
+          "right": 12.637,
+          "delta": 0
+        },
+        "var_95_1d_pct": {
+          "left": -1.942,
+          "right": -1.942,
+          "delta": 0
+        },
+        "cvar_95_1m_pct": {
+          "left": -13.854,
+          "right": -13.854,
+          "delta": 0
         }
       },
       "vs_benchmark": {
-        "information_ratio_1y": {
-          "left": "value not available in source data",
-          "right": 0.007,
-          "delta": "value not available in source data"
-        },
         "excess_return_1y_pct": {
-          "left": "value not available in source data",
-          "right": -0.184,
-          "delta": "value not available in source data"
+          "left": 3.287,
+          "right": 3.287,
+          "delta": 0
         },
         "tracking_error_1y_pct": {
-          "left": "value not available in source data",
-          "right": 7.022,
-          "delta": "value not available in source data"
+          "left": 7.681,
+          "right": 7.682,
+          "delta": 0.001
+        },
+        "information_ratio_1y": {
+          "left": 0.409,
+          "right": 0.409,
+          "delta": 0
         },
         "active_share_pct": {
-          "left": "value not available in source data",
-          "right": 100.0,
-          "delta": "value not available in source data"
+          "left": 100,
+          "right": 100,
+          "delta": 0
         },
         "correlation_to_benchmark": {
-          "left": "value not available in source data",
-          "right": 0.934,
-          "delta": "value not available in source data"
+          "left": 0.923,
+          "right": 0.923,
+          "delta": 0
         }
       },
       "return_attribution_1m": {
-        "window": {
-          "days": {
-            "left": "value not available in source data",
-            "right": 30,
-            "delta": "value not available in source data"
-          }
-        },
-        "income_contribution_pct": {
-          "left": "value not available in source data",
-          "right": 0.247,
-          "delta": "value not available in source data"
-        },
-        "total_return_pct": {
-          "left": "value not available in source data",
-          "right": 4.196,
-          "delta": "value not available in source data"
-        },
-        "total_return_dollars": {
-          "left": "value not available in source data",
-          "right": 1844.93,
-          "delta": "value not available in source data"
+        "price_contribution_pct": {
+          "left": 4.782,
+          "right": 4.782,
+          "delta": 0
         },
         "income_contribution_dollars": {
-          "left": "value not available in source data",
-          "right": 108.63,
-          "delta": "value not available in source data"
+          "left": 262.03,
+          "right": 262.03,
+          "delta": 0
         },
-        "price_contribution_pct": {
-          "left": "value not available in source data",
-          "right": 3.949,
-          "delta": "value not available in source data"
+        "total_return_dollars": {
+          "left": 2865.49,
+          "right": 2865.49,
+          "delta": 0
         },
         "price_contribution_dollars": {
-          "left": "value not available in source data",
-          "right": 1736.3,
-          "delta": "value not available in source data"
+          "left": 2603.46,
+          "right": 2603.46,
+          "delta": 0
+        },
+        "window": {
+          "days": {
+            "left": 30,
+            "right": 30,
+            "delta": 0
+          }
+        },
+        "total_return_pct": {
+          "left": 5.263,
+          "right": 5.263,
+          "delta": 0
+        },
+        "income_contribution_pct": {
+          "left": 0.481,
+          "right": 0.481,
+          "delta": 0
         }
       },
       "return_attribution_3m": {
-        "window": {
-          "days": {
-            "left": "value not available in source data",
-            "right": 90,
-            "delta": "value not available in source data"
-          }
-        },
-        "income_contribution_pct": {
-          "left": "value not available in source data",
-          "right": 0.442,
-          "delta": "value not available in source data"
-        },
-        "total_return_pct": {
-          "left": "value not available in source data",
-          "right": 8.742,
-          "delta": "value not available in source data"
-        },
-        "total_return_dollars": {
-          "left": "value not available in source data",
-          "right": 3689.59,
-          "delta": "value not available in source data"
+        "price_contribution_pct": {
+          "left": 7.476,
+          "right": 7.476,
+          "delta": 0
         },
         "income_contribution_dollars": {
-          "left": "value not available in source data",
-          "right": 186.5,
-          "delta": "value not available in source data"
+          "left": 323.28,
+          "right": 323.28,
+          "delta": 0
         },
-        "price_contribution_pct": {
-          "left": "value not available in source data",
-          "right": 8.3,
-          "delta": "value not available in source data"
+        "total_return_dollars": {
+          "left": 4291.83,
+          "right": 4291.83,
+          "delta": 0
         },
         "price_contribution_dollars": {
-          "left": "value not available in source data",
-          "right": 3503.09,
-          "delta": "value not available in source data"
+          "left": 3968.55,
+          "right": 3968.55,
+          "delta": 0
+        },
+        "window": {
+          "days": {
+            "left": 90,
+            "right": 90,
+            "delta": 0
+          }
+        },
+        "total_return_pct": {
+          "left": 8.086,
+          "right": 8.086,
+          "delta": 0
+        },
+        "income_contribution_pct": {
+          "left": 0.609,
+          "right": 0.609,
+          "delta": 0
         }
       },
       "return_attribution_6m": {
-        "window": {
-          "days": {
-            "left": "value not available in source data",
-            "right": 180,
-            "delta": "value not available in source data"
-          }
-        },
-        "income_contribution_pct": {
-          "left": "value not available in source data",
-          "right": 0.467,
-          "delta": "value not available in source data"
-        },
-        "total_return_pct": {
-          "left": "value not available in source data",
-          "right": 15.005,
-          "delta": "value not available in source data"
-        },
-        "total_return_dollars": {
-          "left": "value not available in source data",
-          "right": 5988.17,
-          "delta": "value not available in source data"
+        "price_contribution_pct": {
+          "left": 14.825,
+          "right": 14.825,
+          "delta": 0
         },
         "income_contribution_dollars": {
-          "left": "value not available in source data",
-          "right": 186.5,
-          "delta": "value not available in source data"
+          "left": 323.28,
+          "right": 323.28,
+          "delta": 0
         },
-        "price_contribution_pct": {
-          "left": "value not available in source data",
-          "right": 14.538,
-          "delta": "value not available in source data"
+        "total_return_dollars": {
+          "left": 7689.05,
+          "right": 7689.05,
+          "delta": 0
         },
         "price_contribution_dollars": {
-          "left": "value not available in source data",
-          "right": 5801.67,
-          "delta": "value not available in source data"
+          "left": 7365.77,
+          "right": 7365.77,
+          "delta": 0
+        },
+        "window": {
+          "days": {
+            "left": 180,
+            "right": 180,
+            "delta": 0
+          }
+        },
+        "total_return_pct": {
+          "left": 15.476,
+          "right": 15.476,
+          "delta": 0
+        },
+        "income_contribution_pct": {
+          "left": 0.651,
+          "right": 0.651,
+          "delta": 0
         }
       },
       "return_attribution_12m": {
-        "window": {
-          "days": {
-            "left": "value not available in source data",
-            "right": 365,
-            "delta": "value not available in source data"
-          }
-        },
-        "income_contribution_pct": {
-          "left": "value not available in source data",
-          "right": 0.486,
-          "delta": "value not available in source data"
-        },
-        "total_return_pct": {
-          "left": "value not available in source data",
-          "right": 19.685,
-          "delta": "value not available in source data"
-        },
-        "total_return_dollars": {
-          "left": "value not available in source data",
-          "right": 7548.81,
-          "delta": "value not available in source data"
+        "price_contribution_pct": {
+          "left": 16.4,
+          "right": 16.4,
+          "delta": 0
         },
         "income_contribution_dollars": {
-          "left": "value not available in source data",
-          "right": 186.5,
-          "delta": "value not available in source data"
+          "left": 323.28,
+          "right": 323.28,
+          "delta": 0
         },
-        "price_contribution_pct": {
-          "left": "value not available in source data",
-          "right": 19.199,
-          "delta": "value not available in source data"
+        "total_return_dollars": {
+          "left": 8361.01,
+          "right": 8361.02,
+          "delta": 0.01
         },
         "price_contribution_dollars": {
-          "left": "value not available in source data",
-          "right": 7362.31,
-          "delta": "value not available in source data"
+          "left": 8037.73,
+          "right": 8037.74,
+          "delta": 0.01
+        },
+        "window": {
+          "days": {
+            "left": 365,
+            "right": 365,
+            "delta": 0
+          }
+        },
+        "total_return_pct": {
+          "left": 17.059,
+          "right": 17.059,
+          "delta": 0
+        },
+        "income_contribution_pct": {
+          "left": 0.66,
+          "right": 0.66,
+          "delta": 0
         }
       }
     },
     "goal_progress": {
       "progress_pct": {
-        "left": 26.014,
-        "right": 26.014,
-        "delta": 0.0
+        "left": 15.635,
+        "right": 15.635,
+        "delta": 0
       },
       "current_projected_monthly": {
-        "left": 520.29,
-        "right": 520.29,
-        "delta": 0.0
+        "left": 625.41,
+        "right": 625.41,
+        "delta": 0
       },
       "months_to_goal": {
-        "left": 37,
-        "right": 37,
-        "delta": 0.0
+        "left": 85,
+        "right": 85,
+        "delta": 0
       }
     },
     "goal_progress_net": {
       "progress_pct": {
-        "left": 24.397,
-        "right": 24.397,
-        "delta": 0.0
+        "left": 14.185,
+        "right": 14.185,
+        "delta": 0
       },
       "current_projected_monthly_net": {
-        "left": 487.94,
-        "right": 487.94,
-        "delta": 0.0
+        "left": 567.41,
+        "right": 567.41,
+        "delta": 0
       }
     },
     "margin": {
       "margin_loan_balance": {
-        "left": 9355.27,
-        "right": 9355.27,
-        "delta": 0.0
+        "left": 16772.23,
+        "right": 16772.23,
+        "delta": 0
       },
       "margin_to_portfolio_pct": {
-        "left": 20.467,
-        "right": 20.467,
-        "delta": 0.0
+        "left": 29.4,
+        "right": 29.4,
+        "delta": 0
       },
       "ltv_pct": {
-        "left": 20.467,
-        "right": 20.467,
-        "delta": 0.0
+        "left": 29.4,
+        "right": 29.4,
+        "delta": 0
       }
     },
     "margin_stress": {
-      "historical_trends_90d": {
-        "ltv_min": {
-          "left": "value not available in source data",
-          "right": 20.467,
-          "delta": "value not available in source data"
-        },
-        "interest_expense_avg": {
-          "left": "value not available in source data",
-          "right": 30.46,
-          "delta": "value not available in source data"
-        },
-        "ltv_std": {
-          "left": "value not available in source data",
-          "right": 8.278,
-          "delta": "value not available in source data"
-        },
-        "ltv_max": {
-          "left": "value not available in source data",
-          "right": 39.632,
-          "delta": "value not available in source data"
-        },
-        "ltv_avg": {
-          "left": "value not available in source data",
-          "right": 25.246,
-          "delta": "value not available in source data"
-        }
-      },
       "efficiency": {
-        "interest_expense_as_pct_of_returns": {
-          "left": "value not available in source data",
-          "right": 4.847,
-          "delta": "value not available in source data"
+        "net_benefit_of_leverage_1y_pct": {
+          "left": 12.762,
+          "right": 12.762,
+          "delta": 0
         },
-        "roi_on_margin_capital_1y_pct": {
-          "left": "value not available in source data",
-          "right": 17.524,
-          "delta": "value not available in source data"
+        "interest_expense_as_pct_of_returns": {
+          "left": 7.214,
+          "right": 7.214,
+          "delta": 0
         },
         "interest_expense_as_pct_of_income": {
-          "left": "value not available in source data",
-          "right": 6.218,
-          "delta": "value not available in source data"
+          "left": 9.275,
+          "right": 9.275,
+          "delta": 0
         },
-        "net_benefit_of_leverage_1y_pct": {
-          "left": "value not available in source data",
-          "right": 13.374,
-          "delta": "value not available in source data"
+        "roi_on_margin_capital_1y_pct": {
+          "left": 16.912,
+          "right": 16.912,
+          "delta": 0
         }
       },
       "stress_scenarios": {
         "interest_rate_shock": {
-          "rate_plus_100bp": {
-            "income_coverage_ratio": {
-              "left": "value not available in source data",
-              "right": 12.959,
-              "delta": "value not available in source data"
-            },
-            "monthly_expense": {
-              "left": "value not available in source data",
-              "right": 40.15,
-              "delta": "value not available in source data"
-            },
+          "rate_plus_200bp": {
             "annual_expense": {
-              "left": "value not available in source data",
-              "right": 481.8,
-              "delta": "value not available in source data"
-            },
-            "new_rate_pct": {
-              "left": "value not available in source data",
-              "right": 5.15,
-              "delta": "value not available in source data"
+              "left": 1031.49,
+              "right": 1031.49,
+              "delta": 0
             },
             "expense_as_pct_of_income": {
-              "left": "value not available in source data",
-              "right": 7.717,
-              "delta": "value not available in source data"
+              "left": 13.744,
+              "right": 13.744,
+              "delta": 0
+            },
+            "new_rate_pct": {
+              "left": 6.15,
+              "right": 6.15,
+              "delta": 0
+            },
+            "income_coverage_ratio": {
+              "left": 7.276,
+              "right": 7.276,
+              "delta": 0
+            },
+            "monthly_expense": {
+              "left": 85.96,
+              "right": 85.96,
+              "delta": 0
             }
           },
-          "rate_plus_200bp": {
-            "income_coverage_ratio": {
-              "left": "value not available in source data",
-              "right": 10.852,
-              "delta": "value not available in source data"
-            },
-            "monthly_expense": {
-              "left": "value not available in source data",
-              "right": 47.95,
-              "delta": "value not available in source data"
-            },
+          "rate_plus_100bp": {
             "annual_expense": {
-              "left": "value not available in source data",
-              "right": 575.35,
-              "delta": "value not available in source data"
-            },
-            "new_rate_pct": {
-              "left": "value not available in source data",
-              "right": 6.15,
-              "delta": "value not available in source data"
+              "left": 863.77,
+              "right": 863.77,
+              "delta": 0
             },
             "expense_as_pct_of_income": {
-              "left": "value not available in source data",
-              "right": 9.215,
-              "delta": "value not available in source data"
+              "left": 11.509,
+              "right": 11.509,
+              "delta": 0
+            },
+            "new_rate_pct": {
+              "left": 5.15,
+              "right": 5.15,
+              "delta": 0
+            },
+            "income_coverage_ratio": {
+              "left": 8.689,
+              "right": 8.689,
+              "delta": 0
+            },
+            "monthly_expense": {
+              "left": 71.98,
+              "right": 71.98,
+              "delta": 0
             }
           },
           "rate_plus_300bp": {
-            "income_coverage_ratio": {
-              "left": "value not available in source data",
-              "right": 9.334,
-              "delta": "value not available in source data"
-            },
-            "monthly_expense": {
-              "left": "value not available in source data",
-              "right": 55.74,
-              "delta": "value not available in source data"
-            },
             "annual_expense": {
-              "left": "value not available in source data",
-              "right": 668.9,
-              "delta": "value not available in source data"
-            },
-            "new_rate_pct": {
-              "left": "value not available in source data",
-              "right": 7.15,
-              "delta": "value not available in source data"
+              "left": 1199.21,
+              "right": 1199.21,
+              "delta": 0
             },
             "expense_as_pct_of_income": {
-              "left": "value not available in source data",
-              "right": 10.714,
-              "delta": "value not available in source data"
+              "left": 15.979,
+              "right": 15.979,
+              "delta": 0
+            },
+            "new_rate_pct": {
+              "left": 7.15,
+              "right": 7.15,
+              "delta": 0
+            },
+            "income_coverage_ratio": {
+              "left": 6.258,
+              "right": 6.258,
+              "delta": 0
+            },
+            "monthly_expense": {
+              "left": 99.93,
+              "right": 99.93,
+              "delta": 0
             }
           }
         },
         "margin_call_distance": {
-          "days_at_current_volatility": {
-            "left": "value not available in source data",
-            "right": 84,
-            "delta": "value not available in source data"
-          },
           "dollar_decline_to_call": {
-            "left": "value not available in source data",
-            "right": 32345.09,
-            "delta": "value not available in source data"
+            "left": 33088.72,
+            "right": 33088.72,
+            "delta": 0
+          },
+          "days_at_current_volatility": {
+            "left": 39,
+            "right": 39,
+            "delta": 0
           },
           "portfolio_decline_to_call_pct": {
-            "left": "value not available in source data",
-            "right": -70.762,
-            "delta": "value not available in source data"
+            "left": -58,
+            "right": -58,
+            "delta": 0
           }
         }
       },
-      "current": {
-        "net_liquidation_value": {
-          "left": "value not available in source data",
-          "right": 36354.49,
-          "delta": "value not available in source data"
+      "historical_trends_90d": {
+        "interest_expense_avg": {
+          "left": 35.72,
+          "right": 35.72,
+          "delta": 0
         },
-        "ltv_pct": {
-          "left": "value not available in source data",
-          "right": 20.467,
-          "delta": "value not available in source data"
+        "ltv_avg": {
+          "left": 31.525,
+          "right": 31.525,
+          "delta": 0
+        },
+        "ltv_min": {
+          "left": 16.687,
+          "right": 16.687,
+          "delta": 0
+        },
+        "ltv_std": {
+          "left": 9.565,
+          "right": 9.565,
+          "delta": 0
+        },
+        "ltv_max": {
+          "left": 45.233,
+          "right": 45.233,
+          "delta": 0
+        }
+      },
+      "current": {
+        "portfolio_value": {
+          "left": 57049.04,
+          "right": 57049.04,
+          "delta": 0
+        },
+        "net_liquidation_value": {
+          "left": 40276.81,
+          "right": 40276.81,
+          "delta": 0
         },
         "annual_interest_expense": {
-          "left": "value not available in source data",
-          "right": 388.24,
-          "delta": "value not available in source data"
+          "left": 696.05,
+          "right": 696.05,
+          "delta": 0
         },
-        "monthly_interest_expense": {
-          "left": "value not available in source data",
-          "right": 32.35,
-          "delta": "value not available in source data"
-        },
-        "interest_rate_current_pct": {
-          "left": "value not available in source data",
-          "right": 4.15,
-          "delta": "value not available in source data"
-        },
-        "portfolio_value": {
-          "left": "value not available in source data",
-          "right": 45709.76,
-          "delta": "value not available in source data"
+        "ltv_pct": {
+          "left": 29.4,
+          "right": 29.4,
+          "delta": 0
         },
         "margin_loan_balance": {
-          "left": "value not available in source data",
-          "right": 9355.27,
-          "delta": "value not available in source data"
+          "left": 16772.23,
+          "right": 16772.23,
+          "delta": 0
+        },
+        "monthly_interest_expense": {
+          "left": 58,
+          "right": 58,
+          "delta": 0
+        },
+        "interest_rate_current_pct": {
+          "left": 4.15,
+          "right": 4.15,
+          "delta": 0
         }
       }
     }
   },
   "dividends": {
     "forward_12m_total": {
-      "left": 6243.44,
-      "right": 6243.44,
-      "delta": 0.0
+      "left": 7504.92,
+      "right": 7504.92,
+      "delta": 0
     },
     "realized_mtd_total": {
-      "left": 38.89,
-      "right": 38.89,
-      "delta": 0.0
+      "left": 211.4,
+      "right": 211.4,
+      "delta": 0
     },
     "next_30d_total": {
-      "left": 421.61,
-      "right": 421.61,
-      "delta": 0.0
+      "left": 372.26,
+      "right": 372.26,
+      "delta": 0
     }
   },
   "coverage": {
     "derived_pct": {
-      "left": 100.0,
-      "right": 100.0,
-      "delta": 0.0
+      "left": 100,
+      "right": 100,
+      "delta": 0
     },
     "missing_pct": {
-      "left": 0.0,
-      "right": 0.0,
-      "delta": 0.0
+      "left": 0,
+      "right": 0,
+      "delta": 0
     },
     "note": "Data quality unchanged."
   },
   "macro": {
     "snapshot": {
-      "curve_inversion_depth": {
-        "left": 0.0,
-        "right": 0.0,
-        "delta": 0.0
-      },
-      "macro_stress_score": {
-        "left": -0.74,
-        "right": -0.74,
-        "delta": 0.0
-      },
-      "vix": {
-        "left": 15.45,
-        "right": 15.45,
-        "delta": 0.0
-      },
-      "cpi_yoy": {
-        "left": 3.0,
-        "right": 3.0,
-        "delta": 0.0
-      },
-      "gdp_nowcast": {
-        "left": 31095.09,
-        "right": 31095.09,
-        "delta": 0.0
+      "two_year_yield": {
+        "left": 3.61,
+        "right": 3.61,
+        "delta": 0
       },
       "unemployment_rate": {
         "left": 4.4,
         "right": 4.4,
-        "delta": 0.0
-      },
-      "valuation_heat_index": {
-        "left": 0.316,
-        "right": 0.316,
-        "delta": 0.0
-      },
-      "real_10y_yield": {
-        "left": 1.19,
-        "right": 1.19,
-        "delta": 0.0
-      },
-      "two_year_yield": {
-        "left": 3.49,
-        "right": 3.49,
-        "delta": 0.0
+        "delta": 0
       },
       "liquidity_index": {
         "left": -0.672,
         "right": -0.672,
-        "delta": 0.0
+        "delta": 0
       },
-      "fed_funds_rate": {
-        "left": 3.72,
-        "right": 3.72,
-        "delta": 0.0
+      "valuation_heat_index": {
+        "left": 0.3,
+        "right": 0.3,
+        "delta": 0
       },
-      "yield_spread_10y_2y": {
-        "left": 0.7,
-        "right": 0.7,
-        "delta": 0.0
+      "hy_spread_bps": {
+        "left": 264,
+        "right": 264,
+        "delta": 0
+      },
+      "real_10y_yield": {
+        "left": 1.23,
+        "right": 1.23,
+        "delta": 0
+      },
+      "curve_inversion_depth": {
+        "left": 0,
+        "right": 0,
+        "delta": 0
+      },
+      "vix": {
+        "left": 15.64,
+        "right": 15.64,
+        "delta": 0
       },
       "ten_year_yield": {
-        "left": 4.19,
-        "right": 4.19,
-        "delta": 0.0
+        "left": 4.26,
+        "right": 4.26,
+        "delta": 0
+      },
+      "cpi_yoy": {
+        "left": 3.03,
+        "right": 3.03,
+        "delta": 0
+      },
+      "macro_stress_score": {
+        "left": -0.751,
+        "right": -0.751,
+        "delta": 0
+      },
+      "gdp_nowcast": {
+        "left": 31098.03,
+        "right": 31098.03,
+        "delta": 0
+      },
+      "yield_spread_10y_2y": {
+        "left": 0.65,
+        "right": 0.65,
+        "delta": 0
       },
       "m2_money_supply_bn": {
         "left": 22322.4,
         "right": 22322.4,
-        "delta": 0.0
+        "delta": 0
       },
-      "hy_spread_bps": {
-        "left": 276.0,
-        "right": 276.0,
-        "delta": 0.0
+      "fed_funds_rate": {
+        "left": 3.72,
+        "right": 3.72,
+        "delta": 0
       }
     },
     "trends": {
@@ -883,74 +883,74 @@
         "window_days": {
           "left": 30,
           "right": 30,
-          "delta": 0.0
+          "delta": 0
         }
       },
       "trends": {
-        "liquidity_index": {
-          "delta_30d": {
-            "left": 0.807,
-            "right": 0.807,
-            "delta": 0.0
-          },
-          "sma_7d": {
-            "left": -0.648,
-            "right": -0.648,
-            "delta": 0.0
-          },
-          "delta_7d": {
-            "left": -0.024,
-            "right": -0.024,
-            "delta": 0.0
-          },
-          "sma_30d": {
-            "left": -1.479,
-            "right": -1.479,
-            "delta": 0.0
-          }
-        },
         "macro_stress_score": {
           "delta_30d": {
-            "left": -0.034,
-            "right": -0.034,
-            "delta": 0.0
+            "left": -0.031,
+            "right": -0.031,
+            "delta": 0
           },
           "sma_7d": {
-            "left": -0.767,
-            "right": -0.767,
-            "delta": 0.0
+            "left": -0.645,
+            "right": -0.645,
+            "delta": 0
           },
           "delta_7d": {
-            "left": 0.027,
-            "right": 0.027,
-            "delta": 0.0
+            "left": -0.106,
+            "right": -0.106,
+            "delta": 0
           },
           "sma_30d": {
-            "left": -0.707,
-            "right": -0.707,
-            "delta": 0.0
+            "left": -0.72,
+            "right": -0.72,
+            "delta": 0
           }
         },
         "valuation_heat_index": {
           "delta_30d": {
-            "left": -0.021,
-            "right": -0.021,
-            "delta": 0.0
+            "left": -0.032,
+            "right": -0.032,
+            "delta": 0
           },
           "sma_7d": {
-            "left": 0.324,
-            "right": 0.324,
-            "delta": 0.0
+            "left": 0.314,
+            "right": 0.314,
+            "delta": 0
           },
           "delta_7d": {
-            "left": -0.007,
-            "right": -0.007,
-            "delta": 0.0
+            "left": -0.014,
+            "right": -0.014,
+            "delta": 0
           },
           "sma_30d": {
-            "left": 0.338,
-            "right": 0.338,
-            "delta": 0.0
+            "left": 0.332,
+            "right": 0.332,
+            "delta": 0
+          }
+        },
+        "liquidity_index": {
+          "delta_30d": {
+            "left": 0.807,
+            "right": 0.807,
+            "delta": 0
+          },
+          "sma_7d": {
+            "left": -0.648,
+            "right": -0.648,
+            "delta": 0
+          },
+          "delta_7d": {
+            "left": -0.024,
+            "right": -0.024,
+            "delta": 0
+          },
+          "sma_30d": {
+            "left": -1.479,
+            "right": -1.479,
+            "delta": 0
           }
         }
       }
@@ -959,59 +959,6 @@
   "holdings": {
     "added": [],
     "removed": [],
-    "changed": [
-      {
-        "symbol": "QYLD",
-        "change_type": "price_move",
-        "impact_on_income_monthly": 0.0,
-        "fields": {
-          "shares": {
-            "left": 204.76191,
-            "right": 204.76191,
-            "delta": 0.0
-          },
-          "market_value": {
-            "left": 3663.19,
-            "right": 3663.19,
-            "delta": 0.0
-          },
-          "weight_pct": {
-            "left": 8.014,
-            "right": 8.014,
-            "delta": 0.0
-          },
-          "last_price": {
-            "left": 17.89,
-            "right": 17.89,
-            "delta": 0.0
-          },
-          "unrealized_pnl": {
-            "left": 38.37,
-            "right": 38.37,
-            "delta": 0.0
-          },
-          "sortino_1y": {
-            "left": 0.633,
-            "right": 0.633,
-            "delta": 0.0
-          },
-          "sortino_6m": {
-            "left": 4.224,
-            "right": 4.224,
-            "delta": 0.0
-          },
-          "sortino_3m": {
-            "left": 6.208,
-            "right": 6.209,
-            "delta": 0.001
-          },
-          "sortino_1m": {
-            "left": 20.499,
-            "right": 20.499,
-            "delta": 0.0
-          }
-        }
-      }
-    ]
+    "changed": []
   }
 }

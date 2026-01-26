@@ -8,9 +8,11 @@ Useful when:
 - Data corrections were made to daily snapshots
 
 Usage:
-    python scripts/backfill_period_summaries.py                        # Backfill all period end dates
-    python scripts/backfill_period_summaries.py 2025-01-01             # From date onwards
-    python scripts/backfill_period_summaries.py 2025-01-01 2025-12-31  # Specific date range
+    python scripts/backfill_period_summaries.py                        # Only generate missing summaries
+    python scripts/backfill_period_summaries.py 2025-01-01             # Missing summaries from date onwards
+    python scripts/backfill_period_summaries.py 2025-01-01 2025-12-31  # Missing summaries in date range
+    python scripts/backfill_period_summaries.py --rebuild-all          # Rebuild ALL summaries (even existing)
+    python scripts/backfill_period_summaries.py --rebuild-all 2025-01-01  # Rebuild all from date onwards
 """
 from pathlib import Path
 import os
@@ -34,7 +36,7 @@ import uuid
 
 log = structlog.get_logger()
 
-def backfill_period_summaries(conn, start_date: str | None = None, end_date: str | None = None):
+def backfill_period_summaries(conn, start_date: str | None = None, end_date: str | None = None, only_missing: bool = True):
     """
     Backfill period summaries by rebuilding them from daily snapshots.
 
@@ -42,6 +44,7 @@ def backfill_period_summaries(conn, start_date: str | None = None, end_date: str
         conn: Database connection
         start_date: Optional start date (YYYY-MM-DD) to limit backfill range
         end_date: Optional end date (YYYY-MM-DD) to limit backfill range
+        only_missing: If True, only generate missing summaries. If False, regenerate all.
     """
     cur = conn.cursor()
 
@@ -68,7 +71,16 @@ def backfill_period_summaries(conn, start_date: str | None = None, end_date: str
         log.info("backfill_no_daily_snapshots")
         return
 
-    log.info("backfill_period_summaries_started", total_dates=len(dates), start_date=start_date, end_date=end_date)
+    # Get existing period summaries if only_missing is True
+    existing_periods = set()
+    if only_missing:
+        existing_rows = cur.execute(
+            "SELECT period_type, period_start_date, period_end_date FROM snapshots"
+        ).fetchall()
+        existing_periods = {(row[0], row[1], row[2]) for row in existing_rows}
+        log.info("backfill_existing_summaries", count=len(existing_periods))
+
+    log.info("backfill_period_summaries_started", total_dates=len(dates), start_date=start_date, end_date=end_date, only_missing=only_missing)
 
     run_id = "backfill_periods_" + now_utc_iso().replace(":", "").replace("-", "").replace(".", "")[:19]
 
@@ -99,6 +111,12 @@ def backfill_period_summaries(conn, start_date: str | None = None, end_date: str
 
             processed_periods.add(period_key)
 
+            # Skip if only_missing is True and this period already exists
+            if only_missing and period_key in existing_periods:
+                log.debug("backfill_period_exists", period=period_type, start=str(start), end=str(end))
+                skipped_count += 1
+                continue
+
             try:
                 # Build the period snapshot from daily snapshots
                 snapshot = build_period_snapshot(
@@ -115,21 +133,24 @@ def backfill_period_summaries(conn, start_date: str | None = None, end_date: str
                     failed_count += 1
                     continue
 
-                # Check if it already exists and is unchanged
-                payload_sha = sha256_json(snapshot)
-                existing = cur.execute(
-                    """
-                    SELECT payload_sha256
-                    FROM snapshots
-                    WHERE period_type=? AND period_start_date=? AND period_end_date=?
-                    """,
-                    (period_type, str(start), str(end)),
-                ).fetchone()
+                # Only check hash if not only_missing (for regeneration mode)
+                if not only_missing:
+                    payload_sha = sha256_json(snapshot)
+                    existing = cur.execute(
+                        """
+                        SELECT payload_sha256
+                        FROM snapshots
+                        WHERE period_type=? AND period_start_date=? AND period_end_date=?
+                        """,
+                        (period_type, str(start), str(end)),
+                    ).fetchone()
 
-                if existing and existing[0] == payload_sha:
-                    log.debug("backfill_period_unchanged", period=period_type, start=str(start), end=str(end))
-                    skipped_count += 1
-                    continue
+                    if existing and existing[0] == payload_sha:
+                        log.debug("backfill_period_unchanged", period=period_type, start=str(start), end=str(end))
+                        skipped_count += 1
+                        continue
+                else:
+                    payload_sha = sha256_json(snapshot)
 
                 # Insert or replace the period snapshot
                 cur.execute(
@@ -155,10 +176,19 @@ def backfill_period_summaries(conn, start_date: str | None = None, end_date: str
     log.info("backfill_period_summaries_complete", rebuilt=rebuilt_count, skipped=skipped_count, failed=failed_count, total_processed=len(processed_periods))
 
 if __name__ == '__main__':
-    start_date = sys.argv[1] if len(sys.argv) > 1 else None
-    end_date = sys.argv[2] if len(sys.argv) > 2 else None
+    # Parse arguments
+    args = [arg for arg in sys.argv[1:] if not arg.startswith('--')]
+    flags = [arg for arg in sys.argv[1:] if arg.startswith('--')]
 
-    print('Backfilling period summaries from daily snapshots...')
+    rebuild_all = '--rebuild-all' in flags
+    only_missing = not rebuild_all
+
+    start_date = args[0] if len(args) > 0 else None
+    end_date = args[1] if len(args) > 1 else None
+
+    mode = 'Rebuilding ALL' if rebuild_all else 'Generating MISSING'
+    print(f'{mode} period summaries from daily snapshots...')
+
     if start_date and end_date:
         print(f'Date range: {start_date} to {end_date}')
     elif start_date:
@@ -167,5 +197,5 @@ if __name__ == '__main__':
         print('All dates')
 
     conn = get_conn(settings.db_path)
-    backfill_period_summaries(conn, start_date=start_date, end_date=end_date)
+    backfill_period_summaries(conn, start_date=start_date, end_date=end_date, only_missing=only_missing)
     print('Done.')
