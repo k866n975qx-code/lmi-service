@@ -55,7 +55,7 @@ log = structlog.get_logger()
 def _latest_daily(conn: sqlite3.Connection) -> Tuple[Optional[str], Optional[dict]]:
     cur = conn.cursor()
     row = cur.execute(
-        "SELECT as_of_date_local, payload_json FROM snapshot_daily_current ORDER BY updated_at_utc DESC LIMIT 1"
+        "SELECT as_of_date_local, payload_json FROM snapshot_daily_current ORDER BY as_of_date_local DESC LIMIT 1"
     ).fetchone()
     if not row:
         return None, None
