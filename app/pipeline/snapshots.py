@@ -2267,6 +2267,371 @@ def _build_goal_tiers(
     }
 
 
+def _detect_likely_tier(conn: sqlite3.Connection, projected_monthly_income: float, margin_loan_balance: float, total_market_value: float) -> dict:
+    """
+    Auto-detect the likely goal tier based on actual user behavior:
+    - DRIP: Check for reinvest transactions in last 6 months
+    - Contributions: Check if goal_monthly_contribution is set
+    - Leverage: Check if margin is being actively maintained near target
+    """
+    cur = conn.cursor()
+
+    # Check for DRIP (reinvest transactions in last 180 days)
+    six_months_ago = (date.today() - timedelta(days=180)).isoformat()
+    reinvest_count = cur.execute(
+        """SELECT COUNT(*) FROM investment_transactions
+           WHERE transaction_type IN ('reinvest', 'reinvestment')
+           AND date >= ?""",
+        (six_months_ago,)
+    ).fetchone()[0]
+    drip_detected = reinvest_count > 0
+
+    # Check for contributions
+    contributions_detected = settings.goal_monthly_contribution > 0
+
+    # Check for leverage maintenance (LTV within 5% of target)
+    current_ltv = (margin_loan_balance or 0.0) / total_market_value if total_market_value > 0 else 0.0
+    target_ltv = settings.goal_target_ltv_pct / 100.0
+    leverage_maintained = abs(current_ltv - target_ltv) < 0.05 if margin_loan_balance and margin_loan_balance > 0 else False
+
+    # Determine tier based on behavior pattern
+    tier = 1
+    confidence = "high"
+    notes = []
+
+    if drip_detected and contributions_detected and leverage_maintained:
+        tier = 5  # Optimized Growth
+        notes.append("DRIP active, contributions enabled, leverage maintained")
+    elif drip_detected and contributions_detected:
+        tier = 3  # DRIP Build
+        notes.append("DRIP active, contributions enabled")
+    elif contributions_detected and leverage_maintained:
+        tier = 4  # Leveraged Growth
+        notes.append("Contributions enabled, leverage maintained")
+        confidence = "medium"
+    elif contributions_detected:
+        tier = 2  # Conservative Build
+        notes.append("Contributions enabled only")
+    elif drip_detected:
+        tier = 3  # DRIP Build
+        notes.append("DRIP active only")
+        confidence = "medium"
+    else:
+        tier = 1  # Modest Appreciation
+        notes.append("No active contributions or DRIP detected")
+        confidence = "low"
+
+    tier_names = {
+        1: "Modest Appreciation",
+        2: "Conservative Build",
+        3: "DRIP Build",
+        4: "Leveraged Growth",
+        5: "Optimized Growth",
+        6: "Maximum Growth"
+    }
+
+    return {
+        "tier": tier,
+        "name": tier_names[tier],
+        "confidence": confidence,
+        "detection_basis": {
+            "drip_detected": drip_detected,
+            "reinvest_count_6m": reinvest_count,
+            "contributions_detected": contributions_detected,
+            "monthly_contribution_amount": settings.goal_monthly_contribution,
+            "leverage_maintained": leverage_maintained,
+            "current_ltv_pct": _round_pct(current_ltv * 100),
+            "target_ltv_pct": _round_pct(target_ltv * 100),
+            "notes": "; ".join(notes)
+        }
+    }
+
+
+def _calculate_expected_value(
+    starting_value: float,
+    starting_margin: float,
+    starting_income: float,
+    months_elapsed: float,
+    annual_appreciation_pct: float,
+    monthly_contribution: float,
+    drip_enabled: bool,
+    maintain_ltv: bool,
+    target_ltv_pct: float,
+    portfolio_yield_pct: float
+) -> dict:
+    """
+    Calculate expected portfolio state after N months based on tier assumptions.
+    Mirrors the compounding logic from calculate_timeline but returns intermediate state.
+    """
+    portfolio_value = starting_value
+    margin_balance = starting_margin or 0.0
+
+    monthly_appreciation = annual_appreciation_pct / 12.0 / 100.0
+    margin_apr = settings.margin_apr_current
+    monthly_margin_rate = margin_apr / 12.0
+
+    for _ in range(int(months_elapsed)):
+        # 1. Price appreciation
+        portfolio_value *= (1 + monthly_appreciation)
+
+        # 2. Margin interest
+        if maintain_ltv and margin_balance > 0:
+            margin_interest = margin_balance * monthly_margin_rate
+            margin_balance += margin_interest
+
+        # 3. DRIP
+        drip_amount = 0.0
+        if drip_enabled and portfolio_yield_pct > 0:
+            drip_amount = portfolio_value * portfolio_yield_pct / 12.0
+
+        # 4. Additional margin to maintain LTV
+        additional_margin = 0.0
+        if maintain_ltv and target_ltv_pct > 0:
+            total_before_margin = portfolio_value + drip_amount + monthly_contribution
+            additional_margin = (target_ltv_pct * total_before_margin - margin_balance) / (1.0 - target_ltv_pct)
+            additional_margin = max(0.0, additional_margin)
+            margin_balance += additional_margin
+
+        # 5. Add investments
+        portfolio_value += drip_amount + monthly_contribution + additional_margin
+
+    # Expected income grows with portfolio (assuming yield stays constant)
+    expected_income = portfolio_value * portfolio_yield_pct if portfolio_yield_pct > 0 else starting_income
+
+    return {
+        "portfolio_value": portfolio_value,
+        "margin_balance": margin_balance,
+        "monthly_income": expected_income / 12.0 if expected_income > 0 else starting_income
+    }
+
+
+def _build_goal_pace(
+    conn: sqlite3.Connection,
+    goal_tiers: dict,
+    projected_monthly_income: float,
+    total_market_value: float,
+    margin_loan_balance: float,
+    target_monthly: float,
+    portfolio_yield_pct: float,
+    as_of_date: date
+) -> dict:
+    """
+    Build pace tracking toward monthly dividend goal with:
+    - Auto-detected likely tier based on user behavior
+    - Multiple time windows (MTD, QTD, YTD, 30d, 60d, 90d, since inception)
+    - Expected vs actual comparisons for MV and income
+    - Ahead/behind metrics and dollar amounts needed
+    """
+    if not goal_tiers or not target_monthly or target_monthly <= 0:
+        return None
+
+    # Auto-detect likely tier
+    likely_tier_info = _detect_likely_tier(conn, projected_monthly_income, margin_loan_balance, total_market_value)
+    likely_tier_num = likely_tier_info["tier"]
+
+    # Get the tier details
+    tiers_list = goal_tiers.get("tiers", [])
+    likely_tier = next((t for t in tiers_list if t["tier"] == likely_tier_num), None)
+
+    if not likely_tier:
+        return None
+
+    # Get portfolio inception date
+    cur = conn.cursor()
+    inception_row = cur.execute(
+        """SELECT MIN(date) FROM investment_transactions
+           WHERE transaction_type IN ('buy', 'buy_shares')"""
+    ).fetchone()
+    inception_date = date.fromisoformat(inception_row[0]) if inception_row and inception_row[0] else date(2024, 10, 31)
+
+    # Define time windows
+    today = as_of_date
+    windows_def = {
+        "mtd": (date(today.year, today.month, 1), today),
+        "qtd": (date(today.year, ((today.month - 1) // 3) * 3 + 1, 1), today),
+        "ytd": (date(today.year, 1, 1), today),
+        "30d": (today - timedelta(days=30), today),
+        "60d": (today - timedelta(days=60), today),
+        "90d": (today - timedelta(days=90), today),
+        "since_inception": (inception_date, today)
+    }
+
+    # Get tier assumptions
+    assumptions = likely_tier.get("assumptions", {})
+    annual_appreciation = assumptions.get("annual_appreciation_pct", 0.0)
+    monthly_contribution = assumptions.get("monthly_contribution", 0.0)
+    drip_enabled = assumptions.get("drip_enabled", False)
+    maintain_ltv = assumptions.get("ltv_maintained", False)
+    target_ltv = assumptions.get("target_ltv_pct", 0.0) / 100.0 if "target_ltv_pct" in assumptions else 0.0
+
+    windows = {}
+
+    for window_name, (start_date, end_date) in windows_def.items():
+        # Get snapshot at start of window
+        start_snapshot = cur.execute(
+            """SELECT payload_json FROM snapshot_daily_current
+               WHERE as_of_date_local <= ?
+               ORDER BY as_of_date_local DESC LIMIT 1""",
+            (start_date.isoformat(),)
+        ).fetchone()
+
+        if not start_snapshot:
+            continue
+
+        start_data = json.loads(start_snapshot[0])
+        start_mv = start_data.get("totals", {}).get("market_value", 0.0)
+        start_margin = start_data.get("totals", {}).get("margin_loan_balance", 0.0)
+        start_income = start_data.get("income", {}).get("projected_monthly_income", 0.0)
+        start_yield = start_data.get("income", {}).get("portfolio_yield_pct", 0.0) / 100.0 if start_data.get("income", {}).get("portfolio_yield_pct") else 0.0
+
+        # Calculate months elapsed
+        days_elapsed = (end_date - start_date).days
+        months_elapsed = days_elapsed / 30.0
+
+        # Calculate expected state based on tier assumptions
+        expected = _calculate_expected_value(
+            starting_value=start_mv,
+            starting_margin=start_margin,
+            starting_income=start_income,
+            months_elapsed=months_elapsed,
+            annual_appreciation_pct=annual_appreciation,
+            monthly_contribution=monthly_contribution,
+            drip_enabled=drip_enabled,
+            maintain_ltv=maintain_ltv,
+            target_ltv_pct=target_ltv,
+            portfolio_yield_pct=start_yield
+        )
+
+        # Actual state (current)
+        actual_mv = total_market_value
+        actual_margin = margin_loan_balance or 0.0
+        actual_income = projected_monthly_income or 0.0
+
+        # Calculate deltas
+        mv_delta = actual_mv - expected["portfolio_value"]
+        mv_delta_pct = (mv_delta / expected["portfolio_value"] * 100) if expected["portfolio_value"] > 0 else 0.0
+        income_delta = actual_income - expected["monthly_income"]
+        income_delta_pct = (income_delta / expected["monthly_income"] * 100) if expected["monthly_income"] > 0 else 0.0
+
+        # Calculate pace (months ahead/behind)
+        # If MV is higher than expected, that accelerates the timeline
+        # Use the tier's required portfolio value to calculate impact
+        required_pv = likely_tier.get("required_portfolio_value", 0.0)
+        if required_pv and required_pv > 0:
+            # How much of the gap did we close vs expected?
+            expected_gap_closed = expected["portfolio_value"] - start_mv
+            actual_gap_closed = actual_mv - start_mv
+            extra_progress = actual_gap_closed - expected_gap_closed
+
+            # Convert to months: if we closed extra ground, we're ahead
+            if expected_gap_closed > 0:
+                months_ahead_behind = (extra_progress / expected_gap_closed) * months_elapsed
+            else:
+                months_ahead_behind = 0.0
+        else:
+            months_ahead_behind = 0.0
+
+        # Calculate amount needed to get back on track
+        amount_needed = expected["portfolio_value"] - actual_mv if actual_mv < expected["portfolio_value"] else 0.0
+        amount_surplus = actual_mv - expected["portfolio_value"] if actual_mv > expected["portfolio_value"] else 0.0
+
+        # Determine if on track (within 5% of expected)
+        pct_of_pace = (actual_mv / expected["portfolio_value"] * 100) if expected["portfolio_value"] > 0 else 100.0
+        on_track = 95.0 <= pct_of_pace <= 105.0
+
+        windows[window_name] = {
+            "window_name": window_name.upper(),
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "days_in_window": days_elapsed,
+            "months_elapsed": _round_money(months_elapsed),
+            "expected": {
+                "portfolio_value": _round_money(expected["portfolio_value"]),
+                "monthly_income": _round_money(expected["monthly_income"]),
+                "margin_balance": _round_money(expected["margin_balance"])
+            },
+            "actual": {
+                "portfolio_value": _round_money(actual_mv),
+                "monthly_income": _round_money(actual_income),
+                "margin_balance": _round_money(actual_margin)
+            },
+            "delta": {
+                "portfolio_value": _round_money(mv_delta),
+                "portfolio_value_pct": _round_pct(mv_delta_pct),
+                "monthly_income": _round_money(income_delta),
+                "monthly_income_pct": _round_pct(income_delta_pct)
+            },
+            "pace": {
+                "months_ahead_behind": round(months_ahead_behind, 2),
+                "pct_of_tier_pace": _round_pct(pct_of_pace),
+                "on_track": on_track,
+                "amount_needed": _round_money(amount_needed),
+                "amount_surplus": _round_money(amount_surplus)
+            }
+        }
+
+    # Calculate overall current pace (using YTD as primary indicator)
+    ytd_pace = windows.get("ytd", {}).get("pace", {})
+    months_ahead_behind = ytd_pace.get("months_ahead_behind", 0.0)
+
+    # Revise goal date based on current pace
+    original_months = likely_tier.get("months_to_goal")
+    if original_months is not None:
+        revised_months = max(0, original_months - months_ahead_behind)
+        revised_goal_date = _add_months(as_of_date, int(revised_months))
+    else:
+        revised_months = None
+        revised_goal_date = None
+
+    # Determine pace category
+    if months_ahead_behind >= 3:
+        pace_category = "ahead"
+    elif months_ahead_behind >= -3:
+        pace_category = "on_track"
+    elif months_ahead_behind >= -6:
+        pace_category = "behind"
+    else:
+        pace_category = "off_track"
+
+    # Factor breakdown (from YTD window)
+    ytd_window = windows.get("ytd", {})
+    ytd_mv_delta = ytd_window.get("delta", {}).get("portfolio_value", 0.0)
+    ytd_income_delta = ytd_window.get("delta", {}).get("monthly_income", 0.0)
+
+    return {
+        "likely_tier": likely_tier_info,
+        "baseline_projection": {
+            "tier_number": likely_tier_num,
+            "tier_name": likely_tier.get("name"),
+            "original_goal_date": likely_tier.get("estimated_goal_date"),
+            "original_months_to_goal": likely_tier.get("months_to_goal"),
+            "required_portfolio_value": likely_tier.get("required_portfolio_value"),
+            "assumptions": assumptions
+        },
+        "inception_date": inception_date.isoformat(),
+        "windows": windows,
+        "current_pace": {
+            "months_ahead_behind": round(months_ahead_behind, 2),
+            "revised_goal_date": revised_goal_date.isoformat() if revised_goal_date else None,
+            "revised_months_to_goal": int(revised_months) if revised_months is not None else None,
+            "on_track": pace_category in ("ahead", "on_track"),
+            "pace_category": pace_category
+        },
+        "factors": {
+            "market_value_impact": _round_money(ytd_mv_delta),
+            "income_growth_impact": _round_money(ytd_income_delta * 12),  # Annualized
+            "description": "Factors based on YTD performance vs expected tier trajectory"
+        },
+        "provenance": _provenance_entry(
+            "derived",
+            "internal",
+            "goal_pace_tracking",
+            ["goal_tiers", "snapshot_history", "transaction_history"],
+            now_utc_iso(),
+        ),
+    }
+
+
 def _coerce_fred_series(df, series_id: str):
     if df is None or getattr(df, "empty", True):
         return None
@@ -3077,6 +3442,18 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
                 "assumptions": tier6["assumptions"],
             }
 
+    # Build pace tracking toward goal
+    goal_pace = _build_goal_pace(
+        conn,
+        goal_tiers,
+        income["projected_monthly_income"] or 0.0,
+        total_market_value,
+        margin_loan_balance,
+        settings.goal_target_monthly,
+        income.get("portfolio_yield_pct", 0.0) / 100.0 if income.get("portfolio_yield_pct") else 0.0,
+        as_of_date_local,
+    )
+
     goal_progress_provenance = _provenance_entry(
         "derived",
         "internal",
@@ -3113,14 +3490,14 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         "cache_control": {"revalidate": "when-stale", "no_store": False},
         "served_from": "db",
         "notes": [],
-        "changes": ["Expanded portfolio metrics (income stability, tail risk, attribution, margin stress)"],
+        "changes": ["Added goal pace tracking with auto-detected tier and time windows"],
         "cache": {
             "pricing": {"ttl_seconds": settings.cache_ttl_hours * 3600, "bypassed": False},
             "yf_dividends": {"ttl_seconds": settings.cache_ttl_hours * 3600, "bypassed": False},
             "quotes": {"ttl_seconds": settings.quote_ttl_minutes * 60, "bypassed": False},
         },
         "snapshot_age_days": 0,
-        "schema_version": "3.0",
+        "schema_version": "4.0",
         "filled_from_existing": False,
     }
 
@@ -3158,6 +3535,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         "goal_progress_net": goal_progress_net,
         "goal_progress_optimistic": goal_progress_optimistic,
         "goal_tiers": goal_tiers,
+        "goal_pace": goal_pace,
         "margin_guidance": margin_guidance,
         "margin_stress": margin_stress,
         "coverage": coverage,

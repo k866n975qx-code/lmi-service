@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Rebuild snapshots to v3.0 format using current pipeline with historical data.
+Rebuild snapshots to v4.0 format using current pipeline with historical data.
 
 This script:
 1. Extracts holdings (shares, cost_basis) from investment_transactions
@@ -8,10 +8,10 @@ This script:
 3. Loads account balances as of snapshot date
 4. Freezes time to the snapshot date (all timestamps reflect that date)
 5. Rebuilds snapshot from scratch using build_daily_snapshot
-6. Updates schema_version to 3.0
+6. Updates schema_version to 4.0
 
 Modes:
-- Migration: Updates existing v2.x snapshots to v3.0
+- Migration: Updates existing v3.x snapshots to v4.0
 - Backfill: Creates snapshots for dates where none exist (margin balance = 0)
 
 Usage:
@@ -38,12 +38,12 @@ from app.pipeline.market import MarketData
 from app.pipeline.snapshots import build_daily_snapshot
 
 
-# Key v3.0 fields to check for incomplete snapshots
-V3_KEY_FIELDS = {'goal_progress_optimistic', 'goal_tiers', 'margin_stress', 'prices_as_of_utc'}
+# Key v4.0 fields to check for incomplete snapshots
+V4_KEY_FIELDS = {'goal_progress_optimistic', 'goal_tiers', 'goal_pace', 'margin_stress', 'prices_as_of_utc'}
 
 
 def get_snapshots_to_migrate(conn: sqlite3.Connection, start_date: str | None, end_date: str | None):
-    """Get list of snapshots that need migration (< v3.0 or incomplete v3.0)."""
+    """Get list of snapshots that need migration (< v4.0 or incomplete v4.0)."""
     # Get all snapshots in date range
     query = """
         SELECT as_of_date_local, payload_json, CAST(json_extract(payload_json, '$.meta.schema_version') AS REAL) as schema_version
@@ -63,16 +63,16 @@ def get_snapshots_to_migrate(conn: sqlite3.Connection, start_date: str | None, e
     for row in conn.execute(query, params).fetchall():
         as_of_date, payload_json, schema_version = row[0], row[1], row[2]
 
-        # Include snapshots < v3.0
-        if schema_version < 3.0:
+        # Include snapshots < v4.0
+        if schema_version < 4.0:
             results.append((as_of_date, schema_version))
             continue
 
-        # Check if v3.0 snapshot is missing key fields
+        # Check if v4.0 snapshot is missing key fields
         snapshot = json.loads(payload_json)
-        missing_fields = V3_KEY_FIELDS - set(snapshot.keys())
+        missing_fields = V4_KEY_FIELDS - set(snapshot.keys())
 
-        # Rebuild if missing key v3.0 fields
+        # Rebuild if missing key v4.0 fields
         if missing_fields:
             results.append((as_of_date, schema_version))
 
@@ -277,7 +277,7 @@ def migrate_snapshot(conn: sqlite3.Connection, as_of_date_str: str, old_snapshot
         # Update schema version
         if 'meta' not in new_snapshot:
             new_snapshot['meta'] = {}
-        new_snapshot['meta']['schema_version'] = "3.0"
+        new_snapshot['meta']['schema_version'] = "4.0"
 
         if verbose:
             print(f"    Snapshot rebuilt successfully")
@@ -332,7 +332,7 @@ def main():
         snapshots = get_dates_for_backfill(conn, args.start_date, args.end_date)
         mode_label = "backfill"
     else:
-        print(f"[MIGRATION MODE] Updating existing snapshots to v3.0\n")
+        print(f"[MIGRATION MODE] Updating existing snapshots to v4.0\n")
         snapshots = get_snapshots_to_migrate(conn, args.start_date, args.end_date)
         mode_label = "migrate"
 
@@ -382,9 +382,9 @@ def main():
 
         if save_snapshot(conn, as_of_date, migrated):
             if args.backfill:
-                print(f"  ✓ Created {as_of_date} (v3.0)\n")
+                print(f"  ✓ Created {as_of_date} (v4.0)\n")
             else:
-                print(f"  ✓ Migrated {as_of_date} (v{old_ver} -> v3.0)\n")
+                print(f"  ✓ Migrated {as_of_date} (v{old_ver} -> v4.0)\n")
             success += 1
         else:
             failed += 1

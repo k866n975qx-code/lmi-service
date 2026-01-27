@@ -1020,6 +1020,82 @@ def build_daily_report_html(conn: sqlite3.Connection):
     parts.append(f"• Timeline: {goal.get('months_to_goal', '—')} months (ETA {goal.get('estimated_goal_date', '—')})")
     parts.append(f"• Net Reality: {_fmt_money(goal_net.get('current_projected_monthly_net'))}/mo after interest")
 
+    # Add pace tracking section
+    goal_pace = snap.get("goal_pace")
+    if goal_pace:
+        likely_tier = goal_pace.get("likely_tier", {})
+        current_pace = goal_pace.get("current_pace", {})
+        windows = goal_pace.get("windows", {})
+        factors = goal_pace.get("factors", {})
+
+        parts.append("")
+        parts.append("<b>🏃 GOAL PACE TRACKING</b>")
+
+        # Tier detection
+        tier_emoji = {1: "🐌", 2: "🚶", 3: "🏃", 4: "🚀", 5: "🌟", 6: "⚡"}
+        tier_num = likely_tier.get("tier", 0)
+        tier_name = likely_tier.get("name", "Unknown")
+        confidence = likely_tier.get("confidence", "unknown")
+        parts.append(f"• Detected Strategy: {tier_emoji.get(tier_num, '')} Tier {tier_num} - {tier_name} ({confidence} confidence)")
+
+        # Current pace status
+        pace_cat = current_pace.get("pace_category", "unknown")
+        months_ahead = current_pace.get("months_ahead_behind", 0.0)
+        revised_date = current_pace.get("revised_goal_date", "—")
+
+        pace_emoji = {"ahead": "✅", "on_track": "✓", "behind": "⚠️", "off_track": "🚨"}
+        pace_label = {"ahead": "Ahead of Schedule", "on_track": "On Track", "behind": "Behind Schedule", "off_track": "Off Track"}
+
+        if months_ahead > 0:
+            pace_text = f"{pace_emoji.get(pace_cat, '')} {pace_label.get(pace_cat, pace_cat)} (+{months_ahead:.1f} months)"
+        elif months_ahead < 0:
+            pace_text = f"{pace_emoji.get(pace_cat, '')} {pace_label.get(pace_cat, pace_cat)} ({months_ahead:.1f} months)"
+        else:
+            pace_text = f"{pace_emoji.get(pace_cat, '')} {pace_label.get(pace_cat, pace_cat)}"
+
+        parts.append(f"• Status: {pace_text}")
+        parts.append(f"• Revised ETA: {revised_date}")
+
+        # YTD pace details
+        ytd = windows.get("ytd", {})
+        if ytd:
+            ytd_pace = ytd.get("pace", {})
+            ytd_delta = ytd.get("delta", {})
+
+            mv_delta = ytd_delta.get("portfolio_value", 0.0)
+            amount_surplus = ytd_pace.get("amount_surplus", 0.0)
+            amount_needed = ytd_pace.get("amount_needed", 0.0)
+
+            if amount_surplus > 0:
+                parts.append(f"• YTD Progress: Ahead by {_fmt_money(amount_surplus)}")
+            elif amount_needed > 0:
+                parts.append(f"• YTD Progress: Need {_fmt_money(amount_needed)} to align")
+
+            if abs(mv_delta) > 100:
+                if mv_delta > 0:
+                    parts.append(f"• Portfolio Value: +{_fmt_money(mv_delta)} vs expected YTD")
+                else:
+                    parts.append(f"• Portfolio Value: {_fmt_money(mv_delta)} vs expected YTD")
+
+        # Key factors
+        mv_impact = factors.get("market_value_impact", 0.0)
+        income_impact = factors.get("income_growth_impact", 0.0)
+
+        if abs(mv_impact) > 100 or abs(income_impact) > 100:
+            parts.append("• Key Drivers:")
+            if abs(mv_impact) > 100:
+                parts.append(f"  - Market Value: {_fmt_money(mv_impact)}")
+            if abs(income_impact) > 100:
+                parts.append(f"  - Income Growth: {_fmt_money(income_impact)}")
+
+        # Progress indicator (visual bar)
+        pct_to_goal = goal.get('progress_pct', 0)
+        if isinstance(pct_to_goal, (int, float)):
+            bar_length = 20
+            filled = int(pct_to_goal / 100 * bar_length)
+            bar = "█" * filled + "░" * (bar_length - filled)
+            parts.append(f"• Progress: [{bar}] {pct_to_goal:.0f}%")
+
     parts.append("")
     parts.append("<b>📊 MACRO ENVIRONMENT</b>")
     vix = macro.get("vix")
