@@ -2276,15 +2276,16 @@ def _detect_likely_tier(conn: sqlite3.Connection, projected_monthly_income: floa
     """
     cur = conn.cursor()
 
-    # Check for DRIP (reinvest transactions in last 180 days)
+    # Check for DRIP (dividend transactions in last 180 days = DRIP active)
+    # All dividends are reinvested, so if we see dividend transactions, DRIP is on
     six_months_ago = (date.today() - timedelta(days=180)).isoformat()
-    reinvest_count = cur.execute(
+    dividend_count = cur.execute(
         """SELECT COUNT(*) FROM investment_transactions
-           WHERE transaction_type IN ('reinvest', 'reinvestment')
+           WHERE transaction_type = 'dividend'
            AND date >= ?""",
         (six_months_ago,)
     ).fetchone()[0]
-    drip_detected = reinvest_count > 0
+    drip_detected = dividend_count > 0
 
     # Check for contributions
     contributions_detected = settings.goal_monthly_contribution > 0
@@ -2336,7 +2337,7 @@ def _detect_likely_tier(conn: sqlite3.Connection, projected_monthly_income: floa
         "confidence": confidence,
         "detection_basis": {
             "drip_detected": drip_detected,
-            "reinvest_count_6m": reinvest_count,
+            "dividend_count_6m": dividend_count,
             "contributions_detected": contributions_detected,
             "monthly_contribution_amount": settings.goal_monthly_contribution,
             "leverage_maintained": leverage_maintained,
