@@ -482,9 +482,9 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
         alerts.append(_mk("position", as_of, severity, title, body))
 
     # 4) Income failure late-month
+    proj_monthly = income.get("projected_monthly_income")
     if _should_check_income_failure(as_of_dt):
         day, days_in_month = _month_day_info(as_of_dt)
-        proj_monthly = income.get("projected_monthly_income")
         realized_mtd = _realized_mtd_total(dividends)
         expected_mtd = None
         if isinstance(proj_monthly, (int, float)):
@@ -1017,6 +1017,8 @@ def build_daily_report_html(conn: sqlite3.Connection):
     parts.append("<b>🎯 GOAL PROGRESS</b>")
     parts.append(f"• Target: {_fmt_money(goal.get('target_monthly'))}/mo")
     parts.append(f"• Current: {_fmt_money(goal.get('current_projected_monthly'))}/mo ({goal.get('progress_pct', '—')}%)")
+    parts.append(f"• Current Portfolio Value: {_fmt_money(totals.get('market_value'))}")
+    parts.append(f"• Required Portfolio Value: {_fmt_money(goal.get('required_portfolio_value'))}")
     parts.append(f"• Timeline: {goal.get('months_to_goal', '—')} months (ETA {goal.get('estimated_goal_date', '—')})")
     parts.append(f"• Net Reality: {_fmt_money(goal_net.get('current_projected_monthly_net'))}/mo after interest")
 

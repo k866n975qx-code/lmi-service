@@ -58,3 +58,4 @@ data/
 TASKS.md
 blueprint.md
 *.md
+/docs
