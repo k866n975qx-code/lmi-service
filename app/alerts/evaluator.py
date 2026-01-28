@@ -1018,7 +1018,7 @@ def build_daily_report_html(conn: sqlite3.Connection):
     parts.append(f"• Target: {_fmt_money(goal.get('target_monthly'))}/mo")
     parts.append(f"• Current: {_fmt_money(goal.get('current_projected_monthly'))}/mo ({goal.get('progress_pct', '—')}%)")
     parts.append(f"• Current Portfolio Value: {_fmt_money(totals.get('market_value'))}")
-    parts.append(f"• Required Portfolio Value: {_fmt_money(goal.get('required_portfolio_value'))}")
+    parts.append(f"• Required Portfolio Value: {_fmt_money(goal.get('required_portfolio_value_at_goal'))}")
     parts.append(f"• Timeline: {goal.get('months_to_goal', '—')} months (ETA {goal.get('estimated_goal_date', '—')})")
     parts.append(f"• Net Reality: {_fmt_money(goal_net.get('current_projected_monthly_net'))}/mo after interest")
 
