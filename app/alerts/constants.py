@@ -7,19 +7,19 @@ MARGIN_LTV_YELLOW = 30.0
 MARGIN_COVERAGE_MIN = 2.0
 MARGIN_INTEREST_INCOME_WARN_PCT = 15.0
 
-INCOME_CONCENTRATION_WARNING = 65.0  # top3 income %
-INCOME_SINGLE_SOURCE_WARNING = 30.0
+INCOME_CONCENTRATION_WARNING = 80.0  # top3 income %  (was 65; realistic for <10 holdings)
+INCOME_SINGLE_SOURCE_WARNING = 35.0  # single source % (was 30)
 INCOME_MISS_CRITICAL = 0.5           # 50% of expected by day threshold
 INCOME_MISS_DAY_THRESHOLD = 20       # after this day: apply miss rule
-INCOME_STABILITY_MIN = 0.70
-INCOME_VOLATILITY_30D_WARN = 15.0
+INCOME_STABILITY_MIN = 0.30          # (was 0.70; 0.00 normal with <6mo data)
+INCOME_VOLATILITY_30D_WARN = 50.0    # (was 15; sparse dividends inflate this metric)
 
 DIVIDEND_CUT_THRESHOLD = 0.10        # 10%
 MISSING_DIVIDEND_GRACE_DAYS = 3
 MISSING_DIVIDEND_MIN_PAYMENTS = 1   # require at least N payouts before missing alerts
 
 VOL_EXPANSION_RATIO = 1.5
-PORTFOLIO_VOL_WARNING = 12.0
+PORTFOLIO_VOL_WARNING = 18.0          # (was 12; too tight for vol-product portfolios)
 VIX_WARNING = 25.0
 VIX_CRITICAL = 30.0
 TREASURY_SPIKE = 0.5
@@ -41,14 +41,14 @@ MARGIN_BUFFER_CRITICAL = 20.0
 POSITION_LOSS_WARNING = -15.0
 POSITION_LOSS_CRITICAL = -20.0
 POSITION_LOSS_SEVERE = -25.0
-SINGLE_POSITION_MAX = 25.0
+SINGLE_POSITION_MAX = 30.0            # (was 25; allows intentional overweight)
 
 GOAL_SLIPPAGE_MONTHS = 3
 GOAL_REQUIRED_INVESTMENT_DELTA = 10000.0
 YIELD_COMPRESSION_WARNING = 1.0      # percentage point drop
-INCOME_BUNCHING_WEEK_PCT = 50.0      # % of month concentrated into one ISO week
+INCOME_BUNCHING_WEEK_PCT = 70.0      # % of month in one ISO week (was 50; normal w/ few holdings)
 EXTENDED_DRAWDOWN_DAYS = 180
-MAX_DRAWDOWN_WARNING = -20.0
+MAX_DRAWDOWN_WARNING = -25.0          # (was -20; too sensitive for vol products)
 
 # Spam control
 MAX_NOTIFICATIONS_PER_DAY = 20
