@@ -429,6 +429,8 @@ def _intervals(dailies, snapshot_type: str, as_of_date: date, as_of_daily: dict 
             "margin_stress": end_snap.get("margin_stress"),
             "goal_progress": end_snap.get("goal_progress"),
             "goal_progress_net": end_snap.get("goal_progress_net"),
+            "goal_tiers": end_snap.get("goal_tiers"),
+            "goal_pace": end_snap.get("goal_pace"),
             "holdings": [
                 {
                     "symbol": h.get("symbol"),
@@ -554,6 +556,8 @@ def _intervals_from_periods(period_snaps: list[dict], snapshot_type: str, as_of_
             "margin_stress": (end_daily or {}).get("margin_stress") if end_daily else None,
             "goal_progress": (end_daily or {}).get("goal_progress"),
             "goal_progress_net": (end_daily or {}).get("goal_progress_net"),
+            "goal_tiers": (end_daily or {}).get("goal_tiers"),
+            "goal_pace": (end_daily or {}).get("goal_pace"),
             "holdings": [
                 {
                     "symbol": h.get("symbol"),
@@ -824,6 +828,8 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
                 else None,
             },
         },
+        "goal_tiers": end_snap.get("goal_tiers"),
+        "goal_pace": end_snap.get("goal_pace"),
         "composition": {
             "start": {
                 "holding_count": len(start_snap.get("holdings") or []),

@@ -59,3 +59,15 @@ ESCALATION_REMINDER_HOURS = [24, 72]
 MILESTONE_NET_VALUES = [15000, 20000, 25000]
 MILESTONE_MONTHLY_INCOME = [250, 300, 500]
 MILESTONE_PROGRESS_PCT = [15, 20, 25]
+
+# Pace alerts
+PACE_SLIPPAGE_PCT = 90.0            # alert if pace < this % of tier pace
+PACE_SLIPPAGE_CONSECUTIVE = 2       # require N consecutive snapshots below threshold
+PACE_SURPLUS_DECLINE_PCT = 20.0     # alert if surplus drops by this % week-over-week
+PACE_GOAL_MILESTONES = [25, 50, 75, 90]  # goal progress milestones
+PACE_ACCEL_MONTHS = 0.5             # alert on pace change >= this many months
+VOL_SPIKE_RATIO = 1.3               # alert if vol increases by 30%+
+
+# Alert grouping
+ALERT_GROUPING_ENABLED = True
+ALERT_GROUPING_MIN_SIZE = 2         # min alerts in same category to trigger grouping

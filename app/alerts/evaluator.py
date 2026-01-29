@@ -33,6 +33,11 @@ from .constants import (
     MILESTONE_MONTHLY_INCOME,
     MILESTONE_NET_VALUES,
     MILESTONE_PROGRESS_PCT,
+    PACE_ACCEL_MONTHS,
+    PACE_GOAL_MILESTONES,
+    PACE_SLIPPAGE_PCT,
+    PACE_SLIPPAGE_CONSECUTIVE,
+    PACE_SURPLUS_DECLINE_PCT,
     PORTFOLIO_VOL_WARNING,
     PORTFOLIO_SORTINO_MIN,
     PORTFOLIO_SORTINO_DROP,
@@ -46,6 +51,7 @@ from .constants import (
     TAIL_RISK_INCOME_RATIO,
     TREASURY_SPIKE,
     VOL_EXPANSION_RATIO,
+    VOL_SPIKE_RATIO,
     VIX_CRITICAL,
     YIELD_COMPRESSION_WARNING,
 )
@@ -338,6 +344,168 @@ def _consecutive_green_days(conn: sqlite3.Connection) -> tuple[int, float | None
         gain_pct = ((last_val / first_val) - 1.0) * 100.0
     return consecutive, gain_pct
 
+
+def _evaluate_pace_alerts(
+    as_of: str,
+    snap: dict,
+    prev_snap: dict | None,
+    prev_7d_snap: dict | None,
+    recent_snapshots: list[tuple[str, dict]],
+) -> List[dict]:
+    """Evaluate goal pace alerts: slippage, tier change, milestones, surplus decline."""
+    alerts: List[dict] = []
+    goal_pace = snap.get("goal_pace")
+    if not goal_pace:
+        return alerts
+
+    prev_pace = (prev_snap or {}).get("goal_pace") or {}
+    prev_7d_pace = (prev_7d_snap or {}).get("goal_pace") or {}
+
+    # 1) Pace slippage — behind tier pace for multiple consecutive days
+    ytd_window = (goal_pace.get("windows") or {}).get("ytd") or {}
+    pace_info = ytd_window.get("pace") or {}
+    pct_of_pace = pace_info.get("pct_of_tier_pace")
+
+    if isinstance(pct_of_pace, (int, float)) and pct_of_pace < PACE_SLIPPAGE_PCT:
+        # Check consecutive snapshots below threshold
+        consecutive_below = 0
+        for _, rsnap in recent_snapshots[:PACE_SLIPPAGE_CONSECUTIVE + 1]:
+            rpace = (rsnap.get("goal_pace") or {}).get("windows", {}).get("ytd", {}).get("pace", {})
+            rpct = rpace.get("pct_of_tier_pace")
+            if isinstance(rpct, (int, float)) and rpct < PACE_SLIPPAGE_PCT:
+                consecutive_below += 1
+            else:
+                break
+
+        if consecutive_below >= PACE_SLIPPAGE_CONSECUTIVE:
+            tier = (goal_pace.get("likely_tier") or {}).get("name", "Unknown")
+            severity = 7 if pct_of_pace < 80 else 6
+            title = f"Pace slippage: {pct_of_pace:.0f}% of {tier} pace"
+            body = (
+                f"⚠️ <b>Behind Schedule</b><br/>"
+                f"Current pace: <b>{pct_of_pace:.0f}%</b> of target for {consecutive_below} days.<br/>"
+            )
+            current_pace = goal_pace.get("current_pace") or {}
+            months_delta = current_pace.get("months_ahead_behind")
+            if isinstance(months_delta, (int, float)):
+                body += f"Status: {abs(months_delta):.1f} months {'ahead' if months_delta >= 0 else 'behind'}.<br/>"
+            revised = current_pace.get("revised_goal_date")
+            if revised:
+                body += f"Revised goal date: {revised}."
+            alerts.append(_mk("goal_pace", as_of, severity, title, body))
+
+    # 2) Tier change detection
+    current_tier = (goal_pace.get("likely_tier") or {}).get("tier")
+    prev_tier = (prev_pace.get("likely_tier") or {}).get("tier")
+    if prev_tier is not None and current_tier is not None and current_tier != prev_tier:
+        tier_names = {1: "Modest", 2: "Conservative", 3: "DRIP Build", 4: "Leveraged Growth", 5: "Optimized", 6: "Maximum"}
+        old_name = tier_names.get(prev_tier, f"Tier {prev_tier}")
+        new_name = tier_names.get(current_tier, f"Tier {current_tier}")
+        reason = (goal_pace.get("likely_tier") or {}).get("reason", "")
+        title = f"Strategy change: {old_name} → {new_name}"
+        body = (
+            f"🔀 <b>Strategy Change Detected</b><br/>"
+            f"Previous: Tier {prev_tier} ({old_name})<br/>"
+            f"Current: Tier {current_tier} ({new_name})<br/>"
+        )
+        if reason:
+            body += f"<i>{reason}</i>"
+        alerts.append(_mk("goal_pace", as_of, 5, title, body))
+
+    # 3) Surplus decline week-over-week
+    current_surplus = pace_info.get("amount_surplus")
+    prev_7d_ytd = (prev_7d_pace.get("windows") or {}).get("ytd") or {}
+    prev_surplus = (prev_7d_ytd.get("pace") or {}).get("amount_surplus")
+    if (
+        isinstance(current_surplus, (int, float))
+        and isinstance(prev_surplus, (int, float))
+        and prev_surplus > 0
+        and current_surplus >= 0
+    ):
+        decline_pct = (prev_surplus - current_surplus) / prev_surplus * 100.0
+        if decline_pct > PACE_SURPLUS_DECLINE_PCT:
+            title = f"Pace cushion shrinking: -{decline_pct:.0f}% W/W"
+            body = (
+                f"⚠️ <b>Pace Cushion Declining</b><br/>"
+                f"Previous surplus: {_fmt_money(prev_surplus)}<br/>"
+                f"Current surplus: {_fmt_money(current_surplus)}<br/>"
+                f"Change: -{decline_pct:.0f}% over ~7 days."
+            )
+            alerts.append(_mk("goal_pace", as_of, 6, title, body))
+
+    # 4) Goal acceleration / deceleration
+    current_pace_data = goal_pace.get("current_pace") or {}
+    months_ahead = current_pace_data.get("months_ahead_behind")
+    prev_months = (prev_pace.get("current_pace") or {}).get("months_ahead_behind")
+    if isinstance(months_ahead, (int, float)) and isinstance(prev_months, (int, float)):
+        change = months_ahead - prev_months
+        if change >= PACE_ACCEL_MONTHS:
+            title = f"Goal accelerated: +{change:.1f} months"
+            body = (
+                f"🚀 <b>Goal Acceleration</b><br/>"
+                f"Now {months_ahead:.1f} months ahead (was {prev_months:.1f})."
+            )
+            alerts.append(_mk("goal_pace", as_of, 3, title, body))
+        elif change <= -PACE_ACCEL_MONTHS:
+            title = f"Goal pace slowing: {change:.1f} months"
+            body = (
+                f"⚠️ <b>Goal Deceleration</b><br/>"
+                f"Now {abs(months_ahead):.1f} months {'ahead' if months_ahead >= 0 else 'behind'} (was {abs(prev_months):.1f} {'ahead' if prev_months >= 0 else 'behind'})."
+            )
+            alerts.append(_mk("goal_pace", as_of, 5, title, body))
+
+    return alerts
+
+
+def _evaluate_event_alerts(
+    as_of: str,
+    snap: dict,
+    prev_snap: dict | None,
+) -> List[dict]:
+    """Evaluate event-driven alerts: ex-div today, volatility spike."""
+    alerts: List[dict] = []
+
+    # 1) Ex-dividend today
+    div_upcoming = snap.get("dividends_upcoming") or {}
+    events = div_upcoming.get("events") or []
+    today_events = [e for e in events if e.get("ex_date") == as_of or e.get("ex_date_est") == as_of]
+    if today_events:
+        total_amount = sum(e.get("amount_est") or e.get("estimated_amount") or 0 for e in today_events)
+        symbols = [e.get("symbol", "?") for e in today_events]
+        count = len(today_events)
+        title = f"{count} ex-dividend{'s' if count > 1 else ''} today"
+        body = f"📅 <b>Ex-Dividend Today</b><br/>"
+        for ev in today_events[:10]:
+            sym = ev.get("symbol", "?")
+            amt = ev.get("amount_est") or ev.get("estimated_amount") or 0
+            body += f"• {sym}: ~{_fmt_money(amt)}<br/>"
+        body += f"Total: {_fmt_money(total_amount)}"
+        alerts.append(_mk("ex_dividend", as_of, 3, title, body))
+
+    # 2) Volatility spike (30d vol up 30%+ day-over-day)
+    if prev_snap:
+        risk = (snap.get("portfolio_rollups") or {}).get("risk") or {}
+        prev_risk = (prev_snap.get("portfolio_rollups") or {}).get("risk") or {}
+        vol_30d = risk.get("vol_30d_pct")
+        prev_vol = prev_risk.get("vol_30d_pct")
+        if (
+            isinstance(vol_30d, (int, float))
+            and isinstance(prev_vol, (int, float))
+            and prev_vol > 0
+            and vol_30d > prev_vol * VOL_SPIKE_RATIO
+        ):
+            spike_pct = (vol_30d / prev_vol - 1.0) * 100.0
+            title = f"Volatility spike: {vol_30d:.1f}% (+{spike_pct:.0f}%)"
+            body = (
+                f"📈 <b>Volatility Spike</b><br/>"
+                f"30d volatility jumped from {prev_vol:.1f}% to {vol_30d:.1f}% (+{spike_pct:.0f}%).<br/>"
+                f"Consider reviewing risk exposure."
+            )
+            alerts.append(_mk("volatility", as_of, 6, title, body))
+
+    return alerts
+
+
 def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
     as_of, snap = _latest_daily(conn)
     if not as_of or not snap:
@@ -354,8 +522,8 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
     income_stability = portfolio_rollups.get("income_stability") or {}
     tail_risk = portfolio_rollups.get("tail_risk") or {}
     macro = (snap.get("macro") or {}).get("snapshot") or {}
-    goal = snap.get("goal_progress") or {}
-    goal_net = snap.get("goal_progress_net") or {}
+    goal_tiers_eval = snap.get("goal_tiers") or {}
+    goal_pace_eval = snap.get("goal_pace") or {}
     margin_guidance = snap.get("margin_guidance") or {}
     margin_stress = snap.get("margin_stress") or {}
 
@@ -728,38 +896,29 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
             body += f"<br/>Capital needed for same income: {_fmt_money(capital_needed)}."
         alerts.append(_mk("yield", as_of, 6, title, body))
 
-    # 10) Goal progress stall
-    months_to_goal = goal.get("months_to_goal")
-    additional_needed = goal.get("additional_investment_needed")
-    additional_needed_net = goal_net.get("additional_investment_needed_now")
-    prev_months = None
-    prev_additional = None
-    prev_additional_net = None
+    # 10) Goal progress stall (pace-based)
+    cur_pace = (goal_pace_eval.get("current_pace") or {})
+    cur_pace_cat = cur_pace.get("pace_category", "")
+    prev_pace_cat = ""
     if prev_30d_snap:
-        prev_goal = prev_30d_snap.get("goal_progress") or {}
-        prev_months = prev_goal.get("months_to_goal")
-        prev_additional = prev_goal.get("additional_investment_needed")
-        prev_goal_net = prev_30d_snap.get("goal_progress_net") or {}
-        prev_additional_net = prev_goal_net.get("additional_investment_needed_now")
-    if (
-        isinstance(months_to_goal, (int, float))
-        and isinstance(prev_months, (int, float))
-        and (months_to_goal - prev_months) > GOAL_SLIPPAGE_MONTHS
-    ) or (
-        isinstance(additional_needed, (int, float))
-        and isinstance(prev_additional, (int, float))
-        and (additional_needed - prev_additional) > GOAL_REQUIRED_INVESTMENT_DELTA
-    ) or (
-        isinstance(additional_needed_net, (int, float))
-        and isinstance(prev_additional_net, (int, float))
-        and (additional_needed_net - prev_additional_net) > GOAL_REQUIRED_INVESTMENT_DELTA
-    ):
+        prev_pace_cat = ((prev_30d_snap.get("goal_pace") or {}).get("current_pace") or {}).get("pace_category", "")
+    pace_worsened = (
+        (cur_pace_cat in ("behind", "off_track"))
+        and (prev_pace_cat not in ("behind", "off_track"))
+    )
+    months_behind = cur_pace.get("months_ahead_behind", 0.0)
+    if pace_worsened or (cur_pace_cat == "off_track" and isinstance(months_behind, (int, float)) and months_behind < -3):
+        revised = cur_pace.get("revised_goal_date", "—")
+        likely = goal_pace_eval.get("likely_tier") or {}
         title = "Goal Progress Stall"
-        body = f"⚠️ <b>Goal Progress</b><br/>Months to goal: {months_to_goal} (was {prev_months})."
-        if isinstance(additional_needed, (int, float)) and isinstance(prev_additional, (int, float)):
-            body += f"<br/>Required investment: {_fmt_money(additional_needed)} (was {_fmt_money(prev_additional)})."
-        if isinstance(additional_needed_net, (int, float)) and isinstance(prev_additional_net, (int, float)):
-            body += f"<br/>Net required investment: {_fmt_money(additional_needed_net)} (was {_fmt_money(prev_additional_net)})."
+        body = f"⚠️ <b>Goal Pace Decline</b><br/>Status: {cur_pace_cat.replace('_', ' ').title()}"
+        if isinstance(months_behind, (int, float)) and months_behind < 0:
+            body += f" ({months_behind:.1f} months)"
+        if prev_pace_cat:
+            body += f"<br/>Previously: {prev_pace_cat.replace('_', ' ').title()}"
+        body += f"<br/>Revised ETA: {revised}"
+        if likely.get("tier"):
+            body += f"<br/>Strategy: Tier {likely['tier']} - {likely.get('name', '—')}"
         alerts.append(_mk("goal", as_of, 6, title, body))
 
     # 11) Ex-date clustering / income bunching
@@ -816,8 +975,14 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
             title = f"Milestone: Monthly income {_fmt_money(threshold)}"
             body = f"🎉 <b>Milestone</b><br/>Projected monthly income: {_fmt_money(cur_monthly)}."
             alerts.append(_mk("milestone", as_of, 4, title, body))
-    cur_progress = goal.get("progress_pct")
-    prev_progress = (prev_snap.get("goal_progress") or {}).get("progress_pct") if prev_snap else None
+    gt_cs = goal_tiers_eval.get("current_state") or {}
+    gt_target = gt_cs.get("target_monthly", 0)
+    gt_current = gt_cs.get("projected_monthly_income", 0)
+    cur_progress = round(gt_current / gt_target * 100, 1) if gt_target > 0 else None
+    prev_gt_cs = ((prev_snap.get("goal_tiers") or {}).get("current_state") or {}) if prev_snap else {}
+    prev_gt_target = prev_gt_cs.get("target_monthly", 0)
+    prev_gt_current = prev_gt_cs.get("projected_monthly_income", 0)
+    prev_progress = round(prev_gt_current / prev_gt_target * 100, 1) if prev_gt_target > 0 else None
     for threshold in MILESTONE_PROGRESS_PCT:
         if isinstance(cur_progress, (int, float)) and isinstance(prev_progress, (int, float)) and prev_progress < threshold <= cur_progress:
             title = f"Milestone: Goal progress {threshold}%"
@@ -842,10 +1007,79 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
             body = f"⚠️ <b>Concentration</b><br/>{sym} weight at {weight:.1f}%."
             alerts.append(_mk("position", as_of, 6, title, body))
 
+    # 16) Pace alerts (slippage, tier change, surplus decline, accel/decel)
+    recent = _recent_snapshots(conn, limit=5)
+    alerts.extend(_evaluate_pace_alerts(as_of, snap, prev_snap, prev_7d_snap, recent))
+
+    # 17) Event-driven alerts (ex-div today, vol spike)
+    alerts.extend(_evaluate_event_alerts(as_of, snap, prev_snap))
+
     return alerts
 
 def evaluate_immediate_daily(conn: sqlite3.Connection) -> List[dict]:
     return [a for a in evaluate_alerts(conn) if int(a.get("severity", 0)) >= 8]
+
+def _sev_emoji(severity: int) -> str:
+    if severity >= 8:
+        return "\U0001f534"
+    if severity >= 5:
+        return "\U0001f7e1"
+    return "\U0001f7e2"
+
+def _append_grouped_digest(parts: list[str], alerts: list[dict]):
+    """Append alerts grouped by category to the digest parts list."""
+    from collections import defaultdict
+    by_cat: dict[str, list[dict]] = defaultdict(list)
+    for a in alerts:
+        by_cat[a.get("category", "other")].append(a)
+    for cat, cat_alerts in by_cat.items():
+        if len(cat_alerts) == 1:
+            a = cat_alerts[0]
+            parts.append(f"{_sev_emoji(a['severity'])} [{a['severity']}] {a['title']}")
+        else:
+            parts.append(f"<b>{cat.upper()}</b> ({len(cat_alerts)}):")
+            for a in cat_alerts[:5]:
+                parts.append(f"  {_sev_emoji(a['severity'])} [{a['severity']}] {a['title']}")
+            if len(cat_alerts) > 5:
+                parts.append(f"  ...+{len(cat_alerts) - 5} more")
+
+DIGEST_SECTIONS = {
+    "net_value": "NET VALUE",
+    "critical_alerts": "CRITICAL ALERTS",
+    "warnings": "WARNINGS",
+    "income_update": "INCOME UPDATE",
+    "next_7_days": "Next 7 Days",
+    "performance": "PERFORMANCE",
+    "risk": "RISK",
+    "sortino_snapshot": "SORTINO SNAPSHOT",
+    "goal": "GOAL",
+    "macro": "MACRO ENVIRONMENT",
+    "position_highlights": "POSITION HIGHLIGHTS",
+}
+
+def _get_digest_sections(conn: sqlite3.Connection) -> set[str]:
+    """Return set of enabled digest section keys. All enabled by default."""
+    from .storage import get_setting
+    raw = get_setting(conn, "digest_sections", None)
+    if not raw:
+        return set(DIGEST_SECTIONS.keys())
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            result = {k for k, v in data.items() if v}
+        elif isinstance(data, list):
+            result = set(data)
+        else:
+            return set(DIGEST_SECTIONS.keys())
+        # Backward compat: map old separate keys to merged "goal"
+        if "goal_progress" in result or "goal_pace" in result:
+            result.discard("goal_progress")
+            result.discard("goal_pace")
+            result.add("goal")
+        return result
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return set(DIGEST_SECTIONS.keys())
 
 def build_daily_report_html(conn: sqlite3.Connection):
     from .storage import list_open_alerts
@@ -863,8 +1097,8 @@ def build_daily_report_html(conn: sqlite3.Connection):
     risk = rollups.get("risk") or {}
     income_stability = rollups.get("income_stability") or {}
     tail_risk = rollups.get("tail_risk") or {}
-    goal = snap.get("goal_progress") or {}
-    goal_net = snap.get("goal_progress_net") or {}
+    goal_tiers = snap.get("goal_tiers") or {}
+    goal_pace = snap.get("goal_pace") or {}
     macro = (snap.get("macro") or {}).get("snapshot") or {}
     margin_guidance = snap.get("margin_guidance") or {}
     margin_stress = snap.get("margin_stress") or {}
@@ -885,269 +1119,395 @@ def build_daily_report_html(conn: sqlite3.Connection):
         week_delta = nlv - prev_nlv
         week_delta_pct = (nlv / prev_nlv - 1.0) * 100.0
 
+    enabled = _get_digest_sections(conn)
+
     parts = []
     parts.append(f"📊 <b>Portfolio Daily Review</b> | {as_of}")
 
-    parts.append("")
-    parts.append("<b>NET VALUE</b>")
-    parts.append(f"• Net: {_fmt_money(nlv)} ({_fmt_money(week_delta)} / {_fmt_pct(week_delta_pct,1)} W/W)")
-    parts.append(f"• Market Value: {_fmt_money(totals.get('market_value'))}")
-    parts.append(f"• Margin Loan: {_fmt_money(totals.get('margin_loan_balance'))} (LTV {_fmt_pct(totals.get('margin_to_portfolio_pct'),1)})")
-
-    open_crit = list_open_alerts(conn, min_severity=8)
-    if open_crit:
+    if "net_value" in enabled:
         parts.append("")
-        parts.append("🚨 <b>CRITICAL ALERTS</b>")
-        for a in open_crit[:5]:
-            parts.append(f"[{a['severity']}] {a['title']}")
+        parts.append("<b>NET VALUE</b>")
+        parts.append(f"• Net: {_fmt_money(nlv)} ({_fmt_money(week_delta)} / {_fmt_pct(week_delta_pct,1)} W/W)")
+        parts.append(f"• Market Value: {_fmt_money(totals.get('market_value'))}")
+        parts.append(f"• Margin Loan: {_fmt_money(totals.get('margin_loan_balance'))} (LTV {_fmt_pct(totals.get('margin_to_portfolio_pct'),1)})")
 
-    open_warn = list_open_alerts(conn, min_severity=5, max_severity=7)
-    if open_warn:
+    if "critical_alerts" in enabled:
+        open_crit = list_open_alerts(conn, min_severity=8)
+        if open_crit:
+            parts.append("")
+            parts.append("🚨 <b>CRITICAL ALERTS</b>")
+            _append_grouped_digest(parts, open_crit)
+
+    if "warnings" in enabled:
+        open_warn = list_open_alerts(conn, min_severity=5, max_severity=7)
+        if open_warn:
+            parts.append("")
+            parts.append("⚠️ <b>WARNINGS</b>")
+            _append_grouped_digest(parts, open_warn)
+
+    if "income_update" in enabled:
+        proj_monthly = income.get("projected_monthly_income")
+        mtd_realized = _realized_mtd_total(dividends)
+        proj_vs = (dividends.get("projected_vs_received") or {})
         parts.append("")
-        parts.append("⚠️ <b>WARNINGS</b>")
-        for a in open_warn[:5]:
-            parts.append(f"[{a['severity']}] {a['title']}")
+        parts.append("<b>💰 INCOME UPDATE</b>")
+        parts.append(f"• MTD: {_fmt_money(mtd_realized)} / {_fmt_money(proj_monthly)} projected")
+        if isinstance(proj_vs.get("pct_of_projection"), (int, float)):
+            parts.append(f"• MTD % of projection: {proj_vs.get('pct_of_projection'):.1f}%")
+        parts.append(f"• Last 30d: {_fmt_money((dividends.get('windows') or {}).get('30d', {}).get('total_dividends'))}")
 
-    proj_monthly = income.get("projected_monthly_income")
-    mtd_realized = _realized_mtd_total(dividends)
-    proj_vs = (dividends.get("projected_vs_received") or {})
-    parts.append("")
-    parts.append("<b>💰 INCOME UPDATE</b>")
-    parts.append(f"• MTD: {_fmt_money(mtd_realized)} / {_fmt_money(proj_monthly)} projected")
-    if isinstance(proj_vs.get("pct_of_projection"), (int, float)):
-        parts.append(f"• MTD % of projection: {proj_vs.get('pct_of_projection'):.1f}%")
-    parts.append(f"• Last 30d: {_fmt_money((dividends.get('windows') or {}).get('30d', {}).get('total_dividends'))}")
+    if "next_7_days" in enabled:
+        events = div_upcoming.get("events") or []
+        next_7d = _next_exdates(events, as_of_dt, days=7)
+        if next_7d:
+            parts.append("")
+            parts.append("<b>Next 7 Days</b>")
+            total = 0.0
+            for dt, sym, amt in next_7d:
+                if isinstance(amt, (int, float)):
+                    total += float(amt)
+                parts.append(f"• {dt.isoformat()}: {sym} ~{_fmt_money(amt)}")
+            parts.append(f"Total expected: {_fmt_money(total)}")
 
-    events = div_upcoming.get("events") or []
-    next_7d = _next_exdates(events, as_of_dt, days=7)
-    if next_7d:
+    if "performance" in enabled:
         parts.append("")
-        parts.append("<b>Next 7 Days</b>")
-        total = 0.0
-        for dt, sym, amt in next_7d:
-            if isinstance(amt, (int, float)):
-                total += float(amt)
-            parts.append(f"• {dt.isoformat()}: {sym} ~{_fmt_money(amt)}")
-        parts.append(f"Total expected: {_fmt_money(total)}")
+        parts.append("<b>📈 PERFORMANCE</b>")
+        parts.append(f"• 1M: {_fmt_pct(performance.get('twr_1m_pct'),2)} | 3M: {_fmt_pct(performance.get('twr_3m_pct'),2)}")
+        parts.append(f"• 6M: {_fmt_pct(performance.get('twr_6m_pct'),2)} | 1Y: {_fmt_pct(performance.get('twr_12m_pct'),2)}")
 
-    parts.append("")
-    parts.append("<b>📈 PERFORMANCE</b>")
-    parts.append(f"• 1M: {_fmt_pct(performance.get('twr_1m_pct'),2)} | 3M: {_fmt_pct(performance.get('twr_3m_pct'),2)}")
-    parts.append(f"• 6M: {_fmt_pct(performance.get('twr_6m_pct'),2)} | 1Y: {_fmt_pct(performance.get('twr_12m_pct'),2)}")
-
-    parts.append("")
-    parts.append("<b>📉 RISK</b>")
-    sortino = risk.get("sortino_1y")
-    sharpe = risk.get("sharpe_1y")
-    prev_sortino = None
-    if prev_snap:
-        prev_sortino = ((prev_snap.get("portfolio_rollups") or {}).get("risk") or {}).get("sortino_1y")
-    sortino_delta = None
-    if isinstance(sortino, (int, float)) and isinstance(prev_sortino, (int, float)):
-        sortino_delta = sortino - prev_sortino
-    profile = None
-    if isinstance(sortino, (int, float)) and isinstance(sharpe, (int, float)):
-        if sortino > sharpe:
-            profile = "upside_biased"
-        elif sortino < sharpe:
-            profile = "downside_biased"
-        else:
-            profile = "balanced"
-    sortino_delta_text = f" ({sortino_delta:+.2f})" if isinstance(sortino_delta, (int, float)) else ""
-    parts.append(
-        f"• 30d Vol: {_fmt_pct(risk.get('vol_30d_pct'),2)} | Sharpe: {_fmt_ratio(sharpe,2)} | Sortino: {_fmt_ratio(sortino,2)}{sortino_delta_text}"
-    )
-    profile_label = _profile_label(profile)
-    if profile_label:
-        parts.append(f"• Volatility Profile: {profile_label}")
-    parts.append(f"• Max DD: {_fmt_pct(risk.get('max_drawdown_1y_pct'),2)} | DD Days: {risk.get('drawdown_duration_1y_days', '—')}")
-    stability_score = (rollups.get("income_stability") or {}).get("stability_score")
-    stability_trend = (rollups.get("income_stability") or {}).get("income_trend_6m")
-    if isinstance(stability_score, (int, float)):
-        trend_text = stability_trend or "—"
-        parts.append(f"• Income Stability: {_fmt_ratio(stability_score,2)} | Trend: {trend_text}")
-    tail = rollups.get("tail_risk") or {}
-    cvar_1d = tail.get("cvar_95_1d_pct")
-    tail_cat = tail.get("tail_risk_category")
-    if isinstance(cvar_1d, (int, float)) or tail_cat:
-        parts.append(f"• CVaR 1d: {_fmt_pct(cvar_1d,1)} | Tail Risk: {tail_cat or '—'}")
-
-    sortino_rows = []
-    for h in holdings:
-        sortino_val = h.get("sortino_1y")
-        if sortino_val is None:
-            sortino_val = (h.get("ultimate") or {}).get("sortino_1y")
-        if isinstance(sortino_val, (int, float)):
-            sortino_rows.append((h, float(sortino_val)))
-    if sortino_rows:
-        sortino_rows.sort(key=lambda item: item[1], reverse=True)
+    if "risk" in enabled:
         parts.append("")
-        parts.append("<b>🧭 SORTINO SNAPSHOT</b>")
-        prev_7d_sortino = None
-        if prev_7d_snap:
-            prev_7d_sortino = ((prev_7d_snap.get("portfolio_rollups") or {}).get("risk") or {}).get("sortino_1y")
-        if isinstance(sortino, (int, float)) and isinstance(prev_7d_sortino, (int, float)):
-            trend_delta = sortino - prev_7d_sortino
-            parts.append(f"7-Day Trend: {prev_7d_sortino:.2f} → {sortino:.2f} ({trend_delta:+.2f})")
-        top = sortino_rows[:3]
-        if top:
-            parts.append("Top performers (Sortino):")
-            for h, val in top:
-                category = h.get("risk_quality_category") or (h.get("ultimate") or {}).get("risk_quality_category")
-                label = f" ({category})" if category else ""
-                parts.append(f"• {h.get('symbol')}: {val:.2f}{label}")
-        low = [item for item in sortino_rows[::-1] if item[1] < PORTFOLIO_SORTINO_MIN]
-        if not low:
-            low = sortino_rows[-3:][::-1]
-        if low:
-            parts.append("Watch list (low Sortino):")
-            for h, val in low[:3]:
-                profile = h.get("volatility_profile") or (h.get("ultimate") or {}).get("volatility_profile")
-                profile_label = _profile_label(profile)
-                max_dd = (h.get("ultimate") or {}).get("max_drawdown_1y_pct")
-                extra = []
-                if profile_label:
-                    extra.append(profile_label)
-                if isinstance(max_dd, (int, float)):
-                    extra.append(f"max DD {_fmt_pct(max_dd,1)}")
-                extra_text = f" ({', '.join(extra)})" if extra else ""
-                parts.append(f"• {h.get('symbol')}: {val:.2f}{extra_text}")
+        parts.append("<b>📉 RISK</b>")
+        sortino = risk.get("sortino_1y")
+        sharpe = risk.get("sharpe_1y")
+        prev_sortino = None
+        if prev_snap:
+            prev_sortino = ((prev_snap.get("portfolio_rollups") or {}).get("risk") or {}).get("sortino_1y")
+        sortino_delta = None
+        if isinstance(sortino, (int, float)) and isinstance(prev_sortino, (int, float)):
+            sortino_delta = sortino - prev_sortino
+        profile = None
+        if isinstance(sortino, (int, float)) and isinstance(sharpe, (int, float)):
+            if sortino > sharpe:
+                profile = "upside_biased"
+            elif sortino < sharpe:
+                profile = "downside_biased"
+            else:
+                profile = "balanced"
+        sortino_delta_text = f" ({sortino_delta:+.2f})" if isinstance(sortino_delta, (int, float)) else ""
+        parts.append(
+            f"• 30d Vol: {_fmt_pct(risk.get('vol_30d_pct'),2)} | Sharpe: {_fmt_ratio(sharpe,2)} | Sortino: {_fmt_ratio(sortino,2)}{sortino_delta_text}"
+        )
+        profile_label = _profile_label(profile)
+        if profile_label:
+            parts.append(f"• Volatility Profile: {profile_label}")
+        parts.append(f"• Max DD: {_fmt_pct(risk.get('max_drawdown_1y_pct'),2)} | DD Days: {risk.get('drawdown_duration_1y_days', '—')}")
+        stability_score = (rollups.get("income_stability") or {}).get("stability_score")
+        stability_trend = (rollups.get("income_stability") or {}).get("income_trend_6m")
+        if isinstance(stability_score, (int, float)):
+            trend_text = stability_trend or "—"
+            parts.append(f"• Income Stability: {_fmt_ratio(stability_score,2)} | Trend: {trend_text}")
+        tail = rollups.get("tail_risk") or {}
+        cvar_1d = tail.get("cvar_95_1d_pct")
+        tail_cat = tail.get("tail_risk_category")
+        if isinstance(cvar_1d, (int, float)) or tail_cat:
+            parts.append(f"• CVaR 1d: {_fmt_pct(cvar_1d,1)} | Tail Risk: {tail_cat or '—'}")
 
-    parts.append("")
-    parts.append("<b>🎯 GOAL PROGRESS</b>")
-    parts.append(f"• Target: {_fmt_money(goal.get('target_monthly'))}/mo")
-    parts.append(f"• Current: {_fmt_money(goal.get('current_projected_monthly'))}/mo ({goal.get('progress_pct', '—')}%)")
-    parts.append(f"• Current Portfolio Value: {_fmt_money(totals.get('market_value'))}")
-    parts.append(f"• Required Portfolio Value: {_fmt_money(goal.get('required_portfolio_value_at_goal'))}")
-    parts.append(f"• Timeline: {goal.get('months_to_goal', '—')} months (ETA {goal.get('estimated_goal_date', '—')})")
-    parts.append(f"• Net Reality: {_fmt_money(goal_net.get('current_projected_monthly_net'))}/mo after interest")
+    if "sortino_snapshot" in enabled:
+        sortino_rows = []
+        for h in holdings:
+            sortino_val = h.get("sortino_1y")
+            if sortino_val is None:
+                sortino_val = (h.get("ultimate") or {}).get("sortino_1y")
+            if isinstance(sortino_val, (int, float)):
+                sortino_rows.append((h, float(sortino_val)))
+        if sortino_rows:
+            sortino_rows.sort(key=lambda item: item[1], reverse=True)
+            parts.append("")
+            parts.append("<b>🧭 SORTINO SNAPSHOT</b>")
+            prev_7d_sortino = None
+            if prev_7d_snap:
+                prev_7d_sortino = ((prev_7d_snap.get("portfolio_rollups") or {}).get("risk") or {}).get("sortino_1y")
+            if isinstance(sortino, (int, float)) and isinstance(prev_7d_sortino, (int, float)):
+                trend_delta = sortino - prev_7d_sortino
+                parts.append(f"7-Day Trend: {prev_7d_sortino:.2f} → {sortino:.2f} ({trend_delta:+.2f})")
+            top = sortino_rows[:3]
+            if top:
+                parts.append("Top performers (Sortino):")
+                for h, val in top:
+                    category = h.get("risk_quality_category") or (h.get("ultimate") or {}).get("risk_quality_category")
+                    label = f" ({category})" if category else ""
+                    parts.append(f"• {h.get('symbol')}: {val:.2f}{label}")
+            low = [item for item in sortino_rows[::-1] if item[1] < PORTFOLIO_SORTINO_MIN]
+            if not low:
+                low = sortino_rows[-3:][::-1]
+            if low:
+                parts.append("Watch list (low Sortino):")
+                for h, val in low[:3]:
+                    profile = h.get("volatility_profile") or (h.get("ultimate") or {}).get("volatility_profile")
+                    profile_label = _profile_label(profile)
+                    max_dd = (h.get("ultimate") or {}).get("max_drawdown_1y_pct")
+                    extra = []
+                    if profile_label:
+                        extra.append(profile_label)
+                    if isinstance(max_dd, (int, float)):
+                        extra.append(f"max DD {_fmt_pct(max_dd,1)}")
+                    extra_text = f" ({', '.join(extra)})" if extra else ""
+                    parts.append(f"• {h.get('symbol')}: {val:.2f}{extra_text}")
 
-    # Add pace tracking section
-    goal_pace = snap.get("goal_pace")
-    if goal_pace:
-        likely_tier = goal_pace.get("likely_tier", {})
-        current_pace = goal_pace.get("current_pace", {})
-        windows = goal_pace.get("windows", {})
-        factors = goal_pace.get("factors", {})
+    if "goal" in enabled:
+        current_state = goal_tiers.get("current_state") or {}
+        tiers = goal_tiers.get("tiers") or []
+        likely_tier = goal_pace.get("likely_tier") or {}
+        current_pace = goal_pace.get("current_pace") or {}
+        windows = goal_pace.get("windows") or {}
+        factors = goal_pace.get("factors") or {}
+
+        target = current_state.get("target_monthly", 0)
+        current = current_state.get("projected_monthly_income", 0)
+        progress = round(current / target * 100, 1) if target > 0 else 0
 
         parts.append("")
-        parts.append("<b>🏃 GOAL PACE TRACKING</b>")
+        parts.append("<b>🎯 GOAL</b>")
+        parts.append(f"• Target: {_fmt_money(target)}/mo")
+        parts.append(f"• Current: {_fmt_money(current)}/mo ({progress:.0f}%)")
 
-        # Tier detection
+        bar_length = 20
+        filled = int(min(progress, 100) / 100 * bar_length)
+        bar = "█" * filled + "░" * (bar_length - filled)
+        parts.append(f"• [{bar}] {progress:.0f}%")
+
         tier_emoji = {1: "🐌", 2: "🚶", 3: "🏃", 4: "🚀", 5: "🌟", 6: "⚡"}
         tier_num = likely_tier.get("tier", 0)
-        tier_name = likely_tier.get("name", "Unknown")
-        confidence = likely_tier.get("confidence", "unknown")
-        parts.append(f"• Detected Strategy: {tier_emoji.get(tier_num, '')} Tier {tier_num} - {tier_name} ({confidence} confidence)")
+        if tier_num:
+            parts.append(f"• Strategy: {tier_emoji.get(tier_num, '')} Tier {tier_num} - {likely_tier.get('name', '—')} ({likely_tier.get('confidence', '—')})")
 
-        # Current pace status
         pace_cat = current_pace.get("pace_category", "unknown")
         months_ahead = current_pace.get("months_ahead_behind", 0.0)
         revised_date = current_pace.get("revised_goal_date", "—")
-
-        pace_emoji = {"ahead": "✅", "on_track": "✓", "behind": "⚠️", "off_track": "🚨"}
-        pace_label = {"ahead": "Ahead of Schedule", "on_track": "On Track", "behind": "Behind Schedule", "off_track": "Off Track"}
+        pace_emoji_map = {"ahead": "✅", "on_track": "✓", "behind": "⚠️", "off_track": "🚨"}
+        pace_label_map = {"ahead": "Ahead", "on_track": "On Track", "behind": "Behind", "off_track": "Off Track"}
 
         if months_ahead > 0:
-            pace_text = f"{pace_emoji.get(pace_cat, '')} {pace_label.get(pace_cat, pace_cat)} (+{months_ahead:.1f} months)"
+            pace_text = f"{pace_emoji_map.get(pace_cat, '')} {pace_label_map.get(pace_cat, pace_cat)} (+{months_ahead:.1f}mo)"
         elif months_ahead < 0:
-            pace_text = f"{pace_emoji.get(pace_cat, '')} {pace_label.get(pace_cat, pace_cat)} ({months_ahead:.1f} months)"
+            pace_text = f"{pace_emoji_map.get(pace_cat, '')} {pace_label_map.get(pace_cat, pace_cat)} ({months_ahead:.1f}mo)"
         else:
-            pace_text = f"{pace_emoji.get(pace_cat, '')} {pace_label.get(pace_cat, pace_cat)}"
+            pace_text = f"{pace_emoji_map.get(pace_cat, '')} {pace_label_map.get(pace_cat, pace_cat)}"
+        parts.append(f"• Pace: {pace_text} | ETA: {revised_date}")
 
-        parts.append(f"• Status: {pace_text}")
-        parts.append(f"• Revised ETA: {revised_date}")
+        # Top time windows
+        for wkey, wlabel in [("ytd", "YTD"), ("30d", "30d")]:
+            w = windows.get(wkey, {})
+            if w:
+                w_pace = w.get("pace", {})
+                surplus = w_pace.get("amount_surplus", 0.0)
+                needed = w_pace.get("amount_needed", 0.0)
+                if surplus > 0:
+                    parts.append(f"• {wlabel}: Ahead by {_fmt_money(surplus)}")
+                elif needed > 0:
+                    parts.append(f"• {wlabel}: Need {_fmt_money(needed)} to align")
 
-        # YTD pace details
-        ytd = windows.get("ytd", {})
-        if ytd:
-            ytd_pace = ytd.get("pace", {})
-            ytd_delta = ytd.get("delta", {})
-
-            mv_delta = ytd_delta.get("portfolio_value", 0.0)
-            amount_surplus = ytd_pace.get("amount_surplus", 0.0)
-            amount_needed = ytd_pace.get("amount_needed", 0.0)
-
-            if amount_surplus > 0:
-                parts.append(f"• YTD Progress: Ahead by {_fmt_money(amount_surplus)}")
-            elif amount_needed > 0:
-                parts.append(f"• YTD Progress: Need {_fmt_money(amount_needed)} to align")
-
-            if abs(mv_delta) > 100:
-                if mv_delta > 0:
-                    parts.append(f"• Portfolio Value: +{_fmt_money(mv_delta)} vs expected YTD")
-                else:
-                    parts.append(f"• Portfolio Value: {_fmt_money(mv_delta)} vs expected YTD")
-
-        # Key factors
+        # Key drivers
         mv_impact = factors.get("market_value_impact", 0.0)
         income_impact = factors.get("income_growth_impact", 0.0)
-
         if abs(mv_impact) > 100 or abs(income_impact) > 100:
-            parts.append("• Key Drivers:")
+            driver_parts = []
             if abs(mv_impact) > 100:
-                parts.append(f"  - Market Value: {_fmt_money(mv_impact)}")
+                driver_parts.append(f"MV {_fmt_money(mv_impact)}")
             if abs(income_impact) > 100:
-                parts.append(f"  - Income Growth: {_fmt_money(income_impact)}")
+                driver_parts.append(f"Income {_fmt_money(income_impact)}")
+            parts.append(f"• Drivers: {' | '.join(driver_parts)}")
 
-        # Progress indicator (visual bar)
-        pct_to_goal = goal.get('progress_pct', 0)
-        if isinstance(pct_to_goal, (int, float)):
-            bar_length = 20
-            filled = int(pct_to_goal / 100 * bar_length)
-            bar = "█" * filled + "░" * (bar_length - filled)
-            parts.append(f"• Progress: [{bar}] {pct_to_goal:.0f}%")
+        # Compact tier overview
+        achievable = [t for t in tiers if t.get("months_to_goal") is not None]
+        if achievable:
+            tier_parts = []
+            for t in achievable[:3]:
+                tn = t.get("tier", 0)
+                months = t.get("months_to_goal", 0)
+                y, m = divmod(months, 12)
+                time_str = f"{y}y{m}m" if y > 0 else f"{m}m"
+                tier_parts.append(f"{tier_emoji.get(tn, '')}T{tn}:{time_str}")
+            parts.append(f"• Tiers: {' | '.join(tier_parts)}")
 
-    parts.append("")
-    parts.append("<b>📊 MACRO ENVIRONMENT</b>")
-    vix = macro.get("vix")
-    ten_year = macro.get("ten_year_yield")
-    spread = macro.get("yield_spread_10y_2y")
-    hy_spread = macro.get("hy_spread_bps")
-    parts.append(f"• VIX: {vix if vix is not None else '—'} | 10Y: {ten_year if ten_year is not None else '—'}% | Spread: {spread if spread is not None else '—'}")
-    parts.append(f"• HY Spread: {hy_spread if hy_spread is not None else '—'} bps | Stress: {macro.get('macro_stress_score', '—')}")
+    if "macro" in enabled:
+        parts.append("")
+        parts.append("<b>📊 MACRO ENVIRONMENT</b>")
+        vix = macro.get("vix")
+        ten_year = macro.get("ten_year_yield")
+        spread = macro.get("yield_spread_10y_2y")
+        hy_spread = macro.get("hy_spread_bps")
+        parts.append(f"• VIX: {vix if vix is not None else '—'} | 10Y: {ten_year if ten_year is not None else '—'}% | Spread: {spread if spread is not None else '—'}")
+        parts.append(f"• HY Spread: {hy_spread if hy_spread is not None else '—'} bps | Stress: {macro.get('macro_stress_score', '—')}")
 
-    # Position highlights
-    top_weight = None
-    top_yield = None
-    top_vol = None
-    top_perf = None
-    for h in holdings:
-        w = h.get("weight_pct")
-        y = h.get("current_yield_pct")
-        u = h.get("ultimate") or {}
-        vol = u.get("vol_30d_pct")
-        perf = u.get("twr_1m_pct")
-        if isinstance(w, (int, float)) and (top_weight is None or w > top_weight[1]):
-            top_weight = (h.get("symbol"), w)
-        if isinstance(y, (int, float)) and (top_yield is None or y > top_yield[1]):
-            top_yield = (h.get("symbol"), y)
-        if isinstance(vol, (int, float)) and (top_vol is None or vol > top_vol[1]):
-            top_vol = (h.get("symbol"), vol)
-        if isinstance(perf, (int, float)) and (top_perf is None or perf > top_perf[1]):
-            top_perf = (h.get("symbol"), perf)
+    if "position_highlights" in enabled:
+        top_weight = None
+        top_yield = None
+        top_vol = None
+        top_perf = None
+        for h in holdings:
+            w = h.get("weight_pct")
+            y = h.get("current_yield_pct")
+            u = h.get("ultimate") or {}
+            vol = u.get("vol_30d_pct")
+            perf = u.get("twr_1m_pct")
+            if isinstance(w, (int, float)) and (top_weight is None or w > top_weight[1]):
+                top_weight = (h.get("symbol"), w)
+            if isinstance(y, (int, float)) and (top_yield is None or y > top_yield[1]):
+                top_yield = (h.get("symbol"), y)
+            if isinstance(vol, (int, float)) and (top_vol is None or vol > top_vol[1]):
+                top_vol = (h.get("symbol"), vol)
+            if isinstance(perf, (int, float)) and (top_perf is None or perf > top_perf[1]):
+                top_perf = (h.get("symbol"), perf)
 
-    parts.append("")
-    parts.append("<b>💼 POSITION HIGHLIGHTS</b>")
-    if top_perf:
-        parts.append(f"• Top Performer (1M): {top_perf[0]} {top_perf[1]:.1f}%")
-    if top_yield:
-        parts.append(f"• Top Yielder: {top_yield[0]} {top_yield[1]:.2f}%")
-    if top_weight:
-        parts.append(f"• Largest Weight: {top_weight[0]} {top_weight[1]:.1f}%")
-    if top_vol:
-        parts.append(f"• Most Volatile: {top_vol[0]} {top_vol[1]:.1f}%")
+        parts.append("")
+        parts.append("<b>💼 POSITION HIGHLIGHTS</b>")
+        if top_perf:
+            parts.append(f"• Top Performer (1M): {top_perf[0]} {top_perf[1]:.1f}%")
+        if top_yield:
+            parts.append(f"• Top Yielder: {top_yield[0]} {top_yield[1]:.2f}%")
+        if top_weight:
+            parts.append(f"• Largest Weight: {top_weight[0]} {top_weight[1]:.1f}%")
+        if top_vol:
+            parts.append(f"• Most Volatile: {top_vol[0]} {top_vol[1]:.1f}%")
 
-    high_vol = [h for h in holdings if isinstance((h.get("ultimate") or {}).get("vol_30d_pct"), (int, float)) and (h.get("ultimate") or {}).get("vol_30d_pct") > 15]
-    if high_vol:
-        parts.append("High Vol Watch:")
-        for h in high_vol[:5]:
-            parts.append(f"• {h.get('symbol')} {h.get('ultimate', {}).get('vol_30d_pct'):.1f}%")
+        high_vol = [h for h in holdings if isinstance((h.get("ultimate") or {}).get("vol_30d_pct"), (int, float)) and (h.get("ultimate") or {}).get("vol_30d_pct") > 15]
+        if high_vol:
+            parts.append("High Vol Watch:")
+            for h in high_vol[:5]:
+                parts.append(f"• {h.get('symbol')} {h.get('ultimate', {}).get('vol_30d_pct'):.1f}%")
 
     return as_of, "\n".join(parts)
 
 def build_daily_digest_html(conn: sqlite3.Connection):
     return build_daily_report_html(conn)
+
+def build_morning_brief_html(conn: sqlite3.Connection):
+    """Compact pre-market brief: ex-dates today, top holdings, macro snapshot, open criticals."""
+    from .storage import list_open_alerts
+
+    as_of, snap = _latest_daily(conn)
+    if not as_of or not snap:
+        return None, "No daily snapshot available."
+
+    totals = snap.get("totals") or {}
+    dividends = snap.get("dividends") or {}
+    div_upcoming = snap.get("dividends_upcoming") or {}
+    macro = (snap.get("macro") or {}).get("snapshot") or {}
+    holdings = snap.get("holdings") or []
+
+    try:
+        as_of_dt = date.fromisoformat(as_of)
+    except Exception:
+        as_of_dt = date.today()
+
+    parts = [f"☀️ <b>Morning Brief</b> | {as_of}"]
+
+    # Ex-dates today
+    events = div_upcoming.get("events") or []
+    today_ex = _next_exdates(events, as_of_dt, days=0)
+    if today_ex:
+        parts.append("")
+        parts.append("<b>Ex-Dates Today</b>")
+        for dt, sym, amt in today_ex:
+            parts.append(f"• {sym} ~{_fmt_money(amt)}")
+    else:
+        parts.append("")
+        parts.append("No ex-dates today.")
+
+    # Top 3 holdings by weight
+    weighted = [(h, h.get("weight_pct", 0)) for h in holdings if isinstance(h.get("weight_pct"), (int, float))]
+    weighted.sort(key=lambda x: x[1], reverse=True)
+    if weighted:
+        parts.append("")
+        parts.append("<b>Top Holdings to Watch</b>")
+        for h, w in weighted[:3]:
+            y = h.get("current_yield_pct")
+            yield_text = f" | Yield {y:.2f}%" if isinstance(y, (int, float)) else ""
+            parts.append(f"• {h.get('symbol')} {w:.1f}%{yield_text}")
+
+    # Macro snapshot
+    vix = macro.get("vix")
+    ten_year = macro.get("ten_year_yield")
+    spread = macro.get("yield_spread_10y_2y")
+    parts.append("")
+    parts.append("<b>Market Snapshot</b>")
+    parts.append(f"• VIX: {vix if vix is not None else '—'} | 10Y: {ten_year if ten_year is not None else '—'}% | Spread: {spread if spread is not None else '—'}")
+
+    # Open critical alerts count
+    open_crit = list_open_alerts(conn, min_severity=8)
+    open_warn = list_open_alerts(conn, min_severity=5, max_severity=7)
+    parts.append("")
+    parts.append(f"🔴 {len(open_crit)} critical | 🟡 {len(open_warn)} warnings open")
+
+    return as_of, "\n".join(parts)
+
+def build_evening_recap_html(conn: sqlite3.Connection):
+    """Compact post-close recap: NLV change, alert summary, income MTD, top/bottom movers."""
+    from .storage import list_open_alerts
+
+    as_of, snap = _latest_daily(conn)
+    if not as_of or not snap:
+        return None, "No daily snapshot available."
+
+    totals = snap.get("totals") or {}
+    income = snap.get("income") or {}
+    dividends = snap.get("dividends") or {}
+    holdings = snap.get("holdings") or []
+
+    try:
+        as_of_dt = date.fromisoformat(as_of)
+    except Exception:
+        as_of_dt = date.today()
+
+    _prev_date, prev_snap = _previous_daily(conn, as_of)
+    nlv = totals.get("net_liquidation_value")
+    prev_nlv = (prev_snap or {}).get("totals", {}).get("net_liquidation_value") if prev_snap else None
+    day_delta = None
+    day_delta_pct = None
+    if isinstance(nlv, (int, float)) and isinstance(prev_nlv, (int, float)) and prev_nlv:
+        day_delta = nlv - prev_nlv
+        day_delta_pct = (nlv / prev_nlv - 1.0) * 100.0
+
+    parts = [f"🌙 <b>Evening Recap</b> | {as_of}"]
+
+    # Daily NLV change
+    parts.append("")
+    parts.append("<b>Daily Change</b>")
+    parts.append(f"• NLV: {_fmt_money(nlv)} ({_fmt_money(day_delta)} / {_fmt_pct(day_delta_pct,2)} D/D)")
+
+    # Alert summary
+    open_crit = list_open_alerts(conn, min_severity=8)
+    open_warn = list_open_alerts(conn, min_severity=5, max_severity=7)
+    parts.append("")
+    parts.append(f"🔴 {len(open_crit)} critical | 🟡 {len(open_warn)} warnings open")
+
+    # Income MTD
+    proj_monthly = income.get("projected_monthly_income")
+    mtd_realized = _realized_mtd_total(dividends)
+    parts.append("")
+    parts.append("<b>Income MTD</b>")
+    parts.append(f"• {_fmt_money(mtd_realized)} / {_fmt_money(proj_monthly)} projected")
+
+    # Top/bottom movers
+    movers = []
+    for h in holdings:
+        perf = (h.get("ultimate") or {}).get("twr_1m_pct")
+        if isinstance(perf, (int, float)):
+            movers.append((h.get("symbol"), perf))
+    if movers:
+        movers.sort(key=lambda x: x[1], reverse=True)
+        parts.append("")
+        parts.append("<b>Movers (1M)</b>")
+        if movers[:2]:
+            parts.append("Top: " + ", ".join(f"{s} {p:+.1f}%" for s, p in movers[:2]))
+        bottom = [m for m in movers if m[1] < 0]
+        if bottom:
+            bottom.sort(key=lambda x: x[1])
+            parts.append("Bottom: " + ", ".join(f"{s} {p:+.1f}%" for s, p in bottom[:2]))
+
+    return as_of, "\n".join(parts)
 
 def build_period_report_html(conn: sqlite3.Connection, period: str):
     from ..pipeline.periods import build_period_snapshot
@@ -1167,8 +1527,8 @@ def build_period_report_html(conn: sqlite3.Connection, period: str):
     performance = summary.get("performance") or {}
     risk = summary.get("risk") or {}
     macro = summary.get("macro") or {}
-    goal = summary.get("goal_progress") or {}
-    goal_net = summary.get("goal_progress_net") or {}
+    goal_tiers_period = summary.get("goal_tiers") or {}
+    goal_pace_period = summary.get("goal_pace") or {}
     period_label = (snap.get("period") or {}).get("label") or period
 
     header = {
@@ -1207,9 +1567,22 @@ def build_period_report_html(conn: sqlite3.Connection, period: str):
 
     parts.append("")
     parts.append("<b>🎯 Goal</b>")
-    parts.append(f"• Progress: {goal.get('end', {}).get('progress_pct', '—')}%")
-    parts.append(f"• Months to goal: {goal.get('end', {}).get('months_to_goal', '—')}")
-    parts.append(f"• Net monthly: {_fmt_money(goal_net.get('end', {}).get('current_projected_monthly_net'))}")
+    gt_period_cs = goal_tiers_period.get("current_state") or {}
+    gt_period_target = gt_period_cs.get("target_monthly", 0)
+    gt_period_current = gt_period_cs.get("projected_monthly_income", 0)
+    gt_period_pct = round(gt_period_current / gt_period_target * 100, 1) if gt_period_target > 0 else 0
+    parts.append(f"• Progress: {gt_period_pct:.0f}% ({_fmt_money(gt_period_current)}/{_fmt_money(gt_period_target)} mo)")
+    gp_likely = (goal_pace_period.get("likely_tier") or {})
+    gp_pace = (goal_pace_period.get("current_pace") or {})
+    tier_emoji = {1: "🐌", 2: "🚶", 3: "🏃", 4: "🚀", 5: "🌟", 6: "⚡"}
+    if gp_likely.get("tier"):
+        parts.append(f"• Strategy: {tier_emoji.get(gp_likely['tier'], '')} Tier {gp_likely['tier']} - {gp_likely.get('name', '—')}")
+    pace_cat = gp_pace.get("pace_category", "")
+    months_delta = gp_pace.get("months_ahead_behind", 0.0)
+    if pace_cat:
+        pace_icons = {"ahead": "✅", "on_track": "✓", "behind": "⚠️", "off_track": "🚨"}
+        delta_str = f" ({months_delta:+.1f}mo)" if isinstance(months_delta, (int, float)) and months_delta != 0 else ""
+        parts.append(f"• Pace: {pace_icons.get(pace_cat, '')} {pace_cat.replace('_', ' ').title()}{delta_str}")
 
     parts.append("")
     parts.append("<b>📊 Macro</b>")

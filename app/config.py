@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     alerts_weekly_enabled: int = Field(default=1, alias="ALERTS_WEEKLY_ENABLED")
     alerts_monthly_enabled: int = Field(default=1, alias="ALERTS_MONTHLY_ENABLED")
     alerts_quarterly_enabled: int = Field(default=1, alias="ALERTS_QUARTERLY_ENABLED")
+    alerts_morning_enabled: int = Field(default=1, alias="ALERTS_MORNING_ENABLED")
+    alerts_evening_enabled: int = Field(default=1, alias="ALERTS_EVENING_ENABLED")
     sync_time_budget_seconds: int = Field(default=3600, alias="SYNC_TIME_BUDGET_SECONDS")
     http_timeout_seconds: float = Field(default=30.0, alias="HTTP_TIMEOUT_SECONDS")
     http_retry_attempts: int = Field(default=3, alias="HTTP_RETRY_ATTEMPTS")
@@ -54,5 +56,7 @@ class Settings(BaseSettings):
     market_rate_limit_seconds: float = Field(default=0.2, alias="MARKET_RATE_LIMIT_SECONDS")
     market_retry_attempts: int = Field(default=2, alias="MARKET_RETRY_ATTEMPTS")
     weekly_calendar_aligned: bool = Field(default=False, alias="WEEKLY_CALENDAR_ALIGNED")
+    # AI insights (Anthropic / Claude)
+    anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
 
 settings = Settings()

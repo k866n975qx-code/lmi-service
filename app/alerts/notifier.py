@@ -3,7 +3,11 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import structlog
 
+from collections import defaultdict
+
 from .constants import (
+    ALERT_GROUPING_ENABLED,
+    ALERT_GROUPING_MIN_SIZE,
     ESCALATION_REMINDER_HOURS,
     MAX_NOTIFICATIONS_PER_DAY,
     MIN_HOURS_BETWEEN_SAME_ALERT,
@@ -164,43 +168,144 @@ def _iter_immediate_to_send(conn, results: list[dict]):
             continue
         yield item
 
-async def send_alerts(conn, alerts: list[dict], telegram_client, channel: str = "telegram"):
+
+def _severity_emoji(severity: int) -> str:
+    if severity >= 8:
+        return "\U0001f534"
+    if severity >= 5:
+        return "\U0001f7e1"
+    return "\U0001f7e2"
+
+
+def _group_alerts_by_category(items: list[dict]) -> list[dict]:
+    """Group same-category alerts into combined entries.
+
+    Returns a mixed list of:
+    - Original item dicts (unchanged) for categories with < MIN_SIZE alerts
+    - Group dicts with is_group=True for categories with >= MIN_SIZE alerts
+    """
+    if not ALERT_GROUPING_ENABLED or not items:
+        return items
+
+    by_cat: dict[str, list[dict]] = defaultdict(list)
+    for item in items:
+        cat = item["alert"].get("category", "unknown")
+        by_cat[cat].append(item)
+
+    result: list[dict] = []
+    for cat, cat_items in by_cat.items():
+        if len(cat_items) < ALERT_GROUPING_MIN_SIZE:
+            result.extend(cat_items)
+        else:
+            max_sev = max(int(it["alert"]["severity"]) for it in cat_items)
+            count = len(cat_items)
+            lines = [f"\U0001f514 <b>{cat.upper()}</b> \u2014 {count} alerts", ""]
+            for it in cat_items[:10]:
+                a = it["alert"]
+                emoji = _severity_emoji(int(a["severity"]))
+                lines.append(f"{emoji} [{a['severity']}] {a['title']}")
+            if count > 10:
+                lines.append(f"...+{count - 10} more")
+            lines.append("")
+            lines.append(f"Max severity: {max_sev} | /alerts for details")
+            result.append({
+                "is_group": True,
+                "category": cat,
+                "items": cat_items,
+                "max_severity": max_sev,
+                "body_html": "\n".join(lines),
+            })
+    return result
+
+
+async def send_alerts(conn, alerts: list[dict], telegram_client, channel: str = "telegram", with_buttons: bool = True):
+    from ..services.telegram import build_inline_keyboard
     results = upsert_alerts(conn, alerts)
-    for item in _iter_immediate_to_send(conn, results):
-        alert = item["alert"]
-        severity = int(alert["severity"])
-        ok = await telegram_client.send_message_html(alert["body_html"])
-        next_reminder = _compute_next_reminder(now_utc_iso(), 0) if severity >= 7 else None
-        mark_alert_notified(
-            conn,
-            item["alert_id"],
-            channel,
-            ok,
-            None if ok else "send_failed",
-            now_utc_iso(),
-            next_reminder_at_utc=next_reminder,
-            increment_reminder=False,
-        )
-        log.info("alert_sent", alert_id=item["alert_id"], severity=severity, ok=ok)
+    immediate = list(_iter_immediate_to_send(conn, results))
+    grouped = _group_alerts_by_category(immediate)
+
+    for entry in grouped:
+        if entry.get("is_group"):
+            first_alert_id = entry["items"][0]["alert_id"]
+            max_sev = entry["max_severity"]
+            reply_markup = None
+            if with_buttons and max_sev >= 6:
+                reply_markup = build_inline_keyboard([
+                    [
+                        {"text": f"✓ Ack All ({len(entry['items'])})", "callback_data": f"ackcat:{entry['category'][:28]}"},
+                        {"text": "📊 Details", "callback_data": f"details:{first_alert_id[:32]}"},
+                    ],
+                    [
+                        {"text": "🔇 Silence 1h", "callback_data": "silence:1"},
+                        {"text": "🔇 Silence 24h", "callback_data": "silence:24"},
+                    ],
+                ])
+            ok = await telegram_client.send_message_html(entry["body_html"], reply_markup=reply_markup)
+            for item in entry["items"]:
+                sev = int(item["alert"]["severity"])
+                next_reminder = _compute_next_reminder(now_utc_iso(), 0) if sev >= 7 else None
+                mark_alert_notified(
+                    conn, item["alert_id"], channel, ok,
+                    None if ok else "send_failed", now_utc_iso(),
+                    next_reminder_at_utc=next_reminder, increment_reminder=False,
+                )
+            log.info("alert_group_sent", category=entry["category"],
+                     count=len(entry["items"]), max_severity=max_sev, ok=ok)
+        else:
+            alert = entry["alert"]
+            alert_id = entry["alert_id"]
+            severity = int(alert["severity"])
+            reply_markup = None
+            if with_buttons and severity >= 6:
+                reply_markup = build_inline_keyboard([
+                    [
+                        {"text": "✓ Acknowledge", "callback_data": f"ack:{alert_id[:32]}"},
+                        {"text": "📊 Details", "callback_data": f"details:{alert_id[:32]}"},
+                    ],
+                    [
+                        {"text": "🔇 Silence 1h", "callback_data": "silence:1"},
+                        {"text": "🔇 Silence 24h", "callback_data": "silence:24"},
+                    ],
+                ])
+            ok = await telegram_client.send_message_html(alert["body_html"], reply_markup=reply_markup)
+            next_reminder = _compute_next_reminder(now_utc_iso(), 0) if severity >= 7 else None
+            mark_alert_notified(
+                conn, alert_id, channel, ok,
+                None if ok else "send_failed", now_utc_iso(),
+                next_reminder_at_utc=next_reminder, increment_reminder=False,
+            )
+            log.info("alert_sent", alert_id=alert_id, severity=severity, ok=ok,
+                     with_buttons=with_buttons and severity >= 6)
 
 def send_alerts_sync(conn, alerts: list[dict], telegram_client, channel: str = "telegram"):
     results = upsert_alerts(conn, alerts)
-    for item in _iter_immediate_to_send(conn, results):
-        alert = item["alert"]
-        severity = int(alert["severity"])
-        ok = telegram_client.send_message_html_sync(alert["body_html"])
-        next_reminder = _compute_next_reminder(now_utc_iso(), 0) if severity >= 7 else None
-        mark_alert_notified(
-            conn,
-            item["alert_id"],
-            channel,
-            ok,
-            None if ok else "send_failed",
-            now_utc_iso(),
-            next_reminder_at_utc=next_reminder,
-            increment_reminder=False,
-        )
-        log.info("alert_sent", alert_id=item["alert_id"], severity=severity, ok=ok)
+    immediate = list(_iter_immediate_to_send(conn, results))
+    grouped = _group_alerts_by_category(immediate)
+
+    for entry in grouped:
+        if entry.get("is_group"):
+            ok = telegram_client.send_message_html_sync(entry["body_html"])
+            for item in entry["items"]:
+                sev = int(item["alert"]["severity"])
+                next_reminder = _compute_next_reminder(now_utc_iso(), 0) if sev >= 7 else None
+                mark_alert_notified(
+                    conn, item["alert_id"], channel, ok,
+                    None if ok else "send_failed", now_utc_iso(),
+                    next_reminder_at_utc=next_reminder, increment_reminder=False,
+                )
+            log.info("alert_group_sent", category=entry["category"],
+                     count=len(entry["items"]), max_severity=entry["max_severity"], ok=ok)
+        else:
+            alert = entry["alert"]
+            severity = int(alert["severity"])
+            ok = telegram_client.send_message_html_sync(alert["body_html"])
+            next_reminder = _compute_next_reminder(now_utc_iso(), 0) if severity >= 7 else None
+            mark_alert_notified(
+                conn, entry["alert_id"], channel, ok,
+                None if ok else "send_failed", now_utc_iso(),
+                next_reminder_at_utc=next_reminder, increment_reminder=False,
+            )
+            log.info("alert_sent", alert_id=entry["alert_id"], severity=severity, ok=ok)
 
 async def send_digest(conn, alerts: list[dict], html: str, telegram_client, severity_hint: int, channel: str = "telegram"):
     min_sev = _min_severity(conn)

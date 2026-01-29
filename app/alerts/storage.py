@@ -321,3 +321,31 @@ def count_notifications_since(conn: sqlite3.Connection, since_utc: str) -> int:
         (since_utc,),
     ).fetchone()
     return int(row[0]) if row else 0
+
+def alert_trend_data(conn: sqlite3.Connection, days: int = 30, category: str | None = None) -> list[dict]:
+    """Get daily alert counts grouped by date and category for trend analysis."""
+    cur = conn.cursor()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    if category:
+        rows = cur.execute(
+            """
+            SELECT as_of_date_local, category, COUNT(*) AS cnt, MAX(severity) AS max_sev
+            FROM alert_messages
+            WHERE created_at_utc >= ? AND category = ?
+            GROUP BY as_of_date_local, category
+            ORDER BY as_of_date_local
+            """,
+            (cutoff, category),
+        ).fetchall()
+    else:
+        rows = cur.execute(
+            """
+            SELECT as_of_date_local, category, COUNT(*) AS cnt, MAX(severity) AS max_sev
+            FROM alert_messages
+            WHERE created_at_utc >= ?
+            GROUP BY as_of_date_local, category
+            ORDER BY as_of_date_local
+            """,
+            (cutoff,),
+        ).fetchall()
+    return [{"date": r[0], "category": r[1], "count": r[2], "max_severity": r[3]} for r in rows]

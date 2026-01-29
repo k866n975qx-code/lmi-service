@@ -7,7 +7,7 @@ import structlog
 from ..config import settings
 from ..db import get_conn
 from ..alerts.storage import migrate_alerts, list_open_alerts, close_stale_alerts
-from ..alerts.evaluator import evaluate_alerts, build_daily_report_html, build_period_report_html
+from ..alerts.evaluator import evaluate_alerts, build_daily_report_html, build_period_report_html, build_morning_brief_html, build_evening_recap_html
 from ..alerts.notifier import send_alerts, send_digest, send_due_reminders
 from ..services.telegram import TelegramClient
 
@@ -37,6 +37,13 @@ def schedule_jobs(sched: AsyncIOScheduler | None = None):
     # Quarterly approx: Jan/Apr/Jul/Oct 1st 07:10
     if getattr(settings, "alerts_quarterly_enabled", 1):
         sched.add_job(run_quarterly, CronTrigger(month="1,4,7,10", day="1", hour=daily_hour, minute=base_minute, timezone=tz), id="alerts_quarterly", replace_existing=True)
+    # Morning brief (Mon-Fri 9:25 AM ET, before market open)
+    et = ZoneInfo("America/New_York")
+    if getattr(settings, "alerts_morning_enabled", 1):
+        sched.add_job(run_morning_brief, CronTrigger(day_of_week="mon-fri", hour=9, minute=25, timezone=et), id="alerts_morning_brief", replace_existing=True)
+    # Evening recap (Mon-Fri 4:15 PM ET, after market close)
+    if getattr(settings, "alerts_evening_enabled", 1):
+        sched.add_job(run_evening_recap, CronTrigger(day_of_week="mon-fri", hour=16, minute=15, timezone=et), id="alerts_evening_recap", replace_existing=True)
     # Reminders every 30 minutes (offset to avoid top-of-hour sync contention)
     sched.add_job(run_reminders, CronTrigger(minute="10,40", timezone=tz), id="alerts_reminders", replace_existing=True)
     # Cleanup stale alerts nightly
@@ -90,6 +97,26 @@ async def run_quarterly():
     open_info = list_open_alerts(conn, min_severity=1, max_severity=4)
     if html:
         await send_digest(conn, open_info, html, tg, severity_hint=3)
+
+async def run_morning_brief():
+    conn = get_conn(settings.db_path)
+    migrate_alerts(conn)
+    if not (getattr(settings, "telegram_bot_token", None) and getattr(settings, "telegram_chat_id", None)):
+        return
+    tg = TelegramClient(settings.telegram_bot_token, settings.telegram_chat_id)
+    as_of, html = build_morning_brief_html(conn)
+    if html:
+        await send_digest(conn, [], html, tg, severity_hint=3)
+
+async def run_evening_recap():
+    conn = get_conn(settings.db_path)
+    migrate_alerts(conn)
+    if not (getattr(settings, "telegram_bot_token", None) and getattr(settings, "telegram_chat_id", None)):
+        return
+    tg = TelegramClient(settings.telegram_bot_token, settings.telegram_chat_id)
+    as_of, html = build_evening_recap_html(conn)
+    if html:
+        await send_digest(conn, [], html, tg, severity_hint=3)
 
 async def run_reminders():
     if not (getattr(settings, "telegram_bot_token", None) and getattr(settings, "telegram_chat_id", None)):
