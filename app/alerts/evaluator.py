@@ -669,7 +669,7 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
                 failure_lines.append(f"Received: {_fmt_money(realized_mtd)} (short {_fmt_money(shortfall)}).")
 
         missing_events = []
-        expected_events = proj_alt.get("expected_events") or []
+        expected_events = proj_vs.get("expected_events") or []
         received_by_symbol = (dividends.get("realized_mtd") or {}).get("by_symbol") or {}
         eligible_symbols = None
         if MISSING_DIVIDEND_MIN_PAYMENTS > 0 and expected_events:
