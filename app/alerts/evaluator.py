@@ -651,7 +651,8 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
 
     # 4) Income failure late-month
     proj_vs = (dividends.get("projected_vs_received") or {})
-    event_projected_monthly = proj_vs.get("projected")
+    proj_alt = proj_vs.get("alt") or {}
+    event_projected_monthly = proj_alt.get("projected")
     if _should_check_income_failure(as_of_dt):
         day, days_in_month = _month_day_info(as_of_dt)
         realized_mtd = _realized_mtd_total(dividends)
@@ -668,7 +669,7 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
                 failure_lines.append(f"Received: {_fmt_money(realized_mtd)} (short {_fmt_money(shortfall)}).")
 
         missing_events = []
-        expected_events = proj_vs.get("expected_events") or []
+        expected_events = proj_alt.get("expected_events") or []
         received_by_symbol = (dividends.get("realized_mtd") or {}).get("by_symbol") or {}
         eligible_symbols = None
         if MISSING_DIVIDEND_MIN_PAYMENTS > 0 and expected_events:
@@ -1148,12 +1149,14 @@ def build_daily_report_html(conn: sqlite3.Connection):
     if "income_update" in enabled:
         mtd_realized = _realized_mtd_total(dividends)
         proj_vs = (dividends.get("projected_vs_received") or {})
-        event_projected = proj_vs.get("projected")
+        proj_alt = proj_vs.get("alt") or {}
+        event_projected = proj_alt.get("projected")
         parts.append("")
         parts.append("<b>💰 INCOME UPDATE</b>")
         parts.append(f"• MTD: {_fmt_money(mtd_realized)} / {_fmt_money(event_projected)} projected")
-        if isinstance(proj_vs.get("pct_of_projection"), (int, float)):
-            parts.append(f"• MTD % of projection: {proj_vs.get('pct_of_projection'):.1f}%")
+        if isinstance(event_projected, (int, float)) and event_projected > 0 and isinstance(mtd_realized, (int, float)):
+            pct = mtd_realized / event_projected * 100
+            parts.append(f"• MTD % of projection: {pct:.1f}%")
         parts.append(f"• Last 30d: {_fmt_money((dividends.get('windows') or {}).get('30d', {}).get('total_dividends'))}")
 
     if "next_7_days" in enabled:
@@ -1485,7 +1488,7 @@ def build_evening_recap_html(conn: sqlite3.Connection):
 
     # Income MTD
     mtd_realized = _realized_mtd_total(dividends)
-    event_projected = (dividends.get("projected_vs_received") or {}).get("projected")
+    event_projected = ((dividends.get("projected_vs_received") or {}).get("alt") or {}).get("projected")
     parts.append("")
     parts.append("<b>Income MTD</b>")
     parts.append(f"• {_fmt_money(mtd_realized)} / {_fmt_money(event_projected)} projected")
