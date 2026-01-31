@@ -570,6 +570,22 @@ def _dividend_reliability_metrics(
     window_months = max(1, _months_between(window_start, as_of_date)) if window_start else 12
 
     totals_12 = _monthly_income_totals(div_tx, as_of_date, window_months, symbol=symbol)
+
+    # If no actual received dividends, fall back to provider ex-date amounts
+    # over the full 12-month window for trend/growth/volatility.
+    if not any(t > 0 for t in totals_12):
+        provider_events = provider_divs.get(symbol, [])
+        if provider_events:
+            prov_by_month: dict[tuple[int, int], float] = defaultdict(float)
+            for ev in provider_events:
+                ex = ev.get("ex_date")
+                amt = ev.get("amount")
+                if ex and isinstance(amt, (int, float)) and cutoff <= ex <= as_of_date:
+                    prov_by_month[(ex.year, ex.month)] += float(amt)
+            if prov_by_month:
+                months = _month_keys(as_of_date, 12)
+                totals_12 = [prov_by_month.get(key, 0.0) for key in months]
+
     totals_6 = totals_12[-6:] if len(totals_12) >= 6 else totals_12
 
     mean_12 = statistics.mean(totals_12) if totals_12 else 0.0

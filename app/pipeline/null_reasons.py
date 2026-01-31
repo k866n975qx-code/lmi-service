@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import statistics
+from collections import defaultdict
 from datetime import date, timedelta
 from typing import Any
 
@@ -12,6 +13,7 @@ from .snapshots import (
     _load_dividend_transactions,
     _load_first_acquired_dates,
     _load_provider_dividends,
+    _month_keys,
     _months_between,
     _monthly_income_totals,
 )
@@ -332,6 +334,18 @@ def _dividend_reliability_reasons(
         hist_count = len(hist_dates)
 
         totals_12 = _monthly_income_totals(div_tx, as_of_date, window_months, symbol=sym)
+
+        # Fall back to provider ex-date amounts when no actual received dividends
+        if not any(t > 0 for t in totals_12) and provider_events:
+            prov_by_month: dict[tuple[int, int], float] = defaultdict(float)
+            for ev in provider_events:
+                ex = ev.get("ex_date")
+                amt = ev.get("amount")
+                if ex and isinstance(amt, (int, float)) and cutoff <= ex <= as_of_date:
+                    prov_by_month[(ex.year, ex.month)] += float(amt)
+            if prov_by_month:
+                totals_12 = [prov_by_month.get(key, 0.0) for key in _month_keys(as_of_date, 12)]
+
         totals_6 = totals_12[-6:] if len(totals_12) >= 6 else totals_12
         start_6 = totals_6[0] if totals_6 else 0.0
         end_6 = totals_6[-1] if totals_6 else 0.0
