@@ -595,11 +595,13 @@ def _dividend_reliability_metrics(
     pay_dates.sort()
 
     provider_events = provider_divs.get(symbol, [])
+    # Use full 365-day cutoff for provider ex-dates — the stock's dividend
+    # schedule is independent of when the position was acquired.
     ex_dates = sorted(
         {
             ev.get("ex_date")
             for ev in provider_events
-            if ev.get("ex_date") and window_start <= ev.get("ex_date") <= as_of_date
+            if ev.get("ex_date") and cutoff <= ev.get("ex_date") <= as_of_date
         }
     )
 
@@ -619,7 +621,7 @@ def _dividend_reliability_metrics(
         {
             ev.get("ex_date")
             for ev in provider_events
-            if ev.get("ex_date") and window_start <= ev.get("ex_date") <= due_cutoff
+            if ev.get("ex_date") and cutoff <= ev.get("ex_date") <= due_cutoff
         }
     )
 
@@ -652,7 +654,7 @@ def _dividend_reliability_metrics(
     for ev in provider_divs.get(symbol, []):
         ex_date = ev.get("ex_date")
         amt = ev.get("amount")
-        if ex_date and isinstance(amt, (int, float)) and window_start <= ex_date <= cut_window_end:
+        if ex_date and isinstance(amt, (int, float)) and cutoff <= ex_date <= cut_window_end:
             events.append((ex_date, float(amt)))
     events.sort(key=lambda item: item[0])
     if not events and pay_events:
@@ -2571,9 +2573,9 @@ def _build_goal_pace(
             }
         }
 
-    # Calculate overall current pace (using YTD as primary indicator)
-    ytd_pace = windows.get("ytd", {}).get("pace", {})
-    months_ahead_behind = ytd_pace.get("months_ahead_behind", 0.0)
+    # Calculate overall current pace (using since_inception as primary indicator)
+    inception_pace = windows.get("since_inception", {}).get("pace", {})
+    months_ahead_behind = inception_pace.get("months_ahead_behind", 0.0)
 
     # Revise goal date based on current pace
     original_months = likely_tier.get("months_to_goal")
@@ -2594,10 +2596,10 @@ def _build_goal_pace(
     else:
         pace_category = "off_track"
 
-    # Factor breakdown (from YTD window)
-    ytd_window = windows.get("ytd", {})
-    ytd_mv_delta = ytd_window.get("delta", {}).get("portfolio_value", 0.0)
-    ytd_income_delta = ytd_window.get("delta", {}).get("monthly_income", 0.0)
+    # Factor breakdown (from since_inception window)
+    inception_window = windows.get("since_inception", {})
+    inception_mv_delta = inception_window.get("delta", {}).get("portfolio_value", 0.0)
+    inception_income_delta = inception_window.get("delta", {}).get("monthly_income", 0.0)
 
     return {
         "likely_tier": likely_tier_info,
@@ -2619,9 +2621,9 @@ def _build_goal_pace(
             "pace_category": pace_category
         },
         "factors": {
-            "market_value_impact": _round_money(ytd_mv_delta),
-            "income_growth_impact": _round_money(ytd_income_delta * 12),  # Annualized
-            "description": "Factors based on YTD performance vs expected tier trajectory"
+            "market_value_impact": _round_money(inception_mv_delta),
+            "income_growth_impact": _round_money(inception_income_delta * 12),  # Annualized
+            "description": "Factors based on since-inception performance vs expected tier trajectory"
         },
         "provenance": _provenance_entry(
             "derived",

@@ -319,11 +319,13 @@ def _dividend_reliability_reasons(
         pay_dates = sorted({ev.get("date") for ev in pay_events if ev.get("date")})
 
         provider_events = provider_divs.get(sym, [])
+        # Use full 365-day cutoff for provider ex-dates — the stock's dividend
+        # schedule is independent of when the position was acquired.
         ex_dates = sorted(
             {
                 ev.get("ex_date")
                 for ev in provider_events
-                if ev.get("ex_date") and window_start <= ev.get("ex_date") <= as_of_date
+                if ev.get("ex_date") and cutoff <= ev.get("ex_date") <= as_of_date
             }
         )
         hist_dates = ex_dates or pay_dates
@@ -361,7 +363,7 @@ def _dividend_reliability_reasons(
         for ev in provider_divs.get(sym, []):
             ex_date = ev.get("ex_date")
             amt = ev.get("amount")
-            if ex_date and isinstance(amt, (int, float)) and ex_date >= window_start:
+            if ex_date and isinstance(amt, (int, float)) and ex_date >= cutoff:
                 events.append((ex_date, float(amt)))
         events.sort(key=lambda item: item[0])
         if not events and pay_events:
