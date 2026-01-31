@@ -651,8 +651,7 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
 
     # 4) Income failure late-month
     proj_vs = (dividends.get("projected_vs_received") or {})
-    proj_alt = proj_vs.get("alt") or {}
-    event_projected_monthly = proj_alt.get("projected")
+    event_projected_monthly = proj_vs.get("projected")
     if _should_check_income_failure(as_of_dt):
         day, days_in_month = _month_day_info(as_of_dt)
         realized_mtd = _realized_mtd_total(dividends)
@@ -1149,8 +1148,7 @@ def build_daily_report_html(conn: sqlite3.Connection):
     if "income_update" in enabled:
         mtd_realized = _realized_mtd_total(dividends)
         proj_vs = (dividends.get("projected_vs_received") or {})
-        proj_alt = proj_vs.get("alt") or {}
-        event_projected = proj_alt.get("projected")
+        event_projected = proj_vs.get("projected")
         parts.append("")
         parts.append("<b>💰 INCOME UPDATE</b>")
         parts.append(f"• MTD: {_fmt_money(mtd_realized)} / {_fmt_money(event_projected)} projected")
@@ -1488,7 +1486,7 @@ def build_evening_recap_html(conn: sqlite3.Connection):
 
     # Income MTD
     mtd_realized = _realized_mtd_total(dividends)
-    event_projected = ((dividends.get("projected_vs_received") or {}).get("alt") or {}).get("projected")
+    event_projected = (dividends.get("projected_vs_received") or {}).get("projected")
     parts.append("")
     parts.append("<b>Income MTD</b>")
     parts.append(f"• {_fmt_money(mtd_realized)} / {_fmt_money(event_projected)} projected")

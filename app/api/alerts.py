@@ -231,10 +231,9 @@ def _income_text(snap: dict) -> str:
 def _mtd_text(snap: dict) -> str:
     divs = snap.get("dividends") or {}
     proj_vs = divs.get("projected_vs_received") or {}
-    proj_alt = proj_vs.get("alt") or {}
-    projected = proj_alt.get("projected")
+    projected = proj_vs.get("projected")
     received = proj_vs.get("received")
-    pct = (received / projected * 100) if isinstance(projected, (int, float)) and projected > 0 and isinstance(received, (int, float)) else None
+    pct = proj_vs.get("pct_of_projection")
     return (
         "<b>Month-to-Date Income</b>\n"
         f"Received: {_fmt_money(received)}\n"
