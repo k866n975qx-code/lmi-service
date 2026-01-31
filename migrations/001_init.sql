@@ -173,4 +173,49 @@ CREATE TABLE IF NOT EXISTS locks(
   expires_at_utc TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS alert_messages (
+  id TEXT PRIMARY KEY,
+  fingerprint TEXT NOT NULL,
+  category TEXT NOT NULL,
+  severity INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  body_html TEXT NOT NULL,
+  details_json TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  period_type TEXT,
+  as_of_date_local TEXT NOT NULL,
+  created_at_utc TEXT NOT NULL,
+  updated_at_utc TEXT NOT NULL,
+  first_triggered_at_utc TEXT NOT NULL,
+  last_triggered_at_utc TEXT NOT NULL,
+  last_notified_at_utc TEXT,
+  notification_count INTEGER NOT NULL DEFAULT 0,
+  reminder_count INTEGER NOT NULL DEFAULT 0,
+  next_reminder_at_utc TEXT,
+  sent_at_utc TEXT,
+  acked_at_utc TEXT,
+  acked_by TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_alerts_status_date ON alert_messages(status, as_of_date_local);
+CREATE INDEX IF NOT EXISTS ix_alerts_fp ON alert_messages(fingerprint);
+CREATE INDEX IF NOT EXISTS ix_alerts_next_reminder ON alert_messages(next_reminder_at_utc);
+
+CREATE TABLE IF NOT EXISTS alert_notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  alert_id TEXT,
+  channel TEXT NOT NULL,
+  sent_at_utc TEXT NOT NULL,
+  success INTEGER NOT NULL,
+  error TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_alert_notifications_time ON alert_notifications(sent_at_utc);
+
+CREATE TABLE IF NOT EXISTS alert_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_daily_as_of ON snapshot_daily_current(as_of_date_local DESC);
+CREATE INDEX IF NOT EXISTS idx_snapshots_period_end ON snapshots(period_type, period_end_date DESC);
+
 COMMIT;

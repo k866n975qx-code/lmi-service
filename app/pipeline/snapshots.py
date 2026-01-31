@@ -3175,24 +3175,6 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
     received_mtd = realized_mtd["total_dividends"]
     pay_window_start = _month_start(as_of_date_local)
     pay_window_end = _month_end(as_of_date_local)
-    projected_vs_received = {
-        "pct_of_projection": _round_pct(_safe_divide(received_mtd, projected_monthly_income) * 100 if projected_monthly_income else None),
-        "projected": _round_money(projected_monthly_income),
-        "received": _round_money(received_mtd),
-        "difference": _round_money(projected_monthly_income - received_mtd),
-        "window": {
-            "start": _month_start(as_of_date_local).isoformat(),
-            "end": as_of_date_local.isoformat(),
-            "label": "month_to_date",
-        },
-        "alt": {
-            "projected": 0.0,
-            "mode": "paydate",
-            "window": {"start": pay_window_start.isoformat(), "end": pay_window_end.isoformat()},
-            "expected_events": [],
-        },
-    }
-
     ex_date_est_by_symbol = {}
     for holding in holdings_out:
         sym = holding.get("symbol")
@@ -3214,8 +3196,25 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         position_index,
         pay_lag_by_symbol,
     )
-    projected_vs_received["alt"]["projected"] = projected_alt or 0.0
-    projected_vs_received["alt"]["expected_events"] = expected_events
+    event_projected = projected_alt or 0.0
+
+    projected_vs_received = {
+        "pct_of_projection": _round_pct(_safe_divide(received_mtd, event_projected) * 100 if event_projected else None),
+        "projected": _round_money(event_projected),
+        "received": _round_money(received_mtd),
+        "difference": _round_money(event_projected - received_mtd),
+        "expected_events": expected_events,
+        "window": {
+            "start": pay_window_start.isoformat(),
+            "end": pay_window_end.isoformat(),
+            "label": "current_month",
+            "mode": "event_based",
+        },
+        "alt": {
+            "projected": _round_money(projected_monthly_income),
+            "mode": "yield_based",
+        },
+    }
 
     dividends = {
         "projected_vs_received": projected_vs_received,
