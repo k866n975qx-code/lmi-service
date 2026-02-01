@@ -110,7 +110,7 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
         )
 
         started = _step_start("dividend_schedule")
-        matched = estimate_dividend_schedule(conn, run_id, window_days=14, ex_window_days=21)
+        matched = estimate_dividend_schedule(conn, run_id, window_days=14, ex_window_days=35)
         _step_done("dividend_schedule", started, matched=matched)
 
         # 2) Reconstruct holdings purely from LM first

@@ -366,7 +366,7 @@ def estimate_dividend_schedule(
     conn: sqlite3.Connection,
     run_id: str,
     window_days: int = 14,
-    ex_window_days: int = 21,
+    ex_window_days: int = 35,
 ):
     cur = conn.cursor()
     lm_rows = cur.execute(
