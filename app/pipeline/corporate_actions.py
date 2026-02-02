@@ -152,7 +152,7 @@ def _merge_dividend_events(all_events: list[tuple[str, list[dict]]]) -> list[dic
     by_key: dict[tuple[str, float], list[tuple[str, dict]]] = {}
     for source_name, events in all_events:
         for ev in events:
-            key = (ev["ex_date"], round(ev["amount"], 4))
+            key = (ev["ex_date"], round(ev["amount"], 1))
             by_key.setdefault(key, []).append((source_name, ev))
 
     merged = []

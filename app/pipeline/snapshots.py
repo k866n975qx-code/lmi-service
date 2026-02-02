@@ -891,8 +891,13 @@ def _load_provider_dividends(conn: sqlite3.Connection):
             END
         """
     ).fetchall()
-    out = defaultdict(list)
-    seen = set()
+    # Group by (symbol, ex_date).  When multiple providers report the same
+    # dividend with slightly different amounts (e.g. 0.6359 vs 0.6360),
+    # average the amounts and keep the best pay_date (ORDER BY already
+    # places records with a pay_date first).
+    # If an amount is far from the group average (>10%), it's likely a
+    # special dividend and kept as a separate record.
+    grouped: dict[tuple[str, str], list[dict]] = {}
     for symbol, ex_date, pay_date, amount, _source in rows:
         sym = str(symbol).upper() if symbol else None
         dt = _parse_date(ex_date)
@@ -903,11 +908,32 @@ def _load_provider_dividends(conn: sqlite3.Connection):
             amt = None
         if not sym or dt is None or amt is None:
             continue
-        key = (sym, dt.isoformat(), amt)
-        if key in seen:
-            continue
-        seen.add(key)
-        out[sym].append({"ex_date": dt, "pay_date": pay_dt, "amount": amt})
+        key = (sym, dt.isoformat())
+        if key not in grouped:
+            grouped[key] = [{"ex_date": dt, "pay_date": pay_dt, "amt_sum": amt, "count": 1}]
+        else:
+            # Find a bucket whose average is close to this amount
+            matched = False
+            for bucket in grouped[key]:
+                avg = bucket["amt_sum"] / bucket["count"]
+                if avg > 0 and abs(amt - avg) / avg <= 0.10:
+                    bucket["amt_sum"] += amt
+                    bucket["count"] += 1
+                    if pay_dt and not bucket["pay_date"]:
+                        bucket["pay_date"] = pay_dt
+                    matched = True
+                    break
+            if not matched:
+                grouped[key].append({"ex_date": dt, "pay_date": pay_dt, "amt_sum": amt, "count": 1})
+
+    out = defaultdict(list)
+    for (sym, _dt_str), buckets in grouped.items():
+        for rec in buckets:
+            out[sym].append({
+                "ex_date": rec["ex_date"],
+                "pay_date": rec["pay_date"],
+                "amount": rec["amt_sum"] / rec["count"],
+            })
     for sym in out:
         out[sym].sort(key=lambda item: item["ex_date"])
     return out
