@@ -143,6 +143,36 @@ def _normalize_dividends(symbol: str, df: pd.DataFrame):
     return out
 
 
+_SOURCE_RANK = {"nasdaq": 4, "yfinance": 3, "yahooquery": 2, "openbb": 1}
+
+
+def _merge_dividend_events(all_events: list[tuple[str, list[dict]]]) -> list[dict]:
+    """Merge dividend events from multiple providers, keeping the most complete record
+    per (ex_date, amount) pair.  Records with a pay_date are strongly preferred."""
+    by_key: dict[tuple[str, float], list[tuple[str, dict]]] = {}
+    for source_name, events in all_events:
+        for ev in events:
+            key = (ev["ex_date"], round(ev["amount"], 4))
+            by_key.setdefault(key, []).append((source_name, ev))
+
+    merged = []
+    for _key, candidates in by_key.items():
+        best_source, best_ev = max(
+            candidates,
+            key=lambda item: (
+                10 if item[1].get("pay_date") else 0,
+                1 if item[1].get("currency") else 0,
+                1 if item[1].get("frequency") else 0,
+                _SOURCE_RANK.get(item[0], 0) * 0.1,
+            ),
+        )
+        record = dict(best_ev)
+        record.setdefault("_source", best_source)
+        merged.append(record)
+    merged.sort(key=lambda ev: ev.get("ex_date", ""))
+    return merged
+
+
 def _normalize_splits(symbol: str, df: pd.DataFrame):
     if df is None or df.empty:
         return []
@@ -309,14 +339,16 @@ def load_provider_actions(conn: sqlite3.Connection, run_id: str, symbols: Iterab
     for sym in symbols:
         if deadline is not None and time.monotonic() >= deadline:
             raise TimeoutError("time_budget_exceeded")
-        # Dividends
+
+        # Dividends -- query ALL providers, merge best data
+        all_div_results: list[tuple[str, list[dict]]] = []
         for name, provider in providers:
-            def _fetch():
+            def _fetch(_name=name, _provider=provider):
                 if deadline is not None and time.monotonic() >= deadline:
                     raise TimeoutError("time_budget_exceeded")
                 rate_limiter.wait(deadline)
                 def _call():
-                    obj = _fetch_events(provider, "dividends", sym)
+                    obj = _fetch_events(_provider, "dividends", sym)
                     df = _coerce_df(obj)
                     return _normalize_dividends(sym, df)
                 return retry_call(
@@ -325,19 +357,27 @@ def load_provider_actions(conn: sqlite3.Connection, run_id: str, symbols: Iterab
                     base_delay=settings.http_retry_backoff_seconds,
                     deadline=deadline,
                 )
-            events, _cache_hit = _fetch_with_cache(cache, name, "dividends", sym, _fetch)
+            try:
+                events, _cache_hit = _fetch_with_cache(cache, name, "dividends", sym, _fetch)
+            except Exception:
+                events = None
             if events:
-                div_count += _insert_provider_dividends(conn, run_id, name, events)
-                break
+                all_div_results.append((name, events))
 
-        # Splits
+        if all_div_results:
+            for source_name, events in all_div_results:
+                _insert_provider_dividends(conn, run_id, source_name, events)
+            merged = _merge_dividend_events(all_div_results)
+            div_count += len(merged)
+
+        # Splits -- keep first-success (splits are consistent across providers)
         for name, provider in providers:
-            def _fetch():
+            def _fetch(_name=name, _provider=provider):
                 if deadline is not None and time.monotonic() >= deadline:
                     raise TimeoutError("time_budget_exceeded")
                 rate_limiter.wait(deadline)
                 def _call():
-                    obj = _fetch_events(provider, "splits", sym)
+                    obj = _fetch_events(_provider, "splits", sym)
                     df = _coerce_df(obj)
                     return _normalize_splits(sym, df)
                 return retry_call(
@@ -352,6 +392,75 @@ def load_provider_actions(conn: sqlite3.Connection, run_id: str, symbols: Iterab
                 break
 
     return {"dividends": div_count, "splits": split_count}
+
+
+def reconcile_estimates_with_provider(conn: sqlite3.Connection):
+    """Overwrite estimated dates in dividend_events_lm with actual provider data
+    when a matching provider record has a real pay_date."""
+    cur = conn.cursor()
+    lm_rows = cur.execute(
+        """
+        SELECT symbol, ex_date, amount, ex_date_est, pay_date_est
+        FROM dividend_events_lm
+        WHERE source='lunchmoney'
+        """
+    ).fetchall()
+    if not lm_rows:
+        return 0
+
+    prov_rows = cur.execute(
+        """
+        SELECT symbol, ex_date, pay_date, amount, source
+        FROM dividend_events_provider
+        WHERE pay_date IS NOT NULL AND pay_date != ''
+        """
+    ).fetchall()
+    prov_by_sym: dict[str, list[dict]] = {}
+    for symbol, ex_date, pay_date, amount, source in prov_rows:
+        sym = str(symbol).upper()
+        ex_dt = _parse_date(ex_date)
+        pay_dt = _parse_date(pay_date)
+        if ex_dt is None or pay_dt is None:
+            continue
+        prov_by_sym.setdefault(sym, []).append({
+            "ex_date": ex_dt, "pay_date": pay_dt,
+            "amount": float(amount) if amount else None, "source": source,
+        })
+
+    updated = 0
+    for symbol, lm_ex_str, lm_amount, ex_est_str, pay_est_str in lm_rows:
+        sym = str(symbol).upper()
+        lm_ex = _parse_date(lm_ex_str)
+        ex_est = _parse_date(ex_est_str)
+        candidates = prov_by_sym.get(sym, [])
+        if not candidates or lm_ex is None:
+            continue
+
+        ref_ex = ex_est or lm_ex
+        best = None
+        best_delta = 999
+        for cand in candidates:
+            delta = abs((cand["ex_date"] - ref_ex).days)
+            if delta <= 7 and delta < best_delta:
+                best = cand
+                best_delta = delta
+
+        if best and best.get("pay_date"):
+            new_ex_est = best["ex_date"].isoformat()
+            new_pay_est = best["pay_date"].isoformat()
+            if new_ex_est != ex_est_str or new_pay_est != pay_est_str:
+                cur.execute(
+                    """
+                    UPDATE dividend_events_lm
+                    SET ex_date_est=?, pay_date_est=?, match_source=?, match_method='provider_actual'
+                    WHERE symbol=? AND ex_date=? AND amount=? AND source='lunchmoney'
+                    """,
+                    (new_ex_est, new_pay_est, best["source"], sym, lm_ex_str, lm_amount),
+                )
+                updated += cur.rowcount
+
+    conn.commit()
+    return updated
 
 
 def symbols_for_actions(conn: sqlite3.Connection):
