@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import structlog
+from ..pipeline import snap_compat as sc
 
 log = structlog.get_logger()
 
@@ -83,16 +84,16 @@ def _safe_get(d: dict, *keys, default=0):
 
 def _extract_context(snap: dict) -> dict:
     """Extract key metrics from snapshot for the AI prompt."""
-    totals = snap.get("totals") or {}
-    income = snap.get("income") or {}
-    goal_tiers = snap.get("goal_tiers") or {}
+    totals = sc.get_totals(snap)
+    income = sc.get_income(snap)
+    goal_tiers = sc.get_goal_tiers(snap)
     goal_cs = goal_tiers.get("current_state") or {}
-    pace = snap.get("goal_pace") or {}
-    rollups = snap.get("portfolio_rollups") or {}
+    pace = sc.get_goal_pace(snap)
+    rollups = sc.get_rollups(snap)
     risk = rollups.get("risk") or {}
     macro_data = snap.get("macro") or {}
     macro_snap = macro_data.get("snapshot") or {}
-    stress = snap.get("margin_stress") or {}
+    stress = sc.get_margin_stress(snap)
     stress_scenarios = stress.get("stress_scenarios") or {}
 
     current_pace = pace.get("current_pace") or {}
@@ -103,7 +104,7 @@ def _extract_context(snap: dict) -> dict:
     months_to_goal = likely_tier_data.get("months_to_goal")
 
     # Top holdings by weight
-    holdings = snap.get("holdings") or []
+    holdings = sc.get_holdings_flat(snap)
     sorted_h = sorted(holdings, key=lambda h: h.get("weight_pct", 0), reverse=True)
     top_lines = []
     for h in sorted_h[:10]:
@@ -114,7 +115,7 @@ def _extract_context(snap: dict) -> dict:
         top_lines.append(f"  {sym}: {w:.1f}% weight, {yld:.1f}% yield, ${mo_div:.2f}/mo")
 
     return {
-        "as_of": snap.get("as_of_date_local", "unknown"),
+        "as_of": sc.get_as_of(snap) or "unknown",
         "nlv": _safe_get(totals, "net_liquidation_value"),
         "market_value": _safe_get(totals, "market_value"),
         "cost_basis": _safe_get(totals, "cost_basis"),

@@ -5,6 +5,7 @@ import json
 import sqlite3
 from datetime import date
 
+from . import snap_compat as sc
 from .diff_daily import build_daily_diff
 from .periods import _period_bounds
 from ..config import settings
@@ -116,7 +117,7 @@ def _period_to_daily_like(period_snap: dict):
         "margin_to_portfolio_pct": margin_end.get("margin_to_portfolio_pct") or margin_end.get("ltv_pct"),
     }
 
-    rollups_daily = (interval_daily or {}).get("portfolio_rollups") or {}
+    rollups_daily = sc.get_rollups(interval_daily) if interval_daily else {}
     portfolio_rollups = {
         "performance": {
             "twr_1m_pct": twr_windows.get("twr_1m_pct_end"),

@@ -4,6 +4,8 @@ import json
 import sqlite3
 from datetime import date
 
+from . import snap_compat as sc
+
 HOLDINGS_CHANGE_MIN_WEIGHT_PCT = 0.10
 HOLDINGS_CHANGE_MIN_MARKET_VALUE = 25.0
 _DIFF_TOL_MONEY = 0.05
@@ -112,7 +114,7 @@ def _numeric_tree(left, right, precision=3):
 
 
 def _holdings_map(snapshot: dict):
-    holdings = snapshot.get("holdings") or []
+    holdings = sc.get_holdings_flat(snapshot)
     out = {}
     for holding in holdings:
         sym = holding.get("symbol")
@@ -127,7 +129,7 @@ def _holding_field_value(holding: dict, field: str):
         return None
     val = holding.get(field)
     if val is None and field in _HOLDING_ULTIMATE_FIELDS:
-        val = (holding.get("ultimate") or {}).get(field)
+        val = sc.get_holding_ultimate(holding).get(field)
     return val
 
 
@@ -236,8 +238,8 @@ def _holdings_diff(left: dict, right: dict, min_weight_delta: float | None = Non
 
 
 def _summary_block(left: dict, right: dict, holdings_diff: dict, days_apart: int | None = None, period_type: str | None = None, range_metrics: dict | None = None):
-    left_totals = left.get("totals", {}) if left else {}
-    right_totals = right.get("totals", {}) if right else {}
+    left_totals = sc.get_totals(left) if left else {}
+    right_totals = sc.get_totals(right) if right else {}
     mv_left = left_totals.get("market_value")
     mv_right = right_totals.get("market_value")
     mv_delta = _delta(mv_left, mv_right, 2)
@@ -247,8 +249,8 @@ def _summary_block(left: dict, right: dict, holdings_diff: dict, days_apart: int
     unreal_right = right_totals.get("unrealized_pnl")
     unreal_delta = _delta(unreal_left, unreal_right, 2)
 
-    income_left = (left.get("income") or {}).get("forward_12m_total")
-    income_right = (right.get("income") or {}).get("forward_12m_total")
+    income_left = sc.get_income(left).get("forward_12m_total")
+    income_right = sc.get_income(right).get("forward_12m_total")
     income_delta = _delta(income_left, income_right, 2)
 
     if mv_delta is None or unreal_delta is None:
@@ -305,7 +307,7 @@ def _summary_block(left: dict, right: dict, holdings_diff: dict, days_apart: int
     if income_delta is not None:
         highlights.append(f"Forward 12m income {_format_money(income_delta)}")
     if period_type in (None, "daily"):
-        twr_1m = (right.get("portfolio_rollups") or {}).get("performance", {}).get("twr_1m_pct")
+        twr_1m = sc.get_rollups(right).get("performance", {}).get("twr_1m_pct")
         if _is_number(twr_1m):
             highlights.append(f"1M TWR {_format_pct(twr_1m)}")
     added = len(holdings_diff.get("added") or [])
@@ -316,8 +318,9 @@ def _summary_block(left: dict, right: dict, holdings_diff: dict, days_apart: int
         highlights.append(f"Holdings added {added}, removed {removed}")
 
     if period_type and period_type != "daily":
-        perf = (right.get("portfolio_rollups") or {}).get("performance", {})
-        risk = (right.get("portfolio_rollups") or {}).get("risk", {})
+        right_rollups = sc.get_rollups(right)
+        perf = right_rollups.get("performance", {})
+        risk = right_rollups.get("risk", {})
         if period_type == "weekly":
             per_day = (range_metrics or {}).get("per_day_return_pct")
             if _is_number(per_day):
@@ -383,23 +386,23 @@ def build_daily_diff(
 ):
     """Builds a diff payload. For period diffs, pass period_type plus period bounds and dividend totals."""
     totals = _section_diff(
-        left.get("totals", {}),
-        right.get("totals", {}),
+        sc.get_totals(left),
+        sc.get_totals(right),
         ["market_value", "net_liquidation_value", "cost_basis", "unrealized_pnl", "unrealized_pct", "margin_loan_balance", "margin_to_portfolio_pct"],
     )
     income = _section_diff(
-        left.get("income", {}),
-        right.get("income", {}),
+        sc.get_income(left),
+        sc.get_income(right),
         ["projected_monthly_income", "forward_12m_total", "portfolio_current_yield_pct", "portfolio_yield_on_cost_pct"],
     )
     rollup_perf = _section_diff(
-        left.get("portfolio_rollups", {}).get("performance", {}),
-        right.get("portfolio_rollups", {}).get("performance", {}),
+        sc.get_perf(left),
+        sc.get_perf(right),
         ["twr_1m_pct", "twr_3m_pct", "twr_6m_pct", "twr_12m_pct"],
     )
     rollup_risk = _section_diff(
-        left.get("portfolio_rollups", {}).get("risk", {}),
-        right.get("portfolio_rollups", {}).get("risk", {}),
+        sc.get_risk_flat(left),
+        sc.get_risk_flat(right),
         [
             "vol_30d_pct",
             "vol_90d_pct",
@@ -431,79 +434,83 @@ def build_daily_diff(
         ],
     )
 
+    left_rollups = sc.get_rollups(left)
+    right_rollups = sc.get_rollups(right)
     rollup_income_stability = _numeric_tree(
-        left.get("portfolio_rollups", {}).get("income_stability", {}),
-        right.get("portfolio_rollups", {}).get("income_stability", {}),
+        left_rollups.get("income_stability", {}),
+        right_rollups.get("income_stability", {}),
     )
     rollup_income_growth = _numeric_tree(
-        left.get("portfolio_rollups", {}).get("income_growth", {}),
-        right.get("portfolio_rollups", {}).get("income_growth", {}),
+        left_rollups.get("income_growth", {}),
+        right_rollups.get("income_growth", {}),
     )
     rollup_tail_risk = _numeric_tree(
-        left.get("portfolio_rollups", {}).get("tail_risk", {}),
-        right.get("portfolio_rollups", {}).get("tail_risk", {}),
+        left_rollups.get("tail_risk", {}),
+        right_rollups.get("tail_risk", {}),
     )
     rollup_vs_benchmark = _numeric_tree(
-        left.get("portfolio_rollups", {}).get("vs_benchmark", {}),
-        right.get("portfolio_rollups", {}).get("vs_benchmark", {}),
+        left_rollups.get("vs_benchmark", {}),
+        right_rollups.get("vs_benchmark", {}),
     )
     rollup_return_attribution_1m = _numeric_tree(
-        left.get("portfolio_rollups", {}).get("return_attribution_1m", {}),
-        right.get("portfolio_rollups", {}).get("return_attribution_1m", {}),
+        left_rollups.get("return_attribution_1m", {}),
+        right_rollups.get("return_attribution_1m", {}),
     )
     rollup_return_attribution_3m = _numeric_tree(
-        left.get("portfolio_rollups", {}).get("return_attribution_3m", {}),
-        right.get("portfolio_rollups", {}).get("return_attribution_3m", {}),
+        left_rollups.get("return_attribution_3m", {}),
+        right_rollups.get("return_attribution_3m", {}),
     )
     rollup_return_attribution_6m = _numeric_tree(
-        left.get("portfolio_rollups", {}).get("return_attribution_6m", {}),
-        right.get("portfolio_rollups", {}).get("return_attribution_6m", {}),
+        left_rollups.get("return_attribution_6m", {}),
+        right_rollups.get("return_attribution_6m", {}),
     )
     rollup_return_attribution_12m = _numeric_tree(
-        left.get("portfolio_rollups", {}).get("return_attribution_12m", {}),
-        right.get("portfolio_rollups", {}).get("return_attribution_12m", {}),
+        left_rollups.get("return_attribution_12m", {}),
+        right_rollups.get("return_attribution_12m", {}),
     )
 
     goal_progress = _section_diff(
-        left.get("goal_progress", {}) or {},
-        right.get("goal_progress", {}) or {},
+        sc.get_goal_progress(left),
+        sc.get_goal_progress(right),
         ["progress_pct", "current_projected_monthly", "months_to_goal"],
     )
     goal_progress_net = _section_diff(
-        left.get("goal_progress_net", {}) or {},
-        right.get("goal_progress_net", {}) or {},
+        sc.get_goal_progress_net(left),
+        sc.get_goal_progress_net(right),
         ["progress_pct", "current_projected_monthly_net"],
     )
 
+    left_totals = sc.get_totals(left)
+    right_totals = sc.get_totals(right)
     margin_left = {
-        "margin_loan_balance": (left.get("totals") or {}).get("margin_loan_balance"),
-        "margin_to_portfolio_pct": (left.get("totals") or {}).get("margin_to_portfolio_pct"),
-        "ltv_pct": (left.get("totals") or {}).get("margin_to_portfolio_pct"),
+        "margin_loan_balance": left_totals.get("margin_loan_balance"),
+        "margin_to_portfolio_pct": left_totals.get("margin_to_portfolio_pct"),
+        "ltv_pct": left_totals.get("margin_to_portfolio_pct"),
     }
     margin_right = {
-        "margin_loan_balance": (right.get("totals") or {}).get("margin_loan_balance"),
-        "margin_to_portfolio_pct": (right.get("totals") or {}).get("margin_to_portfolio_pct"),
-        "ltv_pct": (right.get("totals") or {}).get("margin_to_portfolio_pct"),
+        "margin_loan_balance": right_totals.get("margin_loan_balance"),
+        "margin_to_portfolio_pct": right_totals.get("margin_to_portfolio_pct"),
+        "ltv_pct": right_totals.get("margin_to_portfolio_pct"),
     }
     margin = _section_diff(margin_left, margin_right, ["margin_loan_balance", "margin_to_portfolio_pct", "ltv_pct"])
-    margin_stress = _numeric_tree(left.get("margin_stress", {}), right.get("margin_stress", {}))
+    margin_stress = _numeric_tree(sc.get_margin_stress(left), sc.get_margin_stress(right))
 
     dividends_compact = _section_diff(
         {
-            "forward_12m_total": (left.get("income") or {}).get("forward_12m_total"),
-            "realized_mtd_total": (left.get("dividends") or {}).get("realized_mtd", {}).get("total_dividends"),
-            "next_30d_total": (left.get("dividends_upcoming") or {}).get("projected"),
+            "forward_12m_total": sc.get_income(left).get("forward_12m_total"),
+            "realized_mtd_total": sc.get_dividends(left).get("realized_mtd", {}).get("total_dividends"),
+            "next_30d_total": sc.get_dividends_upcoming(left).get("projected"),
         },
         {
-            "forward_12m_total": (right.get("income") or {}).get("forward_12m_total"),
-            "realized_mtd_total": (right.get("dividends") or {}).get("realized_mtd", {}).get("total_dividends"),
-            "next_30d_total": (right.get("dividends_upcoming") or {}).get("projected"),
+            "forward_12m_total": sc.get_income(right).get("forward_12m_total"),
+            "realized_mtd_total": sc.get_dividends(right).get("realized_mtd", {}).get("total_dividends"),
+            "next_30d_total": sc.get_dividends_upcoming(right).get("projected"),
         },
         ["forward_12m_total", "realized_mtd_total", "next_30d_total"],
     )
 
-    coverage_left = left.get("coverage") or {}
-    coverage_right = right.get("coverage") or {}
+    coverage_left = sc.get_coverage(left)
+    coverage_right = sc.get_coverage(right)
     coverage = _section_diff(coverage_left, coverage_right, ["derived_pct", "missing_pct"])
     note = "Data quality unchanged."
     if coverage.get("derived_pct", {}).get("delta") is not None or coverage.get("missing_pct", {}).get("delta") is not None:

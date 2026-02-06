@@ -12,9 +12,16 @@ def slim_snapshot(snapshot: dict, missing_pct_threshold: float = SIGNIFICANT_MIS
 
 
 def _missing_pct(snapshot: dict) -> float | None:
+    # V4: top-level coverage key
     coverage = snapshot.get("coverage")
     if isinstance(coverage, dict):
         val = coverage.get("missing_pct")
+        if isinstance(val, (int, float)):
+            return float(val)
+    # V5: coverage moved to meta.data_quality
+    dq = (snapshot.get("meta") or {}).get("data_quality")
+    if isinstance(dq, dict):
+        val = dq.get("missing_pct")
         if isinstance(val, (int, float)):
             return float(val)
     return None

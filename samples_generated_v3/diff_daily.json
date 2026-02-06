@@ -1,964 +1,1330 @@
 {
   "comparison": {
-    "left_date": "2026-01-24",
-    "right_date": "2026-01-25",
     "days_apart": 1,
-    "mode": "adjacent"
-  },
-  "left": {
-    "date": "2026-01-24"
-  },
-  "right": {
-    "date": "2026-01-25"
-  },
-  "summary": {
-    "direction": "neutral",
-    "primary_driver": "price_move",
-    "headline": "Over 1 day, small flat move with flat income.",
-    "highlights": [
-      "Market value +$0.00 (+0.00%) vs 1 day ago",
-      "Forward 12m income +$0.00",
-      "1M TWR +4.96%",
-      "No holdings added or removed"
-    ],
-    "period_type": "daily"
-  },
-  "range_metrics": {
-    "simple_return_pct": 0,
-    "simple_pnl": 0,
-    "per_day_return_pct": 0
-  },
-  "portfolio_metrics": {
-    "totals": {
-      "market_value": {
-        "left": 57049.04,
-        "right": 57049.04,
-        "delta": 0
-      },
-      "net_liquidation_value": {
-        "left": 40276.81,
-        "right": 40276.81,
-        "delta": 0
-      },
-      "cost_basis": {
-        "left": 55641.69,
-        "right": 55641.69,
-        "delta": 0
-      },
-      "unrealized_pnl": {
-        "left": 1407.35,
-        "right": 1407.35,
-        "delta": 0
-      },
-      "unrealized_pct": {
-        "left": 2.529,
-        "right": 2.529,
-        "delta": 0
-      },
-      "margin_loan_balance": {
-        "left": 16772.23,
-        "right": 16772.23,
-        "delta": 0
-      },
-      "margin_to_portfolio_pct": {
-        "left": 29.4,
-        "right": 29.4,
-        "delta": 0
-      }
-    },
-    "income": {
-      "projected_monthly_income": {
-        "left": 625.41,
-        "right": 625.41,
-        "delta": 0
-      },
-      "forward_12m_total": {
-        "left": 7504.92,
-        "right": 7504.92,
-        "delta": 0
-      },
-      "portfolio_current_yield_pct": {
-        "left": 13.155,
-        "right": 13.155,
-        "delta": 0
-      },
-      "portfolio_yield_on_cost_pct": {
-        "left": 13.488,
-        "right": 13.488,
-        "delta": 0
-      }
-    },
-    "rollups": {
-      "performance": {
-        "twr_1m_pct": {
-          "left": 4.956,
-          "right": 4.956,
-          "delta": 0
-        },
-        "twr_3m_pct": {
-          "left": 8.679,
-          "right": 8.679,
-          "delta": 0
-        },
-        "twr_6m_pct": {
-          "left": 14.113,
-          "right": 14.113,
-          "delta": 0
-        },
-        "twr_12m_pct": {
-          "left": 16.912,
-          "right": 16.912,
-          "delta": 0
-        }
-      },
-      "risk": {
-        "vol_30d_pct": {
-          "left": 11.89,
-          "right": 11.89,
-          "delta": 0
-        },
-        "vol_90d_pct": {
-          "left": 10.966,
-          "right": 10.966,
-          "delta": 0
-        },
-        "sharpe_1y": {
-          "left": 0.881,
-          "right": 0.881,
-          "delta": 0
-        },
-        "sortino_1y": {
-          "left": 1.107,
-          "right": 1.107,
-          "delta": 0
-        },
-        "sortino_6m": {
-          "left": 3.576,
-          "right": 3.576,
-          "delta": 0
-        },
-        "sortino_3m": {
-          "left": 4.91,
-          "right": 4.91,
-          "delta": 0
-        },
-        "sortino_1m": {
-          "left": 6.427,
-          "right": 6.427,
-          "delta": 0
-        },
-        "sortino_sharpe_ratio": {
-          "left": 1.257,
-          "right": 1.257,
-          "delta": 0
-        },
-        "sortino_sharpe_divergence": {
-          "left": 0.226,
-          "right": 0.226,
-          "delta": 0
-        },
-        "information_ratio_1y": {
-          "left": 0.409,
-          "right": 0.409,
-          "delta": 0
-        },
-        "tracking_error_1y_pct": {
-          "left": 7.681,
-          "right": 7.682,
-          "delta": 0.001
-        },
-        "ulcer_index_1y": {
-          "left": 5.584,
-          "right": 5.584,
-          "delta": 0
-        },
-        "omega_ratio_1y": {
-          "left": 1.192,
-          "right": 1.192,
-          "delta": 0
-        },
-        "pain_adjusted_return": {
-          "left": 3.029,
-          "right": 3.029,
-          "delta": 0
-        },
-        "income_stability_score": {
-          "left": 0,
-          "right": 0,
-          "delta": 0
-        },
-        "var_90_1d_pct": {
-          "left": -1.089,
-          "right": -1.089,
-          "delta": 0
-        },
-        "calmar_1y": {
-          "left": 0.85,
-          "right": 0.85,
-          "delta": 0
-        },
-        "max_drawdown_1y_pct": {
-          "left": -19.908,
-          "right": -19.908,
-          "delta": 0
-        },
-        "var_95_1d_pct": {
-          "left": -1.942,
-          "right": -1.942,
-          "delta": 0
-        },
-        "var_99_1d_pct": {
-          "left": -3.276,
-          "right": -3.276,
-          "delta": 0
-        },
-        "var_95_1w_pct": {
-          "left": -4.342,
-          "right": -4.342,
-          "delta": 0
-        },
-        "var_95_1m_pct": {
-          "left": -8.899,
-          "right": -8.899,
-          "delta": 0
-        },
-        "cvar_90_1d_pct": {
-          "left": -2.247,
-          "right": -2.247,
-          "delta": 0
-        },
-        "cvar_95_1d_pct": {
-          "left": -3.023,
-          "right": -3.023,
-          "delta": 0
-        },
-        "cvar_99_1d_pct": {
-          "left": -5.062,
-          "right": -5.062,
-          "delta": 0
-        },
-        "cvar_95_1w_pct": {
-          "left": -6.76,
-          "right": -6.76,
-          "delta": 0
-        },
-        "cvar_95_1m_pct": {
-          "left": -13.854,
-          "right": -13.854,
-          "delta": 0
-        }
-      },
-      "income_stability": {
-        "income_volatility_30d_pct": {
-          "left": 235.475,
-          "right": 241.695,
-          "delta": 6.22
-        },
-        "consecutive_months_positive": {
-          "left": 3,
-          "right": 3,
-          "delta": 0
-        },
-        "missed_payment_count_12m": {
-          "left": 0,
-          "right": 0,
-          "delta": 0
-        },
-        "coefficient_of_variation": {
-          "left": 0.87,
-          "right": 0.87,
-          "delta": 0
-        },
-        "income_drawdown_max_pct": {
-          "left": 3.969,
-          "right": 3.969,
-          "delta": 0
-        },
-        "dividend_cut_count_12m": {
-          "left": 0,
-          "right": 0,
-          "delta": 0
-        },
-        "stability_score": {
-          "left": 0,
-          "right": 0,
-          "delta": 0
-        }
-      },
-      "income_growth": {
-        "mom_pct": {
-          "left": 3.969,
-          "right": 3.969,
-          "delta": 0
-        },
-        "mom_absolute": {
-          "left": 8.07,
-          "right": 8.07,
-          "delta": 0
-        }
-      },
-      "tail_risk": {
-        "cvar_99_1d_pct": {
-          "left": -5.062,
-          "right": -5.062,
-          "delta": 0
-        },
-        "cvar_95_1w_pct": {
-          "left": -6.76,
-          "right": -6.76,
-          "delta": 0
-        },
-        "var_95_1w_pct": {
-          "left": -4.342,
-          "right": -4.342,
-          "delta": 0
-        },
-        "worst_expected_loss_1w": {
-          "left": 3856.52,
-          "right": 3856.52,
-          "delta": 0
-        },
-        "cvar_95_1d_pct": {
-          "left": -3.023,
-          "right": -3.023,
-          "delta": 0
-        },
-        "cvar_90_1d_pct": {
-          "left": -2.247,
-          "right": -2.247,
-          "delta": 0
-        },
-        "var_95_1m_pct": {
-          "left": -8.899,
-          "right": -8.899,
-          "delta": 0
-        },
-        "cvar_to_income_ratio": {
-          "left": 12.637,
-          "right": 12.637,
-          "delta": 0
-        },
-        "var_95_1d_pct": {
-          "left": -1.942,
-          "right": -1.942,
-          "delta": 0
-        },
-        "cvar_95_1m_pct": {
-          "left": -13.854,
-          "right": -13.854,
-          "delta": 0
-        }
-      },
-      "vs_benchmark": {
-        "excess_return_1y_pct": {
-          "left": 3.287,
-          "right": 3.287,
-          "delta": 0
-        },
-        "tracking_error_1y_pct": {
-          "left": 7.681,
-          "right": 7.682,
-          "delta": 0.001
-        },
-        "information_ratio_1y": {
-          "left": 0.409,
-          "right": 0.409,
-          "delta": 0
-        },
-        "active_share_pct": {
-          "left": 100,
-          "right": 100,
-          "delta": 0
-        },
-        "correlation_to_benchmark": {
-          "left": 0.923,
-          "right": 0.923,
-          "delta": 0
-        }
-      },
-      "return_attribution_1m": {
-        "price_contribution_pct": {
-          "left": 4.782,
-          "right": 4.782,
-          "delta": 0
-        },
-        "income_contribution_dollars": {
-          "left": 262.03,
-          "right": 262.03,
-          "delta": 0
-        },
-        "total_return_dollars": {
-          "left": 2865.49,
-          "right": 2865.49,
-          "delta": 0
-        },
-        "price_contribution_dollars": {
-          "left": 2603.46,
-          "right": 2603.46,
-          "delta": 0
-        },
-        "window": {
-          "days": {
-            "left": 30,
-            "right": 30,
-            "delta": 0
-          }
-        },
-        "total_return_pct": {
-          "left": 5.263,
-          "right": 5.263,
-          "delta": 0
-        },
-        "income_contribution_pct": {
-          "left": 0.481,
-          "right": 0.481,
-          "delta": 0
-        }
-      },
-      "return_attribution_3m": {
-        "price_contribution_pct": {
-          "left": 7.476,
-          "right": 7.476,
-          "delta": 0
-        },
-        "income_contribution_dollars": {
-          "left": 323.28,
-          "right": 323.28,
-          "delta": 0
-        },
-        "total_return_dollars": {
-          "left": 4291.83,
-          "right": 4291.83,
-          "delta": 0
-        },
-        "price_contribution_dollars": {
-          "left": 3968.55,
-          "right": 3968.55,
-          "delta": 0
-        },
-        "window": {
-          "days": {
-            "left": 90,
-            "right": 90,
-            "delta": 0
-          }
-        },
-        "total_return_pct": {
-          "left": 8.086,
-          "right": 8.086,
-          "delta": 0
-        },
-        "income_contribution_pct": {
-          "left": 0.609,
-          "right": 0.609,
-          "delta": 0
-        }
-      },
-      "return_attribution_6m": {
-        "price_contribution_pct": {
-          "left": 14.825,
-          "right": 14.825,
-          "delta": 0
-        },
-        "income_contribution_dollars": {
-          "left": 323.28,
-          "right": 323.28,
-          "delta": 0
-        },
-        "total_return_dollars": {
-          "left": 7689.05,
-          "right": 7689.05,
-          "delta": 0
-        },
-        "price_contribution_dollars": {
-          "left": 7365.77,
-          "right": 7365.77,
-          "delta": 0
-        },
-        "window": {
-          "days": {
-            "left": 180,
-            "right": 180,
-            "delta": 0
-          }
-        },
-        "total_return_pct": {
-          "left": 15.476,
-          "right": 15.476,
-          "delta": 0
-        },
-        "income_contribution_pct": {
-          "left": 0.651,
-          "right": 0.651,
-          "delta": 0
-        }
-      },
-      "return_attribution_12m": {
-        "price_contribution_pct": {
-          "left": 16.4,
-          "right": 16.4,
-          "delta": 0
-        },
-        "income_contribution_dollars": {
-          "left": 323.28,
-          "right": 323.28,
-          "delta": 0
-        },
-        "total_return_dollars": {
-          "left": 8361.01,
-          "right": 8361.02,
-          "delta": 0.01
-        },
-        "price_contribution_dollars": {
-          "left": 8037.73,
-          "right": 8037.74,
-          "delta": 0.01
-        },
-        "window": {
-          "days": {
-            "left": 365,
-            "right": 365,
-            "delta": 0
-          }
-        },
-        "total_return_pct": {
-          "left": 17.059,
-          "right": 17.059,
-          "delta": 0
-        },
-        "income_contribution_pct": {
-          "left": 0.66,
-          "right": 0.66,
-          "delta": 0
-        }
-      }
-    },
-    "goal_progress": {
-      "progress_pct": {
-        "left": 15.635,
-        "right": 15.635,
-        "delta": 0
-      },
-      "current_projected_monthly": {
-        "left": 625.41,
-        "right": 625.41,
-        "delta": 0
-      },
-      "months_to_goal": {
-        "left": 85,
-        "right": 85,
-        "delta": 0
-      }
-    },
-    "goal_progress_net": {
-      "progress_pct": {
-        "left": 14.185,
-        "right": 14.185,
-        "delta": 0
-      },
-      "current_projected_monthly_net": {
-        "left": 567.41,
-        "right": 567.41,
-        "delta": 0
-      }
-    },
-    "margin": {
-      "margin_loan_balance": {
-        "left": 16772.23,
-        "right": 16772.23,
-        "delta": 0
-      },
-      "margin_to_portfolio_pct": {
-        "left": 29.4,
-        "right": 29.4,
-        "delta": 0
-      },
-      "ltv_pct": {
-        "left": 29.4,
-        "right": 29.4,
-        "delta": 0
-      }
-    },
-    "margin_stress": {
-      "efficiency": {
-        "net_benefit_of_leverage_1y_pct": {
-          "left": 12.762,
-          "right": 12.762,
-          "delta": 0
-        },
-        "interest_expense_as_pct_of_returns": {
-          "left": 7.214,
-          "right": 7.214,
-          "delta": 0
-        },
-        "interest_expense_as_pct_of_income": {
-          "left": 9.275,
-          "right": 9.275,
-          "delta": 0
-        },
-        "roi_on_margin_capital_1y_pct": {
-          "left": 16.912,
-          "right": 16.912,
-          "delta": 0
-        }
-      },
-      "stress_scenarios": {
-        "interest_rate_shock": {
-          "rate_plus_200bp": {
-            "annual_expense": {
-              "left": 1031.49,
-              "right": 1031.49,
-              "delta": 0
-            },
-            "expense_as_pct_of_income": {
-              "left": 13.744,
-              "right": 13.744,
-              "delta": 0
-            },
-            "new_rate_pct": {
-              "left": 6.15,
-              "right": 6.15,
-              "delta": 0
-            },
-            "income_coverage_ratio": {
-              "left": 7.276,
-              "right": 7.276,
-              "delta": 0
-            },
-            "monthly_expense": {
-              "left": 85.96,
-              "right": 85.96,
-              "delta": 0
-            }
-          },
-          "rate_plus_100bp": {
-            "annual_expense": {
-              "left": 863.77,
-              "right": 863.77,
-              "delta": 0
-            },
-            "expense_as_pct_of_income": {
-              "left": 11.509,
-              "right": 11.509,
-              "delta": 0
-            },
-            "new_rate_pct": {
-              "left": 5.15,
-              "right": 5.15,
-              "delta": 0
-            },
-            "income_coverage_ratio": {
-              "left": 8.689,
-              "right": 8.689,
-              "delta": 0
-            },
-            "monthly_expense": {
-              "left": 71.98,
-              "right": 71.98,
-              "delta": 0
-            }
-          },
-          "rate_plus_300bp": {
-            "annual_expense": {
-              "left": 1199.21,
-              "right": 1199.21,
-              "delta": 0
-            },
-            "expense_as_pct_of_income": {
-              "left": 15.979,
-              "right": 15.979,
-              "delta": 0
-            },
-            "new_rate_pct": {
-              "left": 7.15,
-              "right": 7.15,
-              "delta": 0
-            },
-            "income_coverage_ratio": {
-              "left": 6.258,
-              "right": 6.258,
-              "delta": 0
-            },
-            "monthly_expense": {
-              "left": 99.93,
-              "right": 99.93,
-              "delta": 0
-            }
-          }
-        },
-        "margin_call_distance": {
-          "dollar_decline_to_call": {
-            "left": 33088.72,
-            "right": 33088.72,
-            "delta": 0
-          },
-          "days_at_current_volatility": {
-            "left": 39,
-            "right": 39,
-            "delta": 0
-          },
-          "portfolio_decline_to_call_pct": {
-            "left": -58,
-            "right": -58,
-            "delta": 0
-          }
-        }
-      },
-      "historical_trends_90d": {
-        "interest_expense_avg": {
-          "left": 35.72,
-          "right": 35.72,
-          "delta": 0
-        },
-        "ltv_avg": {
-          "left": 31.525,
-          "right": 31.525,
-          "delta": 0
-        },
-        "ltv_min": {
-          "left": 16.687,
-          "right": 16.687,
-          "delta": 0
-        },
-        "ltv_std": {
-          "left": 9.565,
-          "right": 9.565,
-          "delta": 0
-        },
-        "ltv_max": {
-          "left": 45.233,
-          "right": 45.233,
-          "delta": 0
-        }
-      },
-      "current": {
-        "portfolio_value": {
-          "left": 57049.04,
-          "right": 57049.04,
-          "delta": 0
-        },
-        "net_liquidation_value": {
-          "left": 40276.81,
-          "right": 40276.81,
-          "delta": 0
-        },
-        "annual_interest_expense": {
-          "left": 696.05,
-          "right": 696.05,
-          "delta": 0
-        },
-        "ltv_pct": {
-          "left": 29.4,
-          "right": 29.4,
-          "delta": 0
-        },
-        "margin_loan_balance": {
-          "left": 16772.23,
-          "right": 16772.23,
-          "delta": 0
-        },
-        "monthly_interest_expense": {
-          "left": 58,
-          "right": 58,
-          "delta": 0
-        },
-        "interest_rate_current_pct": {
-          "left": 4.15,
-          "right": 4.15,
-          "delta": 0
-        }
-      }
-    }
-  },
-  "dividends": {
-    "forward_12m_total": {
-      "left": 7504.92,
-      "right": 7504.92,
-      "delta": 0
-    },
-    "realized_mtd_total": {
-      "left": 211.4,
-      "right": 211.4,
-      "delta": 0
-    },
-    "next_30d_total": {
-      "left": 372.26,
-      "right": 372.26,
-      "delta": 0
-    }
+    "left_date": "2026-02-05",
+    "mode": "adjacent",
+    "right_date": "2026-02-04"
   },
   "coverage": {
     "derived_pct": {
-      "left": 100,
-      "right": 100,
-      "delta": 0
+      "delta": 0.0,
+      "left": 100.0,
+      "right": 100.0
     },
     "missing_pct": {
-      "left": 0,
-      "right": 0,
-      "delta": 0
+      "delta": 0.0,
+      "left": 0.0,
+      "right": 0.0
     },
     "note": "Data quality unchanged."
   },
+  "dividends": {
+    "forward_12m_total": {
+      "delta": 0.0,
+      "left": 8580.72,
+      "right": 8580.72
+    },
+    "next_30d_total": {
+      "delta": 0.0,
+      "left": 628.55,
+      "right": 628.55
+    },
+    "realized_mtd_total": {
+      "delta": 0.0,
+      "left": 0,
+      "right": 0
+    }
+  },
+  "holdings": {
+    "added": [],
+    "changed": [
+      {
+        "change_type": "price_move",
+        "fields": {
+          "last_price": {
+            "delta": 0.37,
+            "left": 16.88,
+            "right": 17.25
+          },
+          "market_value": {
+            "delta": 243.88,
+            "left": 11126.07,
+            "right": 11369.95
+          },
+          "shares": {
+            "delta": 0.0,
+            "left": 659.12753,
+            "right": 659.12753
+          },
+          "sortino_1m": {
+            "delta": 1.794,
+            "left": -1.744,
+            "right": 0.05
+          },
+          "sortino_1y": {
+            "delta": 0.105,
+            "left": 0.149,
+            "right": 0.254
+          },
+          "sortino_3m": {
+            "delta": 0.283,
+            "left": 0.798,
+            "right": 1.081
+          },
+          "sortino_6m": {
+            "delta": 0.452,
+            "left": 1.446,
+            "right": 1.898
+          },
+          "unrealized_pnl": {
+            "delta": 243.88,
+            "left": -534.11,
+            "right": -290.23
+          },
+          "weight_pct": {
+            "delta": 0.135,
+            "left": 19.49,
+            "right": 19.625
+          }
+        },
+        "impact_on_income_monthly": 0.0,
+        "symbol": "SVOL"
+      },
+      {
+        "change_type": "price_move",
+        "fields": {
+          "last_price": {
+            "delta": 0.26,
+            "left": 15.98,
+            "right": 16.24
+          },
+          "market_value": {
+            "delta": 225.91,
+            "left": 13885.15,
+            "right": 14111.06
+          },
+          "shares": {
+            "delta": 0.0,
+            "left": 868.90791,
+            "right": 868.90791
+          },
+          "sortino_1m": {
+            "delta": 3.639,
+            "left": 5.796,
+            "right": 9.435
+          },
+          "sortino_1y": {
+            "delta": 0.154,
+            "left": 1.25,
+            "right": 1.404
+          },
+          "sortino_3m": {
+            "delta": 0.764,
+            "left": 6.736,
+            "right": 7.5
+          },
+          "sortino_6m": {
+            "delta": 0.551,
+            "left": 1.438,
+            "right": 1.989
+          },
+          "unrealized_pnl": {
+            "delta": 225.91,
+            "left": 420.85,
+            "right": 646.76
+          },
+          "weight_pct": {
+            "delta": 0.033,
+            "left": 24.323,
+            "right": 24.356
+          }
+        },
+        "impact_on_income_monthly": 0.0,
+        "symbol": "TRIN"
+      },
+      {
+        "change_type": "price_move",
+        "fields": {
+          "last_price": {
+            "delta": 0.67,
+            "left": 52.02,
+            "right": 52.69
+          },
+          "market_value": {
+            "delta": 156.89,
+            "left": 12181.1,
+            "right": 12337.99
+          },
+          "shares": {
+            "delta": 0.0,
+            "left": 234.16192999999998,
+            "right": 234.16192999999998
+          },
+          "sortino_1m": {
+            "delta": 2.285,
+            "left": -3.184,
+            "right": -0.899
+          },
+          "sortino_1y": {
+            "delta": 0.137,
+            "left": 0.882,
+            "right": 1.019
+          },
+          "sortino_3m": {
+            "delta": -0.137,
+            "left": -0.158,
+            "right": -0.295
+          },
+          "sortino_6m": {
+            "delta": 0.408,
+            "left": 0.952,
+            "right": 1.36
+          },
+          "unrealized_pnl": {
+            "delta": 156.89,
+            "left": -473.64,
+            "right": -316.75
+          },
+          "weight_pct": {
+            "delta": -0.042,
+            "left": 21.338,
+            "right": 21.296
+          }
+        },
+        "impact_on_income_monthly": 0.0,
+        "symbol": "QQQI"
+      },
+      {
+        "change_type": "price_move",
+        "fields": {
+          "last_price": {
+            "delta": 0.57,
+            "left": 51.83,
+            "right": 52.4
+          },
+          "market_value": {
+            "delta": 93.85,
+            "left": 8533.55,
+            "right": 8627.4
+          },
+          "shares": {
+            "delta": 0.0,
+            "left": 164.64503,
+            "right": 164.64503
+          },
+          "sortino_1m": {
+            "delta": 2.437,
+            "left": -1.323,
+            "right": 1.114
+          },
+          "sortino_1y": {
+            "delta": 0.113,
+            "left": 1.0,
+            "right": 1.113
+          },
+          "sortino_3m": {
+            "delta": 0.11,
+            "left": 1.456,
+            "right": 1.566
+          },
+          "sortino_6m": {
+            "delta": 0.511,
+            "left": 2.003,
+            "right": 2.514
+          },
+          "unrealized_pnl": {
+            "delta": 93.85,
+            "left": -174.75,
+            "right": -80.9
+          },
+          "weight_pct": {
+            "delta": -0.057,
+            "left": 14.948,
+            "right": 14.891
+          }
+        },
+        "impact_on_income_monthly": 0.0,
+        "symbol": "SPYI"
+      },
+      {
+        "change_type": "price_move",
+        "fields": {
+          "last_price": {
+            "delta": 4.66,
+            "left": 32.0,
+            "right": 36.66
+          },
+          "market_value": {
+            "delta": 63.64,
+            "left": 436.98,
+            "right": 500.62
+          },
+          "shares": {
+            "delta": 0.0,
+            "left": 13.655619999999999,
+            "right": 13.655619999999999
+          },
+          "sortino_1m": {
+            "delta": 1.273,
+            "left": -7.328,
+            "right": -6.055
+          },
+          "sortino_1y": {
+            "delta": 0.251,
+            "left": -1.016,
+            "right": -0.765
+          },
+          "sortino_3m": {
+            "delta": -0.262,
+            "left": -4.209,
+            "right": -4.471
+          },
+          "sortino_6m": {
+            "delta": 0.024,
+            "left": -3.173,
+            "right": -3.149
+          },
+          "unrealized_pnl": {
+            "delta": 63.64,
+            "left": -123.5,
+            "right": -59.86
+          },
+          "weight_pct": {
+            "delta": 0.099,
+            "left": 0.765,
+            "right": 0.864
+          }
+        },
+        "impact_on_income_monthly": 0.0,
+        "symbol": "BTCI"
+      },
+      {
+        "change_type": "price_move",
+        "fields": {
+          "last_price": {
+            "delta": 0.74,
+            "left": 49.44,
+            "right": 50.18
+          },
+          "market_value": {
+            "delta": 39.57,
+            "left": 2643.94,
+            "right": 2683.51
+          },
+          "shares": {
+            "delta": 0.0,
+            "left": 53.47768,
+            "right": 53.47768
+          },
+          "sortino_1m": {
+            "delta": 7.138,
+            "left": 1.429,
+            "right": 8.567
+          },
+          "sortino_1y": {
+            "delta": 0.189,
+            "left": 1.119,
+            "right": 1.308
+          },
+          "sortino_3m": {
+            "delta": 0.013,
+            "left": 2.936,
+            "right": 2.949
+          },
+          "sortino_6m": {
+            "delta": 0.478,
+            "left": 3.548,
+            "right": 4.026
+          },
+          "unrealized_pnl": {
+            "delta": 39.57,
+            "left": -47.11,
+            "right": -7.54
+          },
+          "weight_pct": {
+            "delta": 0.001,
+            "left": 4.631,
+            "right": 4.632
+          }
+        },
+        "impact_on_income_monthly": 0.0,
+        "symbol": "IWMI"
+      },
+      {
+        "change_type": "price_move",
+        "fields": {
+          "last_price": {
+            "delta": 0.07,
+            "left": 22.98,
+            "right": 23.05
+          },
+          "market_value": {
+            "delta": 25.22,
+            "left": 8279.82,
+            "right": 8305.04
+          },
+          "shares": {
+            "delta": 0.0,
+            "left": 360.30547,
+            "right": 360.30547
+          },
+          "sortino_1m": {
+            "delta": -0.141,
+            "left": 0.668,
+            "right": 0.527
+          },
+          "sortino_1y": {
+            "delta": 0.095,
+            "left": 1.563,
+            "right": 1.658
+          },
+          "sortino_3m": {
+            "delta": -0.025,
+            "left": 2.869,
+            "right": 2.844
+          },
+          "sortino_6m": {
+            "delta": 0.056,
+            "left": 3.072,
+            "right": 3.128
+          },
+          "unrealized_pnl": {
+            "delta": 25.22,
+            "left": -44.1,
+            "right": -18.88
+          },
+          "weight_pct": {
+            "delta": -0.169,
+            "left": 14.504,
+            "right": 14.335
+          }
+        },
+        "impact_on_income_monthly": 0.0,
+        "symbol": "NLY"
+      }
+    ],
+    "removed": []
+  },
+  "left": {
+    "date": "2026-02-05"
+  },
   "macro": {
     "snapshot": {
-      "two_year_yield": {
-        "left": 3.61,
-        "right": 3.61,
-        "delta": 0
-      },
-      "unemployment_rate": {
-        "left": 4.4,
-        "right": 4.4,
-        "delta": 0
-      },
-      "liquidity_index": {
-        "left": -0.672,
-        "right": -0.672,
-        "delta": 0
-      },
-      "valuation_heat_index": {
-        "left": 0.3,
-        "right": 0.3,
-        "delta": 0
-      },
-      "hy_spread_bps": {
-        "left": 264,
-        "right": 264,
-        "delta": 0
-      },
-      "real_10y_yield": {
-        "left": 1.23,
-        "right": 1.23,
-        "delta": 0
+      "cpi_yoy": {
+        "delta": 0.0,
+        "left": 3.03,
+        "right": 3.03
       },
       "curve_inversion_depth": {
-        "left": 0,
-        "right": 0,
-        "delta": 0
-      },
-      "vix": {
-        "left": 15.64,
-        "right": 15.64,
-        "delta": 0
-      },
-      "ten_year_yield": {
-        "left": 4.26,
-        "right": 4.26,
-        "delta": 0
-      },
-      "cpi_yoy": {
-        "left": 3.03,
-        "right": 3.03,
-        "delta": 0
-      },
-      "macro_stress_score": {
-        "left": -0.751,
-        "right": -0.751,
-        "delta": 0
-      },
-      "gdp_nowcast": {
-        "left": 31098.03,
-        "right": 31098.03,
-        "delta": 0
-      },
-      "yield_spread_10y_2y": {
-        "left": 0.65,
-        "right": 0.65,
-        "delta": 0
-      },
-      "m2_money_supply_bn": {
-        "left": 22322.4,
-        "right": 22322.4,
-        "delta": 0
+        "delta": 0.0,
+        "left": 0.0,
+        "right": 0.0
       },
       "fed_funds_rate": {
-        "left": 3.72,
-        "right": 3.72,
-        "delta": 0
+        "delta": 0.0,
+        "left": 3.64,
+        "right": 3.64
+      },
+      "gdp_nowcast": {
+        "delta": 0.0,
+        "left": 31098.03,
+        "right": 31098.03
+      },
+      "hy_spread_bps": {
+        "delta": 0.0,
+        "left": 286.0,
+        "right": 286.0
+      },
+      "liquidity_index": {
+        "delta": 0.0,
+        "left": -0.584,
+        "right": -0.584
+      },
+      "m2_money_supply_bn": {
+        "delta": 0.0,
+        "left": 22411.0,
+        "right": 22411.0
+      },
+      "macro_stress_score": {
+        "delta": 0.0,
+        "left": -0.514,
+        "right": -0.514
+      },
+      "real_10y_yield": {
+        "delta": 0.0,
+        "left": 1.26,
+        "right": 1.26
+      },
+      "ten_year_yield": {
+        "delta": 0.0,
+        "left": 4.29,
+        "right": 4.29
+      },
+      "two_year_yield": {
+        "delta": 0.0,
+        "left": 3.57,
+        "right": 3.57
+      },
+      "unemployment_rate": {
+        "delta": 0.0,
+        "left": 4.4,
+        "right": 4.4
+      },
+      "valuation_heat_index": {
+        "delta": 0.0,
+        "left": 0.288,
+        "right": 0.288
+      },
+      "vix": {
+        "delta": 0.0,
+        "left": 18.64,
+        "right": 18.64
+      },
+      "yield_spread_10y_2y": {
+        "delta": 0.0,
+        "left": 0.72,
+        "right": 0.72
       }
     },
     "trends": {
       "meta": {
         "window_days": {
+          "delta": 0.0,
           "left": 30,
-          "right": 30,
-          "delta": 0
+          "right": 30
         }
       },
       "trends": {
-        "macro_stress_score": {
+        "liquidity_index": {
           "delta_30d": {
-            "left": -0.031,
-            "right": -0.031,
-            "delta": 0
-          },
-          "sma_7d": {
-            "left": -0.645,
-            "right": -0.645,
-            "delta": 0
+            "delta": 0.0,
+            "left": 0.82,
+            "right": 0.82
           },
           "delta_7d": {
-            "left": -0.106,
-            "right": -0.106,
-            "delta": 0
+            "delta": 0.0,
+            "left": 0.041,
+            "right": 0.041
           },
           "sma_30d": {
-            "left": -0.72,
-            "right": -0.72,
-            "delta": 0
+            "delta": 0.0,
+            "left": -1.404,
+            "right": -1.404
+          },
+          "sma_7d": {
+            "delta": 0.0,
+            "left": -0.625,
+            "right": -0.625
+          }
+        },
+        "macro_stress_score": {
+          "delta_30d": {
+            "delta": 0.0,
+            "left": 0.194,
+            "right": 0.194
+          },
+          "delta_7d": {
+            "delta": 0.0,
+            "left": 0.11,
+            "right": 0.11
+          },
+          "sma_30d": {
+            "delta": 0.0,
+            "left": -0.708,
+            "right": -0.708
+          },
+          "sma_7d": {
+            "delta": 0.0,
+            "left": -0.624,
+            "right": -0.624
           }
         },
         "valuation_heat_index": {
           "delta_30d": {
+            "delta": 0.0,
             "left": -0.032,
-            "right": -0.032,
-            "delta": 0
-          },
-          "sma_7d": {
-            "left": 0.314,
-            "right": 0.314,
-            "delta": 0
+            "right": -0.032
           },
           "delta_7d": {
-            "left": -0.014,
-            "right": -0.014,
-            "delta": 0
+            "delta": 0.0,
+            "left": -0.009,
+            "right": -0.009
           },
           "sma_30d": {
-            "left": 0.332,
-            "right": 0.332,
-            "delta": 0
-          }
-        },
-        "liquidity_index": {
-          "delta_30d": {
-            "left": 0.807,
-            "right": 0.807,
-            "delta": 0
+            "delta": 0.0,
+            "left": 0.32,
+            "right": 0.32
           },
           "sma_7d": {
-            "left": -0.648,
-            "right": -0.648,
-            "delta": 0
-          },
-          "delta_7d": {
-            "left": -0.024,
-            "right": -0.024,
-            "delta": 0
-          },
-          "sma_30d": {
-            "left": -1.479,
-            "right": -1.479,
-            "delta": 0
+            "delta": 0.0,
+            "left": 0.297,
+            "right": 0.297
           }
         }
       }
     }
   },
-  "holdings": {
-    "added": [],
-    "removed": [],
-    "changed": []
+  "portfolio_metrics": {
+    "goal_progress": {
+      "current_projected_monthly": {
+        "delta": 0.0,
+        "left": 715.06,
+        "right": 715.06
+      },
+      "months_to_goal": {
+        "delta": 1.0,
+        "left": 71,
+        "right": 72
+      },
+      "progress_pct": {
+        "delta": 0.0,
+        "left": 17.876,
+        "right": 17.876
+      }
+    },
+    "goal_progress_net": {
+      "current_projected_monthly_net": {
+        "delta": 0.16,
+        "left": 653.39,
+        "right": 653.55
+      },
+      "progress_pct": {
+        "delta": 0.004,
+        "left": 16.335,
+        "right": 16.339
+      }
+    },
+    "income": {
+      "forward_12m_total": {
+        "delta": 0.0,
+        "left": 8580.72,
+        "right": 8580.72
+      },
+      "portfolio_current_yield_pct": {
+        "delta": -0.22,
+        "left": 15.031,
+        "right": 14.811
+      },
+      "portfolio_yield_on_cost_pct": {
+        "delta": 0.0,
+        "left": 14.778,
+        "right": 14.778
+      },
+      "projected_monthly_income": {
+        "delta": 0.0,
+        "left": 715.06,
+        "right": 715.06
+      }
+    },
+    "margin": {
+      "ltv_pct": {
+        "delta": -0.536,
+        "left": 31.237,
+        "right": 30.701
+      },
+      "margin_loan_balance": {
+        "delta": -45.09,
+        "left": 17832.02,
+        "right": 17786.93
+      },
+      "margin_to_portfolio_pct": {
+        "delta": -0.536,
+        "left": 31.237,
+        "right": 30.701
+      }
+    },
+    "margin_stress": {
+      "current": {
+        "annual_interest_expense": {
+          "delta": -1.87,
+          "left": 740.03,
+          "right": 738.16
+        },
+        "interest_rate_current_pct": {
+          "delta": 0.0,
+          "left": 4.15,
+          "right": 4.15
+        },
+        "ltv_pct": {
+          "delta": -0.536,
+          "left": 31.237,
+          "right": 30.701
+        },
+        "margin_loan_balance": {
+          "delta": -45.09,
+          "left": 17832.02,
+          "right": 17786.93
+        },
+        "monthly_interest_expense": {
+          "delta": -0.16,
+          "left": 61.67,
+          "right": 61.51
+        },
+        "net_liquidation_value": {
+          "delta": 894.05,
+          "left": 39254.59,
+          "right": 40148.64
+        },
+        "portfolio_value": {
+          "delta": 848.96,
+          "left": 57086.61,
+          "right": 57935.57
+        }
+      },
+      "efficiency": {
+        "interest_expense_as_pct_of_income": {
+          "delta": -0.021,
+          "left": 8.624,
+          "right": 8.603
+        },
+        "interest_expense_as_pct_of_returns": {
+          "delta": -2.045,
+          "left": 10.501,
+          "right": 8.456
+        },
+        "net_benefit_of_leverage_1y_pct": {
+          "delta": 2.722,
+          "left": 8.195,
+          "right": 10.917
+        },
+        "roi_on_margin_capital_1y_pct": {
+          "delta": 2.722,
+          "left": 12.345,
+          "right": 15.067
+        }
+      },
+      "historical_trends_90d": {
+        "interest_expense_avg": {
+          "delta": -0.68,
+          "left": 19.98,
+          "right": 19.3
+        },
+        "ltv_avg": {
+          "delta": -0.348,
+          "left": 14.609,
+          "right": 14.261
+        },
+        "ltv_max": {
+          "delta": 0.0,
+          "left": 44.876,
+          "right": 44.876
+        },
+        "ltv_min": {
+          "delta": 0.0,
+          "left": 0.0,
+          "right": 0.0
+        },
+        "ltv_std": {
+          "delta": -0.024,
+          "left": 16.601,
+          "right": 16.577
+        }
+      },
+      "stress_scenarios": {
+        "interest_rate_shock": {
+          "rate_plus_100bp": {
+            "annual_expense": {
+              "delta": -2.32,
+              "left": 918.35,
+              "right": 916.03
+            },
+            "expense_as_pct_of_income": {
+              "delta": -0.027,
+              "left": 10.702,
+              "right": 10.675
+            },
+            "income_coverage_ratio": {
+              "delta": 0.023,
+              "left": 9.344,
+              "right": 9.367
+            },
+            "monthly_expense": {
+              "delta": -0.19,
+              "left": 76.53,
+              "right": 76.34
+            },
+            "new_rate_pct": {
+              "delta": 0.0,
+              "left": 5.15,
+              "right": 5.15
+            }
+          },
+          "rate_plus_200bp": {
+            "annual_expense": {
+              "delta": -2.77,
+              "left": 1096.67,
+              "right": 1093.9
+            },
+            "expense_as_pct_of_income": {
+              "delta": -0.033,
+              "left": 12.781,
+              "right": 12.748
+            },
+            "income_coverage_ratio": {
+              "delta": 0.02,
+              "left": 7.824,
+              "right": 7.844
+            },
+            "monthly_expense": {
+              "delta": -0.23,
+              "left": 91.39,
+              "right": 91.16
+            },
+            "new_rate_pct": {
+              "delta": 0.0,
+              "left": 6.15,
+              "right": 6.15
+            }
+          },
+          "rate_plus_300bp": {
+            "annual_expense": {
+              "delta": -3.22,
+              "left": 1274.99,
+              "right": 1271.77
+            },
+            "expense_as_pct_of_income": {
+              "delta": -0.038,
+              "left": 14.859,
+              "right": 14.821
+            },
+            "income_coverage_ratio": {
+              "delta": 0.017,
+              "left": 6.73,
+              "right": 6.747
+            },
+            "monthly_expense": {
+              "delta": -0.27,
+              "left": 106.25,
+              "right": 105.98
+            },
+            "new_rate_pct": {
+              "delta": 0.0,
+              "left": 7.15,
+              "right": 7.15
+            }
+          }
+        },
+        "margin_call_distance": {
+          "days_at_current_volatility": {
+            "delta": 2.0,
+            "left": 32,
+            "right": 34
+          },
+          "dollar_decline_to_call": {
+            "delta": 913.37,
+            "left": 31612.3,
+            "right": 32525.67
+          },
+          "portfolio_decline_to_call_pct": {
+            "delta": -0.765,
+            "left": -55.376,
+            "right": -56.141
+          }
+        }
+      }
+    },
+    "rollups": {
+      "income_growth": {
+        "mom_absolute": {
+          "delta": 0.0,
+          "left": -583.28,
+          "right": -583.28
+        },
+        "mom_pct": {
+          "delta": 0.0,
+          "left": -100.0,
+          "right": -100.0
+        },
+        "qoq_pct": {
+          "delta": 0.0,
+          "left": 2501.224,
+          "right": 2501.224
+        }
+      },
+      "income_stability": {
+        "coefficient_of_variation": {
+          "delta": 0.0,
+          "left": 1.366,
+          "right": 1.366
+        },
+        "consecutive_months_positive": {
+          "delta": 0.0,
+          "left": 0,
+          "right": 0
+        },
+        "dividend_cut_count_12m": {
+          "delta": 0.0,
+          "left": 2,
+          "right": 2
+        },
+        "income_drawdown_max_pct": {
+          "delta": 0.0,
+          "left": -100.0,
+          "right": -100.0
+        },
+        "income_volatility_30d_pct": {
+          "delta": 0.0,
+          "left": 381.723,
+          "right": 381.723
+        },
+        "missed_payment_count_12m": {
+          "delta": 0.0,
+          "left": 0,
+          "right": 0
+        },
+        "stability_score": {
+          "delta": 0.0,
+          "left": 0.0,
+          "right": 0.0
+        }
+      },
+      "performance": {
+        "twr_12m_pct": {
+          "delta": 2.722,
+          "left": 12.345,
+          "right": 15.067
+        },
+        "twr_1m_pct": {
+          "delta": 2.239,
+          "left": -0.189,
+          "right": 2.05
+        },
+        "twr_3m_pct": {
+          "delta": 0.557,
+          "left": 5.46,
+          "right": 6.017
+        },
+        "twr_6m_pct": {
+          "delta": 2.724,
+          "left": 8.819,
+          "right": 11.543
+        }
+      },
+      "return_attribution_12m": {
+        "income_contribution_dollars": {
+          "delta": 0.0,
+          "left": 615.65,
+          "right": 615.65
+        },
+        "income_contribution_pct": {
+          "delta": 0.013,
+          "left": 1.199,
+          "right": 1.212
+        },
+        "price_contribution_dollars": {
+          "delta": 1367.17,
+          "left": 5754.78,
+          "right": 7121.95
+        },
+        "price_contribution_pct": {
+          "delta": 2.805,
+          "left": 11.211,
+          "right": 14.016
+        },
+        "total_return_dollars": {
+          "delta": 1367.17,
+          "left": 6370.43,
+          "right": 7737.6
+        },
+        "total_return_pct": {
+          "delta": 2.817,
+          "left": 12.41,
+          "right": 15.227
+        },
+        "window": {
+          "days": {
+            "delta": 0.0,
+            "left": 365,
+            "right": 365
+          }
+        }
+      },
+      "return_attribution_1m": {
+        "income_contribution_dollars": {
+          "delta": 0.0,
+          "left": 544.39,
+          "right": 544.39
+        },
+        "income_contribution_pct": {
+          "delta": 0.008,
+          "left": 0.944,
+          "right": 0.952
+        },
+        "price_contribution_dollars": {
+          "delta": 1309.86,
+          "left": -568.99,
+          "right": 740.87
+        },
+        "price_contribution_pct": {
+          "delta": 2.282,
+          "left": -0.987,
+          "right": 1.295
+        },
+        "total_return_dollars": {
+          "delta": 1309.86,
+          "left": -24.6,
+          "right": 1285.26
+        },
+        "total_return_pct": {
+          "delta": 2.29,
+          "left": -0.043,
+          "right": 2.247
+        },
+        "window": {
+          "days": {
+            "delta": 0.0,
+            "left": 30,
+            "right": 30
+          }
+        }
+      },
+      "return_attribution_3m": {
+        "income_contribution_dollars": {
+          "delta": 0.0,
+          "left": 615.65,
+          "right": 615.65
+        },
+        "income_contribution_pct": {
+          "delta": 0.005,
+          "left": 1.132,
+          "right": 1.137
+        },
+        "price_contribution_dollars": {
+          "delta": 1103.03,
+          "left": 2701.74,
+          "right": 3804.77
+        },
+        "price_contribution_pct": {
+          "delta": 2.061,
+          "left": 4.968,
+          "right": 7.029
+        },
+        "total_return_dollars": {
+          "delta": 1103.03,
+          "left": 3317.39,
+          "right": 4420.42
+        },
+        "total_return_pct": {
+          "delta": 2.066,
+          "left": 6.1,
+          "right": 8.166
+        },
+        "window": {
+          "days": {
+            "delta": 0.0,
+            "left": 90,
+            "right": 90
+          }
+        }
+      },
+      "return_attribution_6m": {
+        "income_contribution_dollars": {
+          "delta": 0.0,
+          "left": 615.65,
+          "right": 615.65
+        },
+        "income_contribution_pct": {
+          "delta": -0.005,
+          "left": 1.179,
+          "right": 1.174
+        },
+        "price_contribution_dollars": {
+          "delta": 602.4,
+          "left": 4873.24,
+          "right": 5475.64
+        },
+        "price_contribution_pct": {
+          "delta": 1.105,
+          "left": 9.333,
+          "right": 10.438
+        },
+        "total_return_dollars": {
+          "delta": 602.4,
+          "left": 5488.89,
+          "right": 6091.29
+        },
+        "total_return_pct": {
+          "delta": 1.099,
+          "left": 10.512,
+          "right": 11.611
+        },
+        "window": {
+          "days": {
+            "delta": 0.0,
+            "left": 180,
+            "right": 180
+          }
+        }
+      },
+      "risk": {
+        "calmar_1y": {
+          "delta": 0.134,
+          "left": 0.608,
+          "right": 0.742
+        },
+        "cvar_90_1d_pct": {
+          "delta": 0.008,
+          "left": -2.314,
+          "right": -2.306
+        },
+        "cvar_95_1d_pct": {
+          "delta": 0.0,
+          "left": -3.069,
+          "right": -3.069
+        },
+        "cvar_95_1m_pct": {
+          "delta": 0.0,
+          "left": -14.063,
+          "right": -14.063
+        },
+        "cvar_95_1w_pct": {
+          "delta": 0.0,
+          "left": -6.862,
+          "right": -6.862
+        },
+        "cvar_99_1d_pct": {
+          "delta": 0.0,
+          "left": -5.044,
+          "right": -5.044
+        },
+        "income_stability_score": {
+          "delta": 0.0,
+          "left": 0.0,
+          "right": 0.0
+        },
+        "information_ratio_1y": {
+          "delta": null,
+          "left": null,
+          "right": null
+        },
+        "max_drawdown_1y_pct": {
+          "delta": 0.0,
+          "left": -20.305,
+          "right": -20.305
+        },
+        "omega_ratio_1y": {
+          "delta": 0.027,
+          "left": 1.14,
+          "right": 1.167
+        },
+        "pain_adjusted_return": {
+          "delta": 0.506,
+          "left": 2.278,
+          "right": 2.784
+        },
+        "sharpe_1y": {
+          "delta": 0.117,
+          "left": 0.667,
+          "right": 0.784
+        },
+        "sortino_1m": {
+          "delta": null,
+          "left": null,
+          "right": null
+        },
+        "sortino_1y": {
+          "delta": 0.147,
+          "left": 0.868,
+          "right": 1.015
+        },
+        "sortino_3m": {
+          "delta": null,
+          "left": null,
+          "right": null
+        },
+        "sortino_6m": {
+          "delta": null,
+          "left": null,
+          "right": null
+        },
+        "sortino_sharpe_divergence": {
+          "delta": null,
+          "left": null,
+          "right": null
+        },
+        "sortino_sharpe_ratio": {
+          "delta": -0.006,
+          "left": 1.301,
+          "right": 1.295
+        },
+        "tracking_error_1y_pct": {
+          "delta": null,
+          "left": null,
+          "right": null
+        },
+        "ulcer_index_1y": {
+          "delta": -0.008,
+          "left": 5.42,
+          "right": 5.412
+        },
+        "var_90_1d_pct": {
+          "delta": 0.037,
+          "left": -1.293,
+          "right": -1.256
+        },
+        "var_95_1d_pct": {
+          "delta": 0.0,
+          "left": -1.965,
+          "right": -1.965
+        },
+        "var_95_1m_pct": {
+          "delta": 0.0,
+          "left": -9.005,
+          "right": -9.005
+        },
+        "var_95_1w_pct": {
+          "delta": 0.0,
+          "left": -4.394,
+          "right": -4.394
+        },
+        "var_99_1d_pct": {
+          "delta": 0.0,
+          "left": -3.288,
+          "right": -3.288
+        },
+        "vol_30d_pct": {
+          "delta": -0.758,
+          "left": 13.918,
+          "right": 13.16
+        },
+        "vol_90d_pct": {
+          "delta": -0.233,
+          "left": 12.114,
+          "right": 11.881
+        }
+      },
+      "tail_risk": {
+        "cvar_90_1d_pct": {
+          "delta": 0.008,
+          "left": -2.314,
+          "right": -2.306
+        },
+        "cvar_95_1d_pct": {
+          "delta": 0.0,
+          "left": -3.069,
+          "right": -3.069
+        },
+        "cvar_95_1m_pct": {
+          "delta": 0.0,
+          "left": -14.063,
+          "right": -14.063
+        },
+        "cvar_95_1w_pct": {
+          "delta": 0.0,
+          "left": -6.862,
+          "right": -6.862
+        },
+        "cvar_99_1d_pct": {
+          "delta": 0.0,
+          "left": -5.044,
+          "right": -5.044
+        },
+        "cvar_to_income_ratio": {
+          "delta": 0.167,
+          "left": 11.227,
+          "right": 11.394
+        },
+        "var_95_1d_pct": {
+          "delta": 0.0,
+          "left": -1.965,
+          "right": -1.965
+        },
+        "var_95_1m_pct": {
+          "delta": 0.0,
+          "left": -9.005,
+          "right": -9.005
+        },
+        "var_95_1w_pct": {
+          "delta": 0.0,
+          "left": -4.394,
+          "right": -4.394
+        },
+        "worst_expected_loss_1w": {
+          "delta": 58.26,
+          "left": 3917.28,
+          "right": 3975.54
+        }
+      },
+      "vs_benchmark": {
+        "active_share_pct": {
+          "delta": 0.0,
+          "left": 100.0,
+          "right": 100.0
+        },
+        "correlation_to_benchmark": {
+          "delta": 0.0,
+          "left": 0.931,
+          "right": 0.931
+        },
+        "excess_return_1y_pct": {
+          "delta": 0.502,
+          "left": -0.251,
+          "right": 0.251
+        },
+        "information_ratio_1y": {
+          "delta": 0.058,
+          "left": 0.026,
+          "right": 0.084
+        },
+        "tracking_error_1y_pct": {
+          "delta": -0.001,
+          "left": 7.555,
+          "right": 7.554
+        }
+      }
+    },
+    "totals": {
+      "cost_basis": {
+        "delta": 0.0,
+        "left": 58062.97,
+        "right": 58062.97
+      },
+      "margin_loan_balance": {
+        "delta": -45.09,
+        "left": 17832.02,
+        "right": 17786.93
+      },
+      "margin_to_portfolio_pct": {
+        "delta": -0.536,
+        "left": 31.237,
+        "right": 30.701
+      },
+      "market_value": {
+        "delta": 848.96,
+        "left": 57086.61,
+        "right": 57935.57
+      },
+      "net_liquidation_value": {
+        "delta": 894.05,
+        "left": 39254.59,
+        "right": 40148.64
+      },
+      "unrealized_pct": {
+        "delta": 1.463,
+        "left": -1.682,
+        "right": -0.219
+      },
+      "unrealized_pnl": {
+        "delta": 848.96,
+        "left": -976.36,
+        "right": -127.4
+      }
+    }
+  },
+  "range_metrics": null,
+  "right": {
+    "date": "2026-02-04"
+  },
+  "summary": {
+    "direction": "positive",
+    "headline": "Over 1 day, large gain with flat income.",
+    "highlights": [
+      "Market value +$848.96 (+1.49%) vs 1 day ago",
+      "Forward 12m income +$0.00",
+      "1M TWR +2.05%",
+      "No holdings added or removed"
+    ],
+    "period_type": "daily",
+    "primary_driver": "price_move"
   }
 }

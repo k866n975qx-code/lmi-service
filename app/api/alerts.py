@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from ..config import settings
 from ..db import get_conn
+from ..pipeline import snap_compat as sc
 from ..alerts.evaluator import (
     evaluate_alerts,
     build_daily_report_html,
@@ -201,8 +202,8 @@ def _fmt_ratio(val, precision: int = 2):
         return "—"
 
 def _status_text(snap: dict) -> str:
-    totals = snap.get("totals") or {}
-    income = snap.get("income") or {}
+    totals = sc.get_totals(snap)
+    income = sc.get_income(snap)
     nlv = totals.get("net_liquidation_value")
     ltv = totals.get("margin_to_portfolio_pct")
     proj = income.get("projected_monthly_income")
@@ -253,7 +254,7 @@ def _received_text(snap: dict) -> str:
     return "\n".join(lines)
 
 def _perf_text(snap: dict) -> str:
-    perf = (snap.get("portfolio_rollups") or {}).get("performance") or {}
+    perf = sc.get_perf(snap)
     return (
         "<b>Performance</b>\n"
         f"1M: {_fmt_pct(perf.get('twr_1m_pct'),2)}\n"
@@ -272,9 +273,10 @@ def _holdings_text(snap: dict) -> str:
     return "\n".join(lines)
 
 def _risk_text(snap: dict) -> str:
-    risk = (snap.get("portfolio_rollups") or {}).get("risk") or {}
-    stability = (snap.get("portfolio_rollups") or {}).get("income_stability") or {}
-    tail = (snap.get("portfolio_rollups") or {}).get("tail_risk") or {}
+    risk = sc.get_risk_flat(snap)
+    rollups = sc.get_rollups(snap)
+    stability = rollups.get("income_stability") or {}
+    tail = rollups.get("tail_risk") or {}
     return (
         "<b>Risk</b>\n"
         f"30d Vol: {_fmt_pct(risk.get('vol_30d_pct'),2)}\n"
@@ -783,7 +785,7 @@ def _position_text(snap: dict, symbol: str) -> str:
         lines.append("")
 
     # Risk metrics from ultimate if available
-    ultimate = holding.get("ultimate") or {}
+    ultimate = sc.get_holding_ultimate(holding)
     if ultimate.get("sortino_1y") or ultimate.get("vol_30d_pct"):
         lines.append("<b>Risk:</b>")
         if ultimate.get("vol_30d_pct"):
@@ -1009,7 +1011,7 @@ def _whatif_text(snap: dict, args: list[str]) -> str:
 
     target_monthly = current_state.get("target_monthly", 0)
     current_monthly = current_state.get("projected_monthly_income", 0)
-    portfolio_value = current_state.get("total_market_value", 0) or (snap.get("totals") or {}).get("market_value", 0)
+    portfolio_value = current_state.get("total_market_value", 0) or sc.get_totals(snap).get("market_value", 0)
     yield_pct = current_state.get("portfolio_yield_pct", 0)
 
     if not target_monthly:
@@ -1161,8 +1163,9 @@ def _rebalance_text(snap: dict) -> str:
     if not holdings:
         return "No holdings data available."
 
-    stability = (snap.get("portfolio_rollups") or {}).get("income_stability") or {}
-    risk = (snap.get("portfolio_rollups") or {}).get("risk") or {}
+    rollups = sc.get_rollups(snap)
+    stability = rollups.get("income_stability") or {}
+    risk = sc.get_risk_flat(snap)
 
     over_weight = []
     low_sortino = []
@@ -1174,7 +1177,7 @@ def _rebalance_text(snap: dict) -> str:
         if not sym:
             continue
         weight = h.get("weight_pct", 0)
-        u = h.get("ultimate") or {}
+        u = sc.get_holding_ultimate(h)
         sortino = u.get("sortino_1y")
         yield_pct = h.get("current_yield_pct", 0)
 
@@ -1239,12 +1242,12 @@ def _rebalance_text(snap: dict) -> str:
 
 def _quick_summary_text(snap: dict, conn) -> str:
     """Build compact daily summary for collapsible view."""
-    totals = snap.get("totals") or {}
-    income = snap.get("income") or {}
-    goal_tiers = snap.get("goal_tiers") or {}
-    goal_pace = snap.get("goal_pace") or {}
+    totals = sc.get_totals(snap)
+    income = sc.get_income(snap)
+    goal_tiers = sc.get_goal_tiers(snap)
+    goal_pace = sc.get_goal_pace(snap)
     current_state = goal_tiers.get("current_state") or {}
-    rollups = snap.get("portfolio_rollups") or {}
+    rollups = sc.get_rollups(snap)
     perf = rollups.get("performance") or {}
     risk = rollups.get("risk") or {}
 

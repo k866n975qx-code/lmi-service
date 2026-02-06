@@ -119,13 +119,19 @@ def _is_zero(val: Any) -> bool:
 
 
 def _reason_for_null(path: list[Any], root: dict, context: _NullReasonContext) -> str:
-    if "dividend_reliability" in path:
+    # V5 renamed dividend_reliability → reliability
+    if "dividend_reliability" in path or "reliability" in path:
         symbol = _find_holding_symbol(root, path)
         field = path[-1] if path else None
         if symbol and field:
             reason = context.dividend_reasons_by_symbol.get(symbol, {}).get(field)
             if reason:
                 return reason
+            # Fallback for reliability fields with no specific reason
+            if field in ("last_increase_date", "last_decrease_date"):
+                return f"not computed for {symbol} — insufficient data or no qualifying event"
+            if "growth" in field or "volatility" in field:
+                return f"not computed for {symbol} — insufficient dividend history"
 
     if "income_growth" in path or "income_stability" in path:
         field = path[-1] if path else None
@@ -154,11 +160,25 @@ def _reason_for_null(path: list[Any], root: dict, context: _NullReasonContext) -
                 return _diff_reason(path[-1], context)
             return _diff_fallback_reason(path[-1], context)
 
+    # V5: better fallbacks for common field groups
+    if "income_stability" in path or "income_growth" in path:
+        return "insufficient dividend history to compute metric"
+    if "margin" in path:
+        field = path[-1] if path else ""
+        if "coverage" in str(field) or "ltv" in str(field):
+            return "cannot compute — margin or income data missing"
+        if "trend" in str(field):
+            return "insufficient history for trend calculation"
+        return "margin data not available for this date"
+    if "goals" in path:
+        return "goal data not available for this date"
+    if "projected_vs_received" in path:
+        return "insufficient income history for projection comparison"
     return "value not available in source data"
 
 
 def _reason_for_zero(path: list[Any], root: dict, context: _NullReasonContext) -> str | None:
-    if "dividend_reliability" in path:
+    if "dividend_reliability" in path or "reliability" in path:
         symbol = _find_holding_symbol(root, path)
         field = path[-1] if path else None
         if symbol and field:
@@ -235,7 +255,10 @@ def _is_pre_v3(schema: str | None) -> bool:
 
 def _as_of_date(payload: dict, kind: str) -> date | None:
     if kind == "daily":
-        return _parse_date(payload.get("as_of_date_local") or payload.get("as_of"))
+        # V5: timestamps.portfolio_data_as_of_local
+        ts = payload.get("timestamps") or {}
+        v5_date = ts.get("portfolio_data_as_of_local")
+        return _parse_date(v5_date or payload.get("as_of_date_local") or payload.get("as_of"))
     if kind == "period":
         period = payload.get("period") or {}
         return _parse_date(period.get("end_date") or payload.get("as_of"))

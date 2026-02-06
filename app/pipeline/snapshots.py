@@ -2067,7 +2067,8 @@ def _margin_trend_summary(daily_snaps: list[tuple[date, dict]]) -> dict | None:
     ltv_vals = []
     expense_vals = []
     for _dt, snap in daily_snaps:
-        totals = (snap.get("totals") or {}) if snap else {}
+        # Support both v4 (top-level totals) and v5 (portfolio.totals)
+        totals = (snap.get("totals") or (snap.get("portfolio") or {}).get("totals") or {}) if snap else {}
         mv = totals.get("market_value")
         margin = totals.get("margin_loan_balance")
         if isinstance(mv, (int, float)) and isinstance(margin, (int, float)) and mv:
@@ -2663,12 +2664,16 @@ def _calculate_expected_value(
         portfolio_value += drip_amount + monthly_contribution + additional_margin
 
     # Expected income grows with portfolio (assuming yield stays constant)
-    expected_income = portfolio_value * portfolio_yield_pct if portfolio_yield_pct > 0 else starting_income
+    if portfolio_yield_pct > 0:
+        expected_monthly = portfolio_value * portfolio_yield_pct / 12.0
+    else:
+        # starting_income is already monthly — don't divide again
+        expected_monthly = starting_income
 
     return {
         "portfolio_value": portfolio_value,
         "margin_balance": margin_balance,
-        "monthly_income": expected_income / 12.0 if expected_income > 0 else starting_income
+        "monthly_income": expected_monthly
     }
 
 
@@ -2746,10 +2751,13 @@ def _build_goal_pace(
             continue
 
         start_data = json.loads(start_snapshot[0])
-        start_mv = start_data.get("totals", {}).get("market_value", 0.0)
-        start_margin = start_data.get("totals", {}).get("margin_loan_balance", 0.0)
-        start_income = start_data.get("income", {}).get("projected_monthly_income", 0.0)
-        start_yield = start_data.get("income", {}).get("portfolio_yield_pct", 0.0) / 100.0 if start_data.get("income", {}).get("portfolio_yield_pct") else 0.0
+        # Support both v4 (top-level totals/income) and v5 (portfolio.totals/income)
+        start_totals = start_data.get("totals") or (start_data.get("portfolio") or {}).get("totals") or {}
+        start_inc = start_data.get("income") or (start_data.get("portfolio") or {}).get("income") or {}
+        start_mv = start_totals.get("market_value", 0.0)
+        start_margin = start_totals.get("margin_loan_balance", 0.0)
+        start_income = start_inc.get("projected_monthly_income", 0.0)
+        start_yield = start_inc.get("portfolio_current_yield_pct", 0.0) / 100.0 if start_inc.get("portfolio_current_yield_pct") else 0.0
 
         # Calculate months elapsed
         days_elapsed = (end_date - start_date).days
@@ -2802,9 +2810,9 @@ def _build_goal_pace(
         amount_needed = expected["portfolio_value"] - actual_mv if actual_mv < expected["portfolio_value"] else 0.0
         amount_surplus = actual_mv - expected["portfolio_value"] if actual_mv > expected["portfolio_value"] else 0.0
 
-        # Determine if on track (within 5% of expected)
+        # Determine if on track (at or above 95% of expected — being ahead counts)
         pct_of_pace = (actual_mv / expected["portfolio_value"] * 100) if expected["portfolio_value"] > 0 else 100.0
-        on_track = 95.0 <= pct_of_pace <= 105.0
+        on_track = pct_of_pace >= 95.0
 
         windows[window_name] = {
             "window_name": window_name.upper(),
@@ -3724,7 +3732,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         total_market_value,
         margin_loan_balance,
         settings.goal_target_monthly,
-        income.get("portfolio_yield_pct", 0.0) / 100.0 if income.get("portfolio_yield_pct") else 0.0,
+        income.get("portfolio_current_yield_pct", 0.0) / 100.0 if income.get("portfolio_current_yield_pct") else 0.0,
         as_of_date_local,
     )
 
@@ -3826,6 +3834,11 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         "meta": meta,
         "cached": False,
     }
+
+    # ── Transform to V5 schema ───────────────────────────────────────────
+    from .snapshot_v5 import transform_to_v5
+    daily = transform_to_v5(daily)
+
     return daily, sources
 
 
@@ -3932,13 +3945,15 @@ def maybe_persist_periodic(conn: sqlite3.Connection, run_id: str, daily: dict):
             log.info("rolling_snapshots_cleaned", period=period, start=str(start), deleted=deleted_count)
 
 
-def persist_rolling_summaries(conn: sqlite3.Connection, run_id: str, daily: dict):
+def persist_rolling_summaries(conn: sqlite3.Connection, run_id: str, daily: dict, as_of_date_local: str):
     """
     Persist rolling period summaries (week-to-date, month-to-date, etc.) whenever daily snapshot updates.
     These summaries are stored with period_type WEEK_ROLLING, MONTH_ROLLING, etc.
     """
+    from . import snap_compat as sc
+    
     log = structlog.get_logger()
-    as_of_date_local = daily.get("as_of_date_local") or daily["as_of"][:10]
+    # as_of_date_local is passed from DB column (V5 stores in timestamps.portfolio_data_as_of_local)
     dt = date.fromisoformat(as_of_date_local)
 
     # Define rolling period types
@@ -4067,7 +4082,7 @@ def backfill_rolling_summaries(conn: sqlite3.Connection, start_date: str | None 
             dt = date.fromisoformat(as_of_date_local)
 
             # Create rolling summaries for this date (skips if period end)
-            persist_rolling_summaries(conn, run_id, daily)
+            persist_rolling_summaries(conn, run_id, daily, as_of_date_local)
 
             # If this is a period end date, clean up rolling snapshots for completed periods
             for period in ["WEEK", "MONTH", "QUARTER", "YEAR"]:

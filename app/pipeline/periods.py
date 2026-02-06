@@ -11,6 +11,7 @@ from ..config import settings
 from ..utils import to_local_date
 from .market import MarketData
 from . import metrics
+from . import snap_compat as sc
 
 
 def _parse_date(val):
@@ -31,7 +32,7 @@ def _total_market_value(snapshot: dict | None):
     val = snapshot.get("total_market_value")
     if isinstance(val, (int, float)):
         return float(val)
-    totals = snapshot.get("totals") or {}
+    totals = sc.get_totals(snapshot)
     val = totals.get("market_value")
     return float(val) if isinstance(val, (int, float)) else None
 
@@ -53,7 +54,7 @@ def _holding_metric(holding: dict, key: str):
         return None
     val = holding.get(key)
     if val is None:
-        val = (holding.get("ultimate") or {}).get(key)
+        val = sc.get_holding_ultimate(holding).get(key)
     return val
 
 
@@ -61,7 +62,7 @@ def _coverage_summary(dailies):
     derived = []
     pulled = []
     for snap in dailies:
-        cov = snap.get("coverage") or {}
+        cov = sc.get_coverage(snap)
         if isinstance(cov.get("derived_pct"), (int, float)):
             derived.append(float(cov.get("derived_pct")))
         if isinstance(cov.get("pulled_pct"), (int, float)):
@@ -193,7 +194,7 @@ def _load_daily_snapshot(conn: sqlite3.Connection, as_of: date):
 def _daily_series(dailies, key_path):
     data = {}
     for snap in dailies:
-        as_of = snap.get("as_of") or snap.get("as_of_date_local")
+        as_of = sc.get_as_of(snap)
         dt = _parse_date(as_of)
         if not dt:
             continue
@@ -335,7 +336,7 @@ def _interval_label(snapshot_type: str, start: date, end: date):
 def _intervals(dailies, snapshot_type: str, as_of_date: date, as_of_daily: dict | None = None):
     groups = defaultdict(list)
     for snap in dailies:
-        dt = _parse_date(snap.get("as_of")) or _parse_date(snap.get("as_of_date_local"))
+        dt = _parse_date(sc.get_as_of(snap))
         if not dt:
             continue
         if snapshot_type == "weekly":
@@ -351,8 +352,11 @@ def _intervals(dailies, snapshot_type: str, as_of_date: date, as_of_daily: dict 
         items.sort(key=lambda x: x[0])
         start_dt, start_snap = items[0]
         end_dt, end_snap = items[-1]
-        start_totals = start_snap.get("totals", {}) if start_snap else {}
-        end_totals = end_snap.get("totals", {}) if end_snap else {}
+        start_totals = sc.get_totals(start_snap) if start_snap else {}
+        end_totals = sc.get_totals(end_snap) if end_snap else {}
+        end_perf = sc.get_perf(end_snap)
+        end_risk = sc.get_risk_flat(end_snap)
+        end_rollups = sc.get_rollups(end_snap)
         start_mv = _total_market_value(start_snap)
         end_mv = _total_market_value(end_snap)
         pnl = None
@@ -376,61 +380,61 @@ def _intervals(dailies, snapshot_type: str, as_of_date: date, as_of_daily: dict 
                 "unrealized_pct": end_totals.get("unrealized_pct"),
                 "unrealized_pnl": end_totals.get("unrealized_pnl"),
             },
-            "income": end_snap.get("income"),
+            "income": sc.get_income(end_snap),
             "performance": {
                 "pnl_dollar_period": _round(pnl),
                 "pnl_pct_period": _round(pnl_pct),
-                "twr_1m_pct": (end_snap.get("portfolio_rollups") or {}).get("performance", {}).get("twr_1m_pct"),
-                "twr_3m_pct": (end_snap.get("portfolio_rollups") or {}).get("performance", {}).get("twr_3m_pct"),
-                "twr_12m_pct": (end_snap.get("portfolio_rollups") or {}).get("performance", {}).get("twr_12m_pct"),
+                "twr_1m_pct": end_perf.get("twr_1m_pct"),
+                "twr_3m_pct": end_perf.get("twr_3m_pct"),
+                "twr_12m_pct": end_perf.get("twr_12m_pct"),
             },
             "risk": {
-                "sharpe_1y": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("sharpe_1y"),
-                "sortino_1y": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("sortino_1y"),
-                "sortino_6m": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("sortino_6m"),
-                "sortino_3m": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("sortino_3m"),
-                "sortino_1m": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("sortino_1m"),
-                "sortino_sharpe_ratio": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("sortino_sharpe_ratio"),
-                "sortino_sharpe_divergence": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("sortino_sharpe_divergence"),
-                "portfolio_risk_quality": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("portfolio_risk_quality"),
-                "var_90_1d_pct": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("var_90_1d_pct"),
-                "var_95_1d_pct": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("var_95_1d_pct"),
-                "var_99_1d_pct": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("var_99_1d_pct"),
-                "var_95_1w_pct": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("var_95_1w_pct"),
-                "var_95_1m_pct": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("var_95_1m_pct"),
-                "cvar_90_1d_pct": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("cvar_90_1d_pct"),
-                "cvar_95_1d_pct": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("cvar_95_1d_pct"),
-                "cvar_99_1d_pct": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("cvar_99_1d_pct"),
-                "cvar_95_1w_pct": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("cvar_95_1w_pct"),
-                "cvar_95_1m_pct": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("cvar_95_1m_pct"),
-                "ulcer_index_1y": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("ulcer_index_1y"),
-                "omega_ratio_1y": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("omega_ratio_1y"),
-                "information_ratio_1y": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("information_ratio_1y"),
-                "tracking_error_1y_pct": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("tracking_error_1y_pct"),
-                "income_stability_score": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("income_stability_score"),
-                "max_drawdown_1y_pct": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("max_drawdown_1y_pct"),
-                "drawdown_duration_1y_days": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("drawdown_duration_1y_days"),
-                "calmar_1y": (end_snap.get("portfolio_rollups") or {}).get("risk", {}).get("calmar_1y"),
+                "sharpe_1y": end_risk.get("sharpe_1y"),
+                "sortino_1y": end_risk.get("sortino_1y"),
+                "sortino_6m": end_risk.get("sortino_6m"),
+                "sortino_3m": end_risk.get("sortino_3m"),
+                "sortino_1m": end_risk.get("sortino_1m"),
+                "sortino_sharpe_ratio": end_risk.get("sortino_sharpe_ratio"),
+                "sortino_sharpe_divergence": end_risk.get("sortino_sharpe_divergence"),
+                "portfolio_risk_quality": end_risk.get("portfolio_risk_quality"),
+                "var_90_1d_pct": end_risk.get("var_90_1d_pct"),
+                "var_95_1d_pct": end_risk.get("var_95_1d_pct"),
+                "var_99_1d_pct": end_risk.get("var_99_1d_pct"),
+                "var_95_1w_pct": end_risk.get("var_95_1w_pct"),
+                "var_95_1m_pct": end_risk.get("var_95_1m_pct"),
+                "cvar_90_1d_pct": end_risk.get("cvar_90_1d_pct"),
+                "cvar_95_1d_pct": end_risk.get("cvar_95_1d_pct"),
+                "cvar_99_1d_pct": end_risk.get("cvar_99_1d_pct"),
+                "cvar_95_1w_pct": end_risk.get("cvar_95_1w_pct"),
+                "cvar_95_1m_pct": end_risk.get("cvar_95_1m_pct"),
+                "ulcer_index_1y": end_risk.get("ulcer_index_1y"),
+                "omega_ratio_1y": end_risk.get("omega_ratio_1y"),
+                "information_ratio_1y": end_risk.get("information_ratio_1y"),
+                "tracking_error_1y_pct": end_risk.get("tracking_error_1y_pct"),
+                "income_stability_score": end_risk.get("income_stability_score"),
+                "max_drawdown_1y_pct": end_risk.get("max_drawdown_1y_pct"),
+                "drawdown_duration_1y_days": end_risk.get("drawdown_duration_1y_days"),
+                "calmar_1y": end_risk.get("calmar_1y"),
             },
-            "income_stability": (end_snap.get("portfolio_rollups") or {}).get("income_stability"),
-            "income_growth": (end_snap.get("portfolio_rollups") or {}).get("income_growth"),
-            "tail_risk": (end_snap.get("portfolio_rollups") or {}).get("tail_risk"),
-            "vs_benchmark": (end_snap.get("portfolio_rollups") or {}).get("vs_benchmark"),
-            "return_attribution_1m": (end_snap.get("portfolio_rollups") or {}).get("return_attribution_1m"),
-            "return_attribution_3m": (end_snap.get("portfolio_rollups") or {}).get("return_attribution_3m"),
-            "return_attribution_6m": (end_snap.get("portfolio_rollups") or {}).get("return_attribution_6m"),
-            "return_attribution_12m": (end_snap.get("portfolio_rollups") or {}).get("return_attribution_12m"),
+            "income_stability": end_rollups.get("income_stability"),
+            "income_growth": end_rollups.get("income_growth"),
+            "tail_risk": end_rollups.get("tail_risk"),
+            "vs_benchmark": end_rollups.get("vs_benchmark"),
+            "return_attribution_1m": end_rollups.get("return_attribution_1m"),
+            "return_attribution_3m": end_rollups.get("return_attribution_3m"),
+            "return_attribution_6m": end_rollups.get("return_attribution_6m"),
+            "return_attribution_12m": end_rollups.get("return_attribution_12m"),
             "margin": {
                 "margin_loan_balance": end_totals.get("margin_loan_balance"),
                 "margin_to_portfolio_pct": end_totals.get("margin_to_portfolio_pct"),
                 "ltv_pct": end_totals.get("margin_to_portfolio_pct"),
                 "available_to_withdraw": 0.0 if end_totals.get("margin_loan_balance") is not None else None,
             },
-            "margin_stress": end_snap.get("margin_stress"),
-            "goal_progress": end_snap.get("goal_progress"),
-            "goal_progress_net": end_snap.get("goal_progress_net"),
-            "goal_tiers": end_snap.get("goal_tiers"),
-            "goal_pace": end_snap.get("goal_pace"),
+            "margin_stress": sc.get_margin_stress(end_snap),
+            "goal_progress": sc.get_goal_progress(end_snap),
+            "goal_progress_net": sc.get_goal_progress_net(end_snap),
+            "goal_tiers": sc.get_goal_tiers(end_snap),
+            "goal_pace": sc.get_goal_pace(end_snap),
             "holdings": [
                 {
                     "symbol": h.get("symbol"),
@@ -481,15 +485,17 @@ def _intervals_from_periods(period_snaps: list[dict], snapshot_type: str, as_of_
         end_dt = _parse_date(end_date) if end_date else None
         end_daily = _extract_daily_from_period_snap(snap, end_date)
 
-        totals = (end_daily or {}).get("totals") or {}
+        _end = end_daily or {}
+        totals = sc.get_totals(_end)
         total_mv = _total_market_value(end_daily)
         margin_loan = totals.get("margin_loan_balance")
         net_liquidation_value = None
         if isinstance(total_mv, (int, float)) and isinstance(margin_loan, (int, float)):
             net_liquidation_value = total_mv - margin_loan
-        income = (end_daily or {}).get("income")
-        perf = (end_daily or {}).get("portfolio_rollups", {}).get("performance") if end_daily else {}
-        risk = (end_daily or {}).get("portfolio_rollups", {}).get("risk") if end_daily else {}
+        income = sc.get_income(_end)
+        perf = sc.get_perf(_end)
+        risk = sc.get_risk_flat(_end)
+        rollups = sc.get_rollups(_end)
         holdings = (end_daily or {}).get("holdings") or []
 
         interval = {
@@ -507,57 +513,57 @@ def _intervals_from_periods(period_snaps: list[dict], snapshot_type: str, as_of_
             "performance": {
                 "pnl_dollar_period": None,
                 "pnl_pct_period": None,
-                "twr_1m_pct": perf.get("twr_1m_pct") if perf else None,
-                "twr_3m_pct": perf.get("twr_3m_pct") if perf else None,
-                "twr_12m_pct": perf.get("twr_12m_pct") if perf else None,
+                "twr_1m_pct": perf.get("twr_1m_pct"),
+                "twr_3m_pct": perf.get("twr_3m_pct"),
+                "twr_12m_pct": perf.get("twr_12m_pct"),
             },
             "risk": {
-                "sharpe_1y": risk.get("sharpe_1y") if risk else None,
-                "sortino_1y": risk.get("sortino_1y") if risk else None,
-                "sortino_6m": risk.get("sortino_6m") if risk else None,
-                "sortino_3m": risk.get("sortino_3m") if risk else None,
-                "sortino_1m": risk.get("sortino_1m") if risk else None,
-                "sortino_sharpe_ratio": risk.get("sortino_sharpe_ratio") if risk else None,
-                "sortino_sharpe_divergence": risk.get("sortino_sharpe_divergence") if risk else None,
-                "portfolio_risk_quality": risk.get("portfolio_risk_quality") if risk else None,
-                "var_90_1d_pct": risk.get("var_90_1d_pct") if risk else None,
-                "var_95_1d_pct": risk.get("var_95_1d_pct") if risk else None,
-                "var_99_1d_pct": risk.get("var_99_1d_pct") if risk else None,
-                "var_95_1w_pct": risk.get("var_95_1w_pct") if risk else None,
-                "var_95_1m_pct": risk.get("var_95_1m_pct") if risk else None,
-                "cvar_90_1d_pct": risk.get("cvar_90_1d_pct") if risk else None,
-                "cvar_95_1d_pct": risk.get("cvar_95_1d_pct") if risk else None,
-                "cvar_99_1d_pct": risk.get("cvar_99_1d_pct") if risk else None,
-                "cvar_95_1w_pct": risk.get("cvar_95_1w_pct") if risk else None,
-                "cvar_95_1m_pct": risk.get("cvar_95_1m_pct") if risk else None,
-                "ulcer_index_1y": risk.get("ulcer_index_1y") if risk else None,
-                "omega_ratio_1y": risk.get("omega_ratio_1y") if risk else None,
-                "information_ratio_1y": risk.get("information_ratio_1y") if risk else None,
-                "tracking_error_1y_pct": risk.get("tracking_error_1y_pct") if risk else None,
-                "income_stability_score": risk.get("income_stability_score") if risk else None,
-                "max_drawdown_1y_pct": risk.get("max_drawdown_1y_pct") if risk else None,
-                "drawdown_duration_1y_days": risk.get("drawdown_duration_1y_days") if risk else None,
-                "calmar_1y": risk.get("calmar_1y") if risk else None,
+                "sharpe_1y": risk.get("sharpe_1y"),
+                "sortino_1y": risk.get("sortino_1y"),
+                "sortino_6m": risk.get("sortino_6m"),
+                "sortino_3m": risk.get("sortino_3m"),
+                "sortino_1m": risk.get("sortino_1m"),
+                "sortino_sharpe_ratio": risk.get("sortino_sharpe_ratio"),
+                "sortino_sharpe_divergence": risk.get("sortino_sharpe_divergence"),
+                "portfolio_risk_quality": risk.get("portfolio_risk_quality"),
+                "var_90_1d_pct": risk.get("var_90_1d_pct"),
+                "var_95_1d_pct": risk.get("var_95_1d_pct"),
+                "var_99_1d_pct": risk.get("var_99_1d_pct"),
+                "var_95_1w_pct": risk.get("var_95_1w_pct"),
+                "var_95_1m_pct": risk.get("var_95_1m_pct"),
+                "cvar_90_1d_pct": risk.get("cvar_90_1d_pct"),
+                "cvar_95_1d_pct": risk.get("cvar_95_1d_pct"),
+                "cvar_99_1d_pct": risk.get("cvar_99_1d_pct"),
+                "cvar_95_1w_pct": risk.get("cvar_95_1w_pct"),
+                "cvar_95_1m_pct": risk.get("cvar_95_1m_pct"),
+                "ulcer_index_1y": risk.get("ulcer_index_1y"),
+                "omega_ratio_1y": risk.get("omega_ratio_1y"),
+                "information_ratio_1y": risk.get("information_ratio_1y"),
+                "tracking_error_1y_pct": risk.get("tracking_error_1y_pct"),
+                "income_stability_score": risk.get("income_stability_score"),
+                "max_drawdown_1y_pct": risk.get("max_drawdown_1y_pct"),
+                "drawdown_duration_1y_days": risk.get("drawdown_duration_1y_days"),
+                "calmar_1y": risk.get("calmar_1y"),
             },
-            "income_stability": (end_daily or {}).get("portfolio_rollups", {}).get("income_stability") if end_daily else None,
-            "income_growth": (end_daily or {}).get("portfolio_rollups", {}).get("income_growth") if end_daily else None,
-            "tail_risk": (end_daily or {}).get("portfolio_rollups", {}).get("tail_risk") if end_daily else None,
-            "vs_benchmark": (end_daily or {}).get("portfolio_rollups", {}).get("vs_benchmark") if end_daily else None,
-            "return_attribution_1m": (end_daily or {}).get("portfolio_rollups", {}).get("return_attribution_1m") if end_daily else None,
-            "return_attribution_3m": (end_daily or {}).get("portfolio_rollups", {}).get("return_attribution_3m") if end_daily else None,
-            "return_attribution_6m": (end_daily or {}).get("portfolio_rollups", {}).get("return_attribution_6m") if end_daily else None,
-            "return_attribution_12m": (end_daily or {}).get("portfolio_rollups", {}).get("return_attribution_12m") if end_daily else None,
+            "income_stability": rollups.get("income_stability"),
+            "income_growth": rollups.get("income_growth"),
+            "tail_risk": rollups.get("tail_risk"),
+            "vs_benchmark": rollups.get("vs_benchmark"),
+            "return_attribution_1m": rollups.get("return_attribution_1m"),
+            "return_attribution_3m": rollups.get("return_attribution_3m"),
+            "return_attribution_6m": rollups.get("return_attribution_6m"),
+            "return_attribution_12m": rollups.get("return_attribution_12m"),
             "margin": {
                 "margin_loan_balance": totals.get("margin_loan_balance"),
                 "margin_to_portfolio_pct": totals.get("margin_to_portfolio_pct"),
                 "ltv_pct": totals.get("margin_to_portfolio_pct"),
                 "available_to_withdraw": 0.0 if totals.get("margin_loan_balance") is not None else None,
             },
-            "margin_stress": (end_daily or {}).get("margin_stress") if end_daily else None,
-            "goal_progress": (end_daily or {}).get("goal_progress"),
-            "goal_progress_net": (end_daily or {}).get("goal_progress_net"),
-            "goal_tiers": (end_daily or {}).get("goal_tiers"),
-            "goal_pace": (end_daily or {}).get("goal_pace"),
+            "margin_stress": sc.get_margin_stress(_end),
+            "goal_progress": sc.get_goal_progress(_end),
+            "goal_progress_net": sc.get_goal_progress_net(_end),
+            "goal_tiers": sc.get_goal_tiers(_end),
+            "goal_pace": sc.get_goal_pace(_end),
             "holdings": [
                 {
                     "symbol": h.get("symbol"),
@@ -605,7 +611,7 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
 
     as_of_daily = _load_daily_snapshot(conn, end_date)
 
-    daily_dates = sorted({_parse_date(s.get("as_of") or s.get("as_of_date_local")) for s in dailies if _parse_date(s.get("as_of") or s.get("as_of_date_local"))})
+    daily_dates = sorted({sc.get_as_of(s) for s in dailies if sc.get_as_of(s)})
     daily_dates = [d for d in daily_dates if d]
     observed_days = len(daily_dates)
     expected_days = _expected_days(snapshot_type, period_start, period_end)
@@ -641,7 +647,7 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
 
     portfolio_data = {}
     for snap in dailies:
-        dt = _parse_date(snap.get("as_of") or snap.get("as_of_date_local"))
+        dt = _parse_date(sc.get_as_of(snap))
         mv = _total_market_value(snap)
         if dt and isinstance(mv, (int, float)):
             portfolio_data[dt] = mv
@@ -654,8 +660,10 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
         twr_period_pct = round(pnl_pct, 2)
 
     def _twr_window_delta(key):
-        start_val = (start_snap.get("portfolio_rollups") or {}).get("performance", {}).get(key)
-        end_val = (end_snap.get("portfolio_rollups") or {}).get("performance", {}).get(key)
+        start_perf = sc.get_perf(start_snap)
+        end_perf = sc.get_perf(end_snap)
+        start_val = start_perf.get(key)
+        end_val = end_perf.get(key)
         delta = None
         if isinstance(start_val, (int, float)) and isinstance(end_val, (int, float)):
             delta = round(end_val - start_val, 2)
@@ -699,8 +707,8 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
         "calmar_1y",
         "max_drawdown_1y_pct",
     ]
-    risk_start_raw = (start_snap.get("portfolio_rollups") or {}).get("risk", {})
-    risk_end_raw = (end_snap.get("portfolio_rollups") or {}).get("risk", {})
+    risk_start_raw = sc.get_risk_flat(start_snap)
+    risk_end_raw = sc.get_risk_flat(end_snap)
     risk_start = {key: risk_start_raw.get(key) for key in risk_keys}
     risk_end = {key: risk_end_raw.get(key) for key in risk_keys}
     risk_delta = {}
@@ -722,7 +730,7 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
     risk_stats = {}
     for key in ["sortino_1y", "sortino_6m", "sortino_3m", "sortino_1m"]:
         values = [
-            (s.get("portfolio_rollups") or {}).get("risk", {}).get(key)
+            sc.get_risk_flat(s).get(key)
             for s in dailies
         ]
         values = [v for v in values if isinstance(v, (int, float))]
