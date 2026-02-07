@@ -629,8 +629,8 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
     start_snap = dailies[0]
     end_snap = dailies[-1]
 
-    totals_start = start_snap.get("totals", {})
-    totals_end = end_snap.get("totals", {})
+    totals_start = sc.get_totals(start_snap) or {}
+    totals_end = sc.get_totals(end_snap) or {}
     mv_start = _total_market_value(start_snap)
     mv_end = _total_market_value(end_snap)
     net_start = None
@@ -717,13 +717,13 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
             risk_delta[key] = round(risk_end.get(key) - risk_start.get(key), 2)
 
     macro_keys = ["ten_year_yield", "two_year_yield", "vix", "cpi_yoy"]
-    macro_start_raw = (start_snap.get("macro") or {}).get("snapshot", {}) or {}
-    macro_end_raw = (end_snap.get("macro") or {}).get("snapshot", {}) or {}
+    macro_start_raw = sc.get_macro_snapshot(start_snap)
+    macro_end_raw = sc.get_macro_snapshot(end_snap)
     macro_start = {key: macro_start_raw.get(key) for key in macro_keys}
     macro_end = {key: macro_end_raw.get(key) for key in macro_keys}
     macro_avg = {}
     for key in macro_keys:
-        values = [s.get("macro", {}).get("snapshot", {}).get(key) for s in dailies]
+        values = [sc.get_macro_snapshot(s).get(key) for s in dailies]
         values = [v for v in values if isinstance(v, (int, float))]
         if values:
             macro_avg[key] = round(sum(values) / len(values), 2)
@@ -740,6 +740,16 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
                 "min": round(min(values), 3),
                 "max": round(max(values), 3),
             }
+
+    # Extract V5-compatible data for period summary
+    start_income = sc.get_income(start_snap)
+    end_income = sc.get_income(end_snap)
+    start_gp = sc.get_goal_progress(start_snap)
+    end_gp = sc.get_goal_progress(end_snap)
+    start_gpn = sc.get_goal_progress_net(start_snap)
+    end_gpn = sc.get_goal_progress_net(end_snap)
+    start_holdings = sc.get_holdings_flat(start_snap)
+    end_holdings = sc.get_holdings_flat(end_snap)
 
     period_summary = {
         "totals": {
@@ -774,20 +784,20 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
             },
         },
         "income": {
-            "start": start_snap.get("income"),
-            "end": end_snap.get("income"),
+            "start": sc.get_income(start_snap),
+            "end": sc.get_income(end_snap),
             "delta": {
-                "projected_monthly_income": _round(end_snap.get("income", {}).get("projected_monthly_income") - start_snap.get("income", {}).get("projected_monthly_income"), 2)
-                if isinstance(end_snap.get("income", {}).get("projected_monthly_income"), (int, float)) and isinstance(start_snap.get("income", {}).get("projected_monthly_income"), (int, float))
+                "projected_monthly_income": _round((end_income or {}).get("projected_monthly_income") - (start_income or {}).get("projected_monthly_income"), 2)
+                if isinstance((end_income or {}).get("projected_monthly_income"), (int, float)) and isinstance((start_income or {}).get("projected_monthly_income"), (int, float))
                 else None,
-                "forward_12m_total": _round(end_snap.get("income", {}).get("forward_12m_total") - start_snap.get("income", {}).get("forward_12m_total"), 2)
-                if isinstance(end_snap.get("income", {}).get("forward_12m_total"), (int, float)) and isinstance(start_snap.get("income", {}).get("forward_12m_total"), (int, float))
+                "forward_12m_total": _round((end_income or {}).get("forward_12m_total") - (start_income or {}).get("forward_12m_total"), 2)
+                if isinstance((end_income or {}).get("forward_12m_total"), (int, float)) and isinstance((start_income or {}).get("forward_12m_total"), (int, float))
                 else None,
-                "portfolio_current_yield_pct": _round(end_snap.get("income", {}).get("portfolio_current_yield_pct") - start_snap.get("income", {}).get("portfolio_current_yield_pct"), 2)
-                if isinstance(end_snap.get("income", {}).get("portfolio_current_yield_pct"), (int, float)) and isinstance(start_snap.get("income", {}).get("portfolio_current_yield_pct"), (int, float))
+                "portfolio_current_yield_pct": _round((end_income or {}).get("portfolio_current_yield_pct") - (start_income or {}).get("portfolio_current_yield_pct"), 2)
+                if isinstance((end_income or {}).get("portfolio_current_yield_pct"), (int, float)) and isinstance((start_income or {}).get("portfolio_current_yield_pct"), (int, float))
                 else None,
-                "portfolio_yield_on_cost_pct": _round(end_snap.get("income", {}).get("portfolio_yield_on_cost_pct") - start_snap.get("income", {}).get("portfolio_yield_on_cost_pct"), 2)
-                if isinstance(end_snap.get("income", {}).get("portfolio_yield_on_cost_pct"), (int, float)) and isinstance(start_snap.get("income", {}).get("portfolio_yield_on_cost_pct"), (int, float))
+                "portfolio_yield_on_cost_pct": _round((end_income or {}).get("portfolio_yield_on_cost_pct") - (start_income or {}).get("portfolio_yield_on_cost_pct"), 2)
+                if isinstance((end_income or {}).get("portfolio_yield_on_cost_pct"), (int, float)) and isinstance((start_income or {}).get("portfolio_yield_on_cost_pct"), (int, float))
                 else None,
             },
         },
@@ -810,47 +820,47 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
         },
         "risk": {"start": risk_start, "end": risk_end, "delta": risk_delta},
         "goal_progress": {
-            "start": start_snap.get("goal_progress"),
-            "end": end_snap.get("goal_progress"),
+            "start": sc.get_goal_progress(start_snap),
+            "end": sc.get_goal_progress(end_snap),
             "delta": {
-                "progress_pct": _round((end_snap.get("goal_progress") or {}).get("progress_pct") - (start_snap.get("goal_progress") or {}).get("progress_pct"), 2)
-                if isinstance((end_snap.get("goal_progress") or {}).get("progress_pct"), (int, float)) and isinstance((start_snap.get("goal_progress") or {}).get("progress_pct"), (int, float))
+                "progress_pct": _round((end_gp or {}).get("progress_pct") - (start_gp or {}).get("progress_pct"), 2)
+                if isinstance((end_gp or {}).get("progress_pct"), (int, float)) and isinstance((start_gp or {}).get("progress_pct"), (int, float))
                 else None,
-                "current_projected_monthly": _round((end_snap.get("goal_progress") or {}).get("current_projected_monthly") - (start_snap.get("goal_progress") or {}).get("current_projected_monthly"), 2)
-                if isinstance((end_snap.get("goal_progress") or {}).get("current_projected_monthly"), (int, float)) and isinstance((start_snap.get("goal_progress") or {}).get("current_projected_monthly"), (int, float))
+                "current_projected_monthly": _round((end_gp or {}).get("current_projected_monthly") - (start_gp or {}).get("current_projected_monthly"), 2)
+                if isinstance((end_gp or {}).get("current_projected_monthly"), (int, float)) and isinstance((start_gp or {}).get("current_projected_monthly"), (int, float))
                 else None,
-                "months_to_goal": _round((end_snap.get("goal_progress") or {}).get("months_to_goal") - (start_snap.get("goal_progress") or {}).get("months_to_goal"), 0)
-                if isinstance((end_snap.get("goal_progress") or {}).get("months_to_goal"), (int, float)) and isinstance((start_snap.get("goal_progress") or {}).get("months_to_goal"), (int, float))
+                "months_to_goal": _round((end_gp or {}).get("months_to_goal") - (start_gp or {}).get("months_to_goal"), 0)
+                if isinstance((end_gp or {}).get("months_to_goal"), (int, float)) and isinstance((start_gp or {}).get("months_to_goal"), (int, float))
                 else None,
             },
         },
         "goal_progress_net": {
-            "start": start_snap.get("goal_progress_net"),
-            "end": end_snap.get("goal_progress_net"),
+            "start": sc.get_goal_progress_net(start_snap),
+            "end": sc.get_goal_progress_net(end_snap),
             "delta": {
-                "progress_pct": _round((end_snap.get("goal_progress_net") or {}).get("progress_pct") - (start_snap.get("goal_progress_net") or {}).get("progress_pct"), 2)
-                if isinstance((end_snap.get("goal_progress_net") or {}).get("progress_pct"), (int, float)) and isinstance((start_snap.get("goal_progress_net") or {}).get("progress_pct"), (int, float))
+                "progress_pct": _round((end_gpn or {}).get("progress_pct") - (start_gpn or {}).get("progress_pct"), 2)
+                if isinstance((end_gpn or {}).get("progress_pct"), (int, float)) and isinstance((start_gpn or {}).get("progress_pct"), (int, float))
                 else None,
-                "current_projected_monthly_net": _round((end_snap.get("goal_progress_net") or {}).get("current_projected_monthly_net") - (start_snap.get("goal_progress_net") or {}).get("current_projected_monthly_net"), 2)
-                if isinstance((end_snap.get("goal_progress_net") or {}).get("current_projected_monthly_net"), (int, float)) and isinstance((start_snap.get("goal_progress_net") or {}).get("current_projected_monthly_net"), (int, float))
+                "current_projected_monthly_net": _round((end_gpn or {}).get("current_projected_monthly_net") - (start_gpn or {}).get("current_projected_monthly_net"), 2)
+                if isinstance((end_gpn or {}).get("current_projected_monthly_net"), (int, float)) and isinstance((start_gpn or {}).get("current_projected_monthly_net"), (int, float))
                 else None,
             },
         },
-        "goal_tiers": end_snap.get("goal_tiers"),
-        "goal_pace": end_snap.get("goal_pace"),
+        "goal_tiers": sc.get_goal_tiers(end_snap),
+        "goal_pace": sc.get_goal_pace(end_snap),
         "composition": {
             "start": {
-                "holding_count": len(start_snap.get("holdings") or []),
-                "concentration_top5_pct": _top5_concentration(start_snap.get("holdings") or []),
+                "holding_count": len(start_holdings),
+                "concentration_top5_pct": _top5_concentration(start_holdings),
             },
             "end": {
-                "holding_count": len(end_snap.get("holdings") or []),
-                "concentration_top5_pct": _top5_concentration(end_snap.get("holdings") or []),
+                "holding_count": len(end_holdings),
+                "concentration_top5_pct": _top5_concentration(end_holdings),
             },
             "delta": {
-                "holding_count": len(end_snap.get("holdings") or []) - len(start_snap.get("holdings") or []),
-                "concentration_top5_pct": _round(_top5_concentration(end_snap.get("holdings") or []) - _top5_concentration(start_snap.get("holdings") or []), 2)
-                if _top5_concentration(start_snap.get("holdings") or []) is not None and _top5_concentration(end_snap.get("holdings") or []) is not None
+                "holding_count": len(end_holdings) - len(start_holdings),
+                "concentration_top5_pct": _round(_top5_concentration(end_holdings) - _top5_concentration(start_holdings), 2)
+                if _top5_concentration(start_holdings) is not None and _top5_concentration(end_holdings) is not None
                 else None,
             },
         },
@@ -926,7 +936,7 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
         },
         "benchmark": _benchmark_block(benchmark_symbol, period_start, end_date),
         "period_summary": period_summary,
-        "portfolio_changes": _portfolio_changes(start_snap.get("holdings") or [], end_snap.get("holdings") or []),
+        "portfolio_changes": _portfolio_changes(start_holdings, end_holdings),
         "intervals": intervals,
         "summary": summary,
     }
