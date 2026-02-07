@@ -45,8 +45,15 @@ from app.pipeline.null_reasons import replace_nulls_with_reasons
 V5_KEY_SECTIONS = {'summary', 'alerts', 'portfolio', 'goals', 'margin', 'timestamps'}
 
 
-def get_snapshots_to_migrate(conn: sqlite3.Connection, start_date: str | None, end_date: str | None):
-    """Get list of snapshots that need migration (< v5.0 or incomplete v5.0)."""
+def get_snapshots_to_migrate(conn: sqlite3.Connection, start_date: str | None, end_date: str | None, include_v5: bool = False):
+    """Get list of snapshots that need migration (< v5.0 or incomplete v5.0).
+    
+    Args:
+        conn: Database connection
+        start_date: Optional start date filter
+        end_date: Optional end date filter
+        include_v5: If True, include complete v5.0 snapshots for rebuilding
+    """
     query = """
         SELECT as_of_date_local, payload_json,
                CAST(json_extract(payload_json, '$.meta.schema_version') AS REAL) as schema_version
@@ -68,6 +75,11 @@ def get_snapshots_to_migrate(conn: sqlite3.Connection, start_date: str | None, e
 
         # Include snapshots < v5.0
         if schema_version is None or schema_version < 5.0:
+            results.append((as_of_date, schema_version))
+            continue
+
+        # Include v5.0 snapshots if requested (for rebuilding with null reasons)
+        if include_v5 and schema_version >= 5.0:
             results.append((as_of_date, schema_version))
             continue
 
@@ -315,6 +327,7 @@ def main():
     parser.add_argument("--single-date", help="Migrate a single date (YYYY-MM-DD) — for testing one at a time")
     parser.add_argument("--start-date", help="Start date (YYYY-MM-DD)")
     parser.add_argument("--end-date", help="End date (YYYY-MM-DD)")
+    parser.add_argument("--include-v5", action="store_true", help="Include complete v5.0 snapshots for rebuilding (e.g., to apply null reasons)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     parser.add_argument("--dump", action="store_true", help="Dump migrated snapshot JSON to stdout (for single-date)")
     args = parser.parse_args()
@@ -376,9 +389,12 @@ def main():
         snapshots = get_dates_for_backfill(conn, args.start_date, args.end_date)
         mode_label = "backfill"
     else:
-        print(f"[MIGRATION MODE] Updating existing snapshots to v5.0\n")
-        snapshots = get_snapshots_to_migrate(conn, args.start_date, args.end_date)
-        mode_label = "migrate"
+        if args.include_v5:
+            print(f"[REBUILD MODE] Rebuilding all v5.0 snapshots (includes null reasons)\n")
+        else:
+            print(f"[MIGRATION MODE] Updating existing snapshots to v5.0\n")
+        snapshots = get_snapshots_to_migrate(conn, args.start_date, args.end_date, include_v5=args.include_v5)
+        mode_label = "rebuild" if args.include_v5 else "migrate"
 
     if not snapshots:
         print(f"No snapshots to {mode_label}.")
