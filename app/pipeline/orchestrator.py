@@ -140,14 +140,23 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
         daily, sources = build_daily_snapshot(conn, holdings, md)
         _step_done("build_daily_snapshot", started, sources_count=len(sources))
 
+        # Helper to get values from V5 schema (with fallback to V4)
+        timestamps = daily.get("timestamps") or {}
+        portfolio = daily.get("portfolio") or {}
+        as_of_date_local = timestamps.get("portfolio_data_as_of_local") or daily.get("as_of_date_local")
+        if not as_of_date_local:
+            # Try to derive from portfolio_data_as_of_utc
+            as_of_utc = timestamps.get("portfolio_data_as_of_utc") or daily.get("as_of_utc") or ""
+            as_of_date_local = as_of_utc[:10] if as_of_utc else ""
+
         started = _step_start("persist_daily_snapshot")
-        as_of_date_local = daily.get("as_of_date_local") or daily["as_of"][:10]
 
         def _market_value(payload: dict | None):
             if not isinstance(payload, dict):
                 return None
             try:
-                return round(float((payload.get("totals") or {}).get("market_value")), 2)
+                totals = (payload.get("portfolio") or {}).get("totals") or payload.get("totals") or {}
+                return round(float(totals.get("market_value")), 2)
             except (TypeError, ValueError):
                 return None
 
@@ -173,8 +182,12 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
                 market_value_changed = existing_mv != current_mv
         prices_as_of_changed = False
         if has_daily:
-            existing_prices_as_of = (existing_payload or {}).get("prices_as_of_utc") or (existing_payload or {}).get("prices_as_of")
-            current_prices_as_of = daily.get("prices_as_of_utc") or daily.get("prices_as_of")
+            # Get prices_as_of from V5 timestamps or fall back to V4 format
+            def _get_prices_as_of(payload: dict):
+                timestamps = payload.get("timestamps") or {}
+                return timestamps.get("price_data_as_of_utc") or payload.get("prices_as_of_utc") or payload.get("prices_as_of")
+            existing_prices_as_of = _get_prices_as_of(existing_payload or {})
+            current_prices_as_of = _get_prices_as_of(daily)
             prices_as_of_changed = existing_prices_as_of != current_prices_as_of
 
         should_persist_daily = force_daily or not has_daily or market_value_changed or prices_as_of_changed

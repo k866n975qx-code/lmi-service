@@ -3843,7 +3843,12 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
 
 
 def persist_daily_snapshot(conn: sqlite3.Connection, daily: dict, run_id: str, force: bool = False) -> bool:
-    as_of_date_local = daily.get("as_of_date_local") or daily["as_of"][:10]
+    # Get as_of_date_local from V5 timestamps or fall back to V4 format
+    timestamps = daily.get("timestamps") or {}
+    as_of_date_local = timestamps.get("portfolio_data_as_of_local") or daily.get("as_of_date_local")
+    if not as_of_date_local:
+        as_of_utc = timestamps.get("portfolio_data_as_of_utc") or daily.get("as_of_utc") or ""
+        as_of_date_local = as_of_utc[:10] if as_of_utc else ""
     payload_sha = sha256_json(daily)
     cur = conn.cursor()
     if not force:
@@ -3885,7 +3890,12 @@ def _period_bounds(period_type: str, on: date):
 
 
 def maybe_persist_periodic(conn: sqlite3.Connection, run_id: str, daily: dict):
-    as_of_date_local = daily.get("as_of_date_local") or daily["as_of"][:10]
+    # Get as_of_date_local from V5 timestamps or fall back to V4 format
+    timestamps = daily.get("timestamps") or {}
+    as_of_date_local = timestamps.get("portfolio_data_as_of_local") or daily.get("as_of_date_local")
+    if not as_of_date_local:
+        as_of_utc = timestamps.get("portfolio_data_as_of_utc") or daily.get("as_of_utc") or ""
+        as_of_date_local = as_of_utc[:10] if as_of_utc else ""
     dt = date.fromisoformat(as_of_date_local)
     for period in ["WEEK", "MONTH", "QUARTER", "YEAR"]:
         start, end = _period_bounds(period, dt)

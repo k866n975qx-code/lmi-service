@@ -4,7 +4,12 @@ from ..utils import now_utc_iso
 def upsert_facts_from_sources(conn: sqlite3.Connection, run_id: str, daily: dict, sources: list[dict]):
     cur = conn.cursor()
     created = now_utc_iso()
-    as_of_date_local = daily.get('as_of_date_local') or daily['as_of'][:10]
+    # Get as_of_date_local from V5 timestamps or fall back to V4 format
+    timestamps = daily.get('timestamps') or {}
+    as_of_date_local = timestamps.get('portfolio_data_as_of_local') or daily.get('as_of_date_local')
+    if not as_of_date_local:
+        as_of_utc = timestamps.get('portfolio_data_as_of_utc') or daily.get('as_of_utc') or ''
+        as_of_date_local = as_of_utc[:10] if as_of_utc else ''
     for s in sources:
         params = s.get('params')
         if params is not None and not isinstance(params, str):
