@@ -156,8 +156,6 @@ def _iter_immediate_to_send(conn, results: list[dict]):
     for item in results:
         alert = item["alert"]
         severity = int(alert["severity"])
-        if severity < 8:
-            continue
         if not item["should_notify"]:
             continue
         if severity < min_sev:
