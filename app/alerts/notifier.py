@@ -202,6 +202,14 @@ def _group_alerts_by_category(items: list[dict]) -> list[dict]:
                 a = it["alert"]
                 emoji = _severity_emoji(int(a["severity"]))
                 lines.append(f"{emoji} [{a['severity']}] {a['title']}")
+                # Extract key detail from body_html (after title line)
+                body_lines = a.get("body_html", "").replace("<br/>", "\n").split("\n")
+                # Skip the first line (title/emoji part), include remaining lines as details
+                if len(body_lines) > 1:
+                    for detail in body_lines[1:4]:  # Include up to 3 detail lines
+                        detail = detail.strip()
+                        if detail and not detail.startswith(emoji):
+                            lines.append(f"  • {detail}")
             if count > 10:
                 lines.append(f"...+{count - 10} more")
             lines.append("")

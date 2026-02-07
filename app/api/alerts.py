@@ -1376,8 +1376,28 @@ async def _handle_callback_query(callback_query: dict):
     elif action == "details":
         alert = get_alert_by_id(conn, param)
         if alert:
-            details = alert.get("details") or alert.get("body_html") or "No additional details"
-            await tg.send_message_html(f"<b>Alert Details</b>\n\n{details}")
+            # Show full alert details
+            title = alert.get("title", "Unknown Alert")
+            body = alert.get("body_html", "No details available")
+            as_of = alert.get("as_of_date_local", "")
+            severity = alert.get("severity", "?")
+            severity_emoji = "🔴" if severity >= 8 else "🟠" if severity >= 5 else "🟡"
+            details_text = alert.get("details")
+            if details_text and isinstance(details_text, dict):
+                # If details is a dict, format it nicely
+                import json
+                details = "\n".join(f"<b>{k}:</b> {v}" for k, v in details_text.items())
+            else:
+                details = ""
+
+            full_html = f"{severity_emoji} <b>{title}</b>\n\n"
+            full_html += f"<b>Severity:</b> {severity}\n"
+            full_html += f"<b>As of:</b> {as_of}\n\n"
+            full_html += f"<b>Details:</b>\n{body}"
+            if details:
+                full_html += f"\n\n{details}"
+
+            await tg.send_message_html(full_html)
         else:
             await tg.send_message_html("⚠️ Alert not found")
 
