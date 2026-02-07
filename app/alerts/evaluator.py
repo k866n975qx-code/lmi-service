@@ -881,7 +881,8 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
     current_yield = income.get("portfolio_current_yield_pct")
     prev_yield = None
     if prev_30d_snap:
-        prev_yield = (prev_30d_snap.get("income") or {}).get("portfolio_current_yield_pct")
+        prev_30d_income = sc.get_income(prev_30d_snap)
+        prev_yield = prev_30d_income.get("portfolio_current_yield_pct")
     if (
         isinstance(current_yield, (int, float))
         and isinstance(prev_yield, (int, float))
@@ -904,7 +905,8 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
     cur_pace_cat = cur_pace.get("pace_category", "")
     prev_pace_cat = ""
     if prev_30d_snap:
-        prev_pace_cat = ((prev_30d_snap.get("goal_pace") or {}).get("current_pace") or {}).get("pace_category", "")
+        prev_30d_pace = sc.get_goal_pace(prev_30d_snap)
+        prev_pace_cat = (prev_30d_pace.get("current_pace") or {}).get("pace_category", "")
     pace_worsened = (
         (cur_pace_cat in ("behind", "off_track"))
         and (prev_pace_cat not in ("behind", "off_track"))
@@ -972,7 +974,8 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
             body = f"🎉 <b>Milestone</b><br/>Net value: {_fmt_money(cur_net)}."
             alerts.append(_mk("milestone", as_of, 4, title, body))
     cur_monthly = income.get("projected_monthly_income")
-    prev_monthly = (prev_snap.get("income") or {}).get("projected_monthly_income") if prev_snap else None
+    prev_income_data = sc.get_income(prev_snap) if prev_snap else {}
+    prev_monthly = prev_income_data.get("projected_monthly_income") if prev_snap else None
     for threshold in MILESTONE_MONTHLY_INCOME:
         if isinstance(cur_monthly, (int, float)) and isinstance(prev_monthly, (int, float)) and prev_monthly < threshold <= cur_monthly:
             title = f"Milestone: Monthly income {_fmt_money(threshold)}"
@@ -982,7 +985,8 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
     gt_target = gt_cs.get("target_monthly", 0)
     gt_current = gt_cs.get("projected_monthly_income", 0)
     cur_progress = round(gt_current / gt_target * 100, 1) if gt_target > 0 else None
-    prev_gt_cs = ((prev_snap.get("goal_tiers") or {}).get("current_state") or {}) if prev_snap else {}
+    prev_gt_data = sc.get_goal_tiers(prev_snap) if prev_snap else {}
+    prev_gt_cs = prev_gt_data.get("current_state") or {}
     prev_gt_target = prev_gt_cs.get("target_monthly", 0)
     prev_gt_current = prev_gt_cs.get("projected_monthly_income", 0)
     prev_progress = round(prev_gt_current / prev_gt_target * 100, 1) if prev_gt_target > 0 else None
@@ -1187,7 +1191,8 @@ def build_daily_report_html(conn: sqlite3.Connection):
         sharpe = risk.get("sharpe_1y")
         prev_sortino = None
         if prev_snap:
-            prev_sortino = ((prev_snap.get("portfolio_rollups") or {}).get("risk") or {}).get("sortino_1y")
+            prev_risk = sc.get_risk_flat(prev_snap)
+            prev_sortino = prev_risk.get("sortino_1y")
         sortino_delta = None
         if isinstance(sortino, (int, float)) and isinstance(prev_sortino, (int, float)):
             sortino_delta = sortino - prev_sortino
@@ -1231,9 +1236,8 @@ def build_daily_report_html(conn: sqlite3.Connection):
             sortino_rows.sort(key=lambda item: item[1], reverse=True)
             parts.append("")
             parts.append("<b>🧭 SORTINO SNAPSHOT</b>")
-            prev_7d_sortino = None
-            if prev_7d_snap:
-                prev_7d_sortino = ((prev_7d_snap.get("portfolio_rollups") or {}).get("risk") or {}).get("sortino_1y")
+            prev_7d_risk = sc.get_risk_flat(prev_7d_snap or {})
+            prev_7d_sortino = prev_7d_risk.get("sortino_1y") if prev_7d_snap else None
             if isinstance(sortino, (int, float)) and isinstance(prev_7d_sortino, (int, float)):
                 trend_delta = sortino - prev_7d_sortino
                 parts.append(f"7-Day Trend: {prev_7d_sortino:.2f} → {sortino:.2f} ({trend_delta:+.2f})")
@@ -1394,16 +1398,17 @@ def build_daily_digest_html(conn: sqlite3.Connection):
 def build_morning_brief_html(conn: sqlite3.Connection):
     """Compact pre-market brief: ex-dates today, top holdings, macro snapshot, open criticals."""
     from .storage import list_open_alerts
+    from ..pipeline import snap_compat as sc
 
     as_of, snap = _latest_daily(conn)
     if not as_of or not snap:
         return None, "No daily snapshot available."
 
-    totals = snap.get("totals") or {}
-    dividends = snap.get("dividends") or {}
-    div_upcoming = snap.get("dividends_upcoming") or {}
-    macro = (snap.get("macro") or {}).get("snapshot") or {}
-    holdings = snap.get("holdings") or []
+    totals = sc.get_totals(snap) or {}
+    dividends = sc.get_dividends(snap) or {}
+    div_upcoming = sc.get_dividends_upcoming(snap) or {}
+    macro = sc.get_macro_snapshot(snap) or {}
+    holdings = sc.get_holdings_flat(snap) or []
 
     try:
         as_of_dt = date.fromisoformat(as_of)
@@ -1454,15 +1459,16 @@ def build_morning_brief_html(conn: sqlite3.Connection):
 def build_evening_recap_html(conn: sqlite3.Connection):
     """Compact post-close recap: NLV change, alert summary, income MTD, top/bottom movers."""
     from .storage import list_open_alerts
+    from ..pipeline import snap_compat as sc
 
     as_of, snap = _latest_daily(conn)
     if not as_of or not snap:
         return None, "No daily snapshot available."
 
-    totals = snap.get("totals") or {}
-    income = snap.get("income") or {}
-    dividends = snap.get("dividends") or {}
-    holdings = snap.get("holdings") or []
+    totals = sc.get_totals(snap) or {}
+    income = sc.get_income(snap) or {}
+    dividends = sc.get_dividends(snap) or {}
+    holdings = sc.get_holdings_flat(snap) or []
 
     try:
         as_of_dt = date.fromisoformat(as_of)
