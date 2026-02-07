@@ -152,6 +152,8 @@ def _load_daily_snapshots(conn: sqlite3.Connection, start: date, end: date):
 
 
 def _load_period_snapshots(conn: sqlite3.Connection, period_type: str, start: date, end: date):
+    # Normalize period_type to uppercase for database query
+    period_type_upper = period_type.upper()
     cur = conn.cursor()
     rows = cur.execute(
         """
@@ -160,7 +162,7 @@ def _load_period_snapshots(conn: sqlite3.Connection, period_type: str, start: da
         WHERE period_type=? AND period_end_date BETWEEN ? AND ?
         ORDER BY period_end_date ASC
         """,
-        (period_type, start.isoformat(), end.isoformat()),
+        (period_type_upper, start.isoformat(), end.isoformat()),
     ).fetchall()
     out = []
     for start_date, end_date, payload_json in rows:
@@ -899,7 +901,7 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
     intervals = None
     if snapshot_type == "monthly":
         week_start = end_date - timedelta(days=end_date.weekday())
-        weekly_snaps = _load_period_snapshots(conn, "WEEK", period_start, end_date)
+        weekly_snaps = _load_period_snapshots(conn, "weekly", period_start, end_date)
         completed = [s for s in weekly_snaps if _parse_date((s.get("period") or {}).get("end_date")) and _parse_date((s.get("period") or {}).get("end_date")) < week_start]
         current_wtd = build_period_snapshot(conn, "weekly", as_of=end_date.isoformat(), mode="to_date")
         base_snaps = completed + [current_wtd]
@@ -907,7 +909,7 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
             intervals = _intervals_from_periods(base_snaps, snapshot_type, end_date, as_of_daily)
     elif snapshot_type in ("quarterly", "yearly"):
         month_start = end_date.replace(day=1)
-        monthly_snaps = _load_period_snapshots(conn, "MONTH", period_start, end_date)
+        monthly_snaps = _load_period_snapshots(conn, "monthly", period_start, end_date)
         completed = [s for s in monthly_snaps if _parse_date((s.get("period") or {}).get("end_date")) and _parse_date((s.get("period") or {}).get("end_date")) < month_start]
         current_mtd = build_period_snapshot(conn, "monthly", as_of=end_date.isoformat(), mode="to_date")
         base_snaps = completed + [current_mtd]
