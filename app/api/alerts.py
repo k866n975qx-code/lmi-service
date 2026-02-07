@@ -215,7 +215,7 @@ def _status_text(snap: dict) -> str:
     )
 
 def _income_text(snap: dict) -> str:
-    divs = snap.get("dividends_upcoming") or {}
+    divs = sc.get_dividends_upcoming(snap)
     events = divs.get("events") or []
     if not events:
         return "No upcoming dividends in the current window."
@@ -230,7 +230,7 @@ def _income_text(snap: dict) -> str:
     return "\n".join(lines)
 
 def _mtd_text(snap: dict) -> str:
-    divs = snap.get("dividends") or {}
+    divs = sc.get_dividends(snap)
     proj_vs = divs.get("projected_vs_received") or {}
     projected = proj_vs.get("projected")
     received = proj_vs.get("received")
@@ -243,7 +243,7 @@ def _mtd_text(snap: dict) -> str:
     )
 
 def _received_text(snap: dict) -> str:
-    divs = snap.get("dividends") or {}
+    divs = sc.get_dividends(snap)
     window = (divs.get("windows") or {}).get("30d") or {}
     by_symbol = window.get("by_symbol") or {}
     lines = ["<b>Last 30 Days (by symbol)</b>"]
@@ -290,8 +290,8 @@ def _risk_text(snap: dict) -> str:
     )
 
 def _goal_text(snap: dict) -> str:
-    goal_tiers = snap.get("goal_tiers") or {}
-    goal_pace = snap.get("goal_pace") or {}
+    goal_tiers = sc.get_goal_tiers(snap)
+    goal_pace = sc.get_goal_pace(snap)
     current_state = goal_tiers.get("current_state") or {}
     tiers = goal_tiers.get("tiers") or []
     likely = goal_pace.get("likely_tier") or {}
@@ -346,8 +346,8 @@ def _goal_text(snap: dict) -> str:
     return "\n".join(lines)
 
 def _projection_text(snap: dict) -> str:
-    goal_tiers = snap.get("goal_tiers") or {}
-    goal_pace = snap.get("goal_pace") or {}
+    goal_tiers = sc.get_goal_tiers(snap)
+    goal_pace = sc.get_goal_pace(snap)
     tiers = goal_tiers.get("tiers") or []
     likely = goal_pace.get("likely_tier") or {}
 
@@ -408,16 +408,17 @@ def _settings_text(conn) -> str:
 
 def _snapshot_text(snap: dict) -> str:
     meta = snap.get("meta") or {}
+    as_of = sc.get_as_of(snap)
     return (
         "<b>Snapshot</b>\n"
-        f"As of: {snap.get('as_of_date_local', '—')}\n"
+        f"As of: {as_of or '—'}\n"
         f"Created: {meta.get('snapshot_created_at', '—')}\n"
         f"Schema: {meta.get('schema_version', '—')}\n"
         f"Age days: {meta.get('snapshot_age_days', '—')}"
     )
 
 def _macro_text(snap: dict) -> str:
-    macro = (snap.get("macro") or {}).get("snapshot") or {}
+    macro = sc.get_macro_snapshot(snap)
     return (
         "<b>Macro</b>\n"
         f"VIX: {macro.get('vix', '—')}\n"
@@ -609,7 +610,7 @@ def _compare_text(diff: dict) -> str:
 
 def _pace_text(snap: dict) -> str:
     """Format goal pace tracking data as HTML."""
-    pace = snap.get("goal_pace")
+    pace = sc.get_goal_pace(snap)
     if not pace:
         return "Goal pace tracking not available. Run a sync to generate pace data."
 
@@ -696,7 +697,7 @@ def _health_text(conn, snap: dict) -> str:
 
     # Snapshot freshness
     meta = snap.get("meta") or {} if snap else {}
-    as_of = snap.get("as_of_date_local", "—") if snap else "—"
+    as_of = sc.get_as_of(snap) or "—" if snap else "—"
     age_days = meta.get("snapshot_age_days", "—")
     schema = meta.get("schema_version", "—")
 
@@ -736,7 +737,7 @@ def _health_text(conn, snap: dict) -> str:
 
 def _position_text(snap: dict, symbol: str) -> str:
     """Format detailed position info for a single holding."""
-    holdings = snap.get("holdings") or []
+    holdings = sc.get_holdings_flat(snap)
     symbol_upper = symbol.upper()
 
     holding = next((h for h in holdings if (h.get("symbol") or "").upper() == symbol_upper), None)
@@ -902,7 +903,7 @@ def _digest_keyboard_and_text(conn) -> tuple[str, dict]:
 
 def _simulate_text(snap: dict, tier_num: int | None = None) -> str:
     """Format simulation output comparing tiers."""
-    goal_tiers = snap.get("goal_tiers")
+    goal_tiers = sc.get_goal_tiers(snap)
     if not goal_tiers or not goal_tiers.get("tiers"):
         return "Goal tiers not available. Run a sync to generate tier data."
 
@@ -1006,7 +1007,7 @@ def _simple_projection(
 
 def _whatif_text(snap: dict, args: list[str]) -> str:
     """Format what-if scenario analysis."""
-    goal_tiers = snap.get("goal_tiers") or {}
+    goal_tiers = sc.get_goal_tiers(snap)
     current_state = goal_tiers.get("current_state") or {}
 
     target_monthly = current_state.get("target_monthly", 0)
@@ -1159,7 +1160,7 @@ def _trend_text(conn, category: str | None = None) -> str:
 
 def _rebalance_text(snap: dict) -> str:
     """Format portfolio rebalancing suggestions."""
-    holdings = snap.get("holdings") or []
+    holdings = sc.get_holdings_flat(snap)
     if not holdings:
         return "No holdings data available."
 
@@ -1262,8 +1263,9 @@ def _quick_summary_text(snap: dict, conn) -> str:
     open_crit = list_open_alerts(conn, min_severity=8)
     open_warn = list_open_alerts(conn, min_severity=5, max_severity=7)
 
+    as_of = sc.get_as_of(snap)
     lines = [
-        f"📊 <b>Daily Summary</b> | {snap.get('as_of_date_local', '—')}\n",
+        f"📊 <b>Daily Summary</b> | {as_of or '—'}\n",
         f"• Net: {_fmt_money(totals.get('net_liquidation_value'))}",
         f"• Monthly Income: {_fmt_money(income.get('projected_monthly_income'))}",
         f"• Goal: {progress:.0f}% {pace_label}",

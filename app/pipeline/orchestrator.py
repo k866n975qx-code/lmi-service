@@ -213,7 +213,7 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
                 upsert_facts_from_sources(conn, run_id, daily, sources)
                 # Update rolling summaries (week-to-date, month-to-date, etc.)
                 try:
-                    persist_rolling_summaries(conn, run_id, daily)
+                    persist_rolling_summaries(conn, run_id, daily, as_of_date_local)
                 except Exception as rolling_err:
                     log.warning("rolling_summaries_failed", run_id=run_id, err=str(rolling_err))
                 # Alert evaluation + immediate notifications (dedup handles repeats)
