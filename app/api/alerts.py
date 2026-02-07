@@ -1049,10 +1049,9 @@ def _whatif_text(snap: dict, args: list[str]) -> str:
         return f"Usage: /whatif {param_type} &lt;number&gt;"
 
     goal_pace = sc.get_goal_pace(snap)
-    except (ValueError, IndexError):
-        return f"Invalid value. Usage: /whatif {param_type} &lt;number&gt;"
-    if value is None:
-        return f"Usage: /whatif {param_type} &lt;number&gt;"
+    likely_tier = goal_pace.get("likely_tier") or {}
+    tiers = goal_tiers.get("tiers") or []
+    current_tier = next((t for t in tiers if t.get("tier") == likely_tier.get("tier")), {})
 
     goal_pace = sc.get_goal_pace(snap)
     likely_tier = goal_pace.get("likely_tier") or {}
