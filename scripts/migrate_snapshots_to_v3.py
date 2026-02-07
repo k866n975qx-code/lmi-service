@@ -38,6 +38,7 @@ from app.config import settings
 from app.db import get_conn
 from app.pipeline.market import MarketData
 from app.pipeline.snapshots import build_daily_snapshot
+from app.pipeline.null_reasons import replace_nulls_with_reasons
 
 
 # Key v5.0 sections to check for incomplete snapshots
@@ -274,6 +275,8 @@ def migrate_snapshot(conn: sqlite3.Connection, as_of_date_str: str, old_snapshot
 def save_snapshot(conn: sqlite3.Connection, as_of_date: str, snapshot: dict):
     """Save snapshot to database."""
     try:
+        # Apply null reason engine before saving
+        snapshot = replace_nulls_with_reasons(snapshot, kind="daily", conn=conn)
         payload_json = json.dumps(snapshot, separators=(',', ':'))
         import hashlib
         payload_sha256 = hashlib.sha256(payload_json.encode('utf-8')).hexdigest()
