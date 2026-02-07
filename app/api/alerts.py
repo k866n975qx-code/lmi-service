@@ -264,7 +264,7 @@ def _perf_text(snap: dict) -> str:
     )
 
 def _holdings_text(snap: dict) -> str:
-    holdings = snap.get("holdings") or []
+    holdings = sc.get_holdings_flat(snap)
     holdings = [h for h in holdings if isinstance(h.get("weight_pct"), (int, float))]
     holdings.sort(key=lambda h: h.get("weight_pct") or 0.0, reverse=True)
     lines = ["<b>Top Holdings</b>"]
@@ -409,12 +409,17 @@ def _settings_text(conn) -> str:
 def _snapshot_text(snap: dict) -> str:
     meta = snap.get("meta") or {}
     as_of = sc.get_as_of(snap)
+    # V5 schema: timestamps.snapshot_created_utc
+    created_at = meta.get("snapshot_created_at") or meta.get("created_at") or ""
+    # V5 schema: timestamps.macro_data_as_of_date
+    timestamps = snap.get("timestamps") or {}
+    as_of_date = timestamps.get("portfolio_data_as_of_local") or as_of
+    schema_version = meta.get("schema_version") or "V4"
     return (
         "<b>Snapshot</b>\n"
-        f"As of: {as_of or '—'}\n"
-        f"Created: {meta.get('snapshot_created_at', '—')}\n"
-        f"Schema: {meta.get('schema_version', '—')}\n"
-        f"Age days: {meta.get('snapshot_age_days', '—')}"
+        f"As of: {as_of_date or '—'}\n"
+        f"Created: {created_at or '—'}\n"
+        f"Schema: {schema_version}\n"
     )
 
 def _macro_text(snap: dict) -> str:
@@ -1043,7 +1048,13 @@ def _whatif_text(snap: dict, args: list[str]) -> str:
     if value is None:
         return f"Usage: /whatif {param_type} &lt;number&gt;"
 
-    goal_pace = snap.get("goal_pace") or {}
+    goal_pace = sc.get_goal_pace(snap)
+    except (ValueError, IndexError):
+        return f"Invalid value. Usage: /whatif {param_type} &lt;number&gt;"
+    if value is None:
+        return f"Usage: /whatif {param_type} &lt;number&gt;"
+
+    goal_pace = sc.get_goal_pace(snap)
     likely_tier = goal_pace.get("likely_tier") or {}
     tiers = goal_tiers.get("tiers") or []
     current_tier = next((t for t in tiers if t.get("tier") == likely_tier.get("tier")), {})
@@ -1454,7 +1465,7 @@ async def _handle_callback_query(callback_query: dict):
             "macro": lambda: _macro_text(snap) if snap else no_snap,
             "mtd": lambda: _mtd_text(snap) if snap else no_snap,
             "holdings": lambda: _holdings_text(snap) if snap else no_snap,
-            "goals": lambda: format_goal_tiers_html(snap.get("goal_tiers")) if snap and snap.get("goal_tiers") else "No tier data.",
+            "goals": lambda: format_goal_tiers_html(sc.get_goal_tiers(snap)) if snap and sc.get_goal_tiers(snap) else "No tier data.",
             "received": lambda: _received_text(snap) if snap else no_snap,
             "simulate": lambda: _simulate_text(snap) if snap else no_snap,
             "projection": lambda: _projection_text(snap) if snap else no_snap,
@@ -1674,7 +1685,7 @@ async def telegram_webhook(update: dict):
         if not snap:
             reply = "No daily snapshot available."
         else:
-            goal_tiers = snap.get("goal_tiers")
+            goal_tiers = sc.get_goal_tiers(snap)
             if goal_tiers:
                 reply = format_goal_tiers_html(goal_tiers)
             else:
