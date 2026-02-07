@@ -1086,26 +1086,27 @@ def _get_digest_sections(conn: sqlite3.Connection) -> set[str]:
 
 def build_daily_report_html(conn: sqlite3.Connection):
     from .storage import list_open_alerts
+    from ..pipeline import snap_compat as sc
 
     as_of, snap = _latest_daily(conn)
     if not as_of or not snap:
         return None, "No daily snapshot available."
 
-    totals = snap.get("totals") or {}
-    income = snap.get("income") or {}
-    dividends = snap.get("dividends") or {}
-    div_upcoming = snap.get("dividends_upcoming") or {}
-    rollups = snap.get("portfolio_rollups") or {}
-    performance = rollups.get("performance") or {}
-    risk = rollups.get("risk") or {}
+    totals = sc.get_totals(snap) or {}
+    income = sc.get_income(snap) or {}
+    dividends = sc.get_dividends(snap) or {}
+    div_upcoming = sc.get_dividends_upcoming(snap) or {}
+    rollups = sc.get_rollups(snap) or {}
+    performance = sc.get_perf(snap) or {}
+    risk = sc.get_risk_flat(snap) or {}
     income_stability = rollups.get("income_stability") or {}
     tail_risk = rollups.get("tail_risk") or {}
-    goal_tiers = snap.get("goal_tiers") or {}
-    goal_pace = snap.get("goal_pace") or {}
-    macro = (snap.get("macro") or {}).get("snapshot") or {}
-    margin_guidance = snap.get("margin_guidance") or {}
-    margin_stress = snap.get("margin_stress") or {}
-    holdings = snap.get("holdings") or []
+    goal_tiers = sc.get_goal_tiers(snap) or {}
+    goal_pace = sc.get_goal_pace(snap) or {}
+    macro = sc.get_macro_snapshot(snap) or {}
+    margin_guidance = sc.get_margin_guidance(snap) or {}
+    margin_stress = sc.get_margin_stress(snap) or {}
+    holdings = sc.get_holdings_flat(snap) or []
 
     try:
         as_of_dt = date.fromisoformat(as_of)
