@@ -239,7 +239,8 @@ def format_goal_tiers_html(goal_tiers: dict) -> str:
         if assumption_parts:
             lines.append(f"   📋 {' + '.join(assumption_parts)}")
         else:
-            lines.append("   📋 No action")
+            desc = (tier.get("description") or "").strip()
+            lines.append(f"   📋 {desc or 'Hold only; no contributions or leverage'}")
 
         lines.append("")
 

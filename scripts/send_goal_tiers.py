@@ -23,19 +23,15 @@ def main():
         print("ERROR: Telegram not configured. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID environment variables.")
         return 1
 
-    # Get latest snapshot
+    from app.pipeline.snapshot_views import assemble_daily_snapshot
     conn = get_conn(settings.db_path)
-    cur = conn.cursor()
-    row = cur.execute(
-        "SELECT payload_json FROM snapshot_daily_current ORDER BY as_of_date_local DESC LIMIT 1"
-    ).fetchone()
-
-    if not row:
+    payload = assemble_daily_snapshot(conn, as_of_date=None)
+    if not payload:
         print("ERROR: No daily snapshot found. Run sync_all.py first.")
         return 1
-
-    payload = json.loads(row[0])
-    goal_tiers = payload.get("goal_tiers")
+    # V5: goals.tiers + current_state; legacy: goal_tiers
+    goals = payload.get("goals") or {}
+    goal_tiers = payload.get("goal_tiers") or {"tiers": goals.get("tiers") or [], "current_state": goals.get("current_state")}
 
     if not goal_tiers:
         print("ERROR: Goal tiers not available in snapshot. The snapshot may have been created before this feature was added.")

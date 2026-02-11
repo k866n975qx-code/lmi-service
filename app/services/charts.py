@@ -13,25 +13,39 @@ import matplotlib.ticker as mticker
 import numpy as np
 
 import structlog
-from ..pipeline import snap_compat as sc
+
+from ..pipeline.snapshot_views import assemble_daily_snapshot
+from ..pipeline.diff_daily import (
+    _totals,
+    _income,
+    _goal_progress,
+    _goal_pace,
+    _holdings_flat,
+    _rollups,
+    _dividends_upcoming,
+)
+from ..alerts.evaluator import _holding_ultimate
 
 log = structlog.get_logger()
 
 
 def _load_snapshots(conn: sqlite3.Connection, days: int = 90) -> list[tuple[date, dict]]:
-    """Load recent daily snapshots ordered by date ascending."""
+    """Load recent daily snapshots from flat tables (assembled to V5) ordered by date ascending."""
     cur = conn.cursor()
     rows = cur.execute(
-        "SELECT as_of_date_local, payload_json FROM snapshot_daily_current "
+        "SELECT as_of_date_local FROM daily_portfolio "
         "WHERE as_of_date_local >= date(?, '-' || ? || ' days') ORDER BY as_of_date_local ASC",
         (date.today().isoformat(), str(days)),
     ).fetchall()
     out = []
     for row in rows:
-        try:
-            out.append((date.fromisoformat(row[0]), json.loads(row[1])))
-        except (json.JSONDecodeError, ValueError):
-            continue
+        as_of = row[0]
+        snap = assemble_daily_snapshot(conn, as_of_date=as_of)
+        if snap:
+            try:
+                out.append((date.fromisoformat(as_of), snap))
+            except (ValueError, TypeError):
+                continue
     return out
 
 
@@ -66,14 +80,14 @@ def generate_pace_chart(conn: sqlite3.Connection, days: int = 90) -> bytes | Non
     expected_mv = []
 
     for d, snap in snapshots:
-        totals = sc.get_totals(snap)
+        totals = _totals(snap)
         mv = totals.get("market_value")
         if not isinstance(mv, (int, float)):
             continue
         dates.append(d)
         actual_mv.append(mv)
 
-        goal_pace = sc.get_goal_pace(snap)
+        goal_pace = _goal_pace(snap)
         ytd = (goal_pace.get("windows") or {}).get("ytd") or {}
         exp = (ytd.get("expected") or {}).get("portfolio_value")
         expected_mv.append(exp if isinstance(exp, (int, float)) else mv)
@@ -119,7 +133,7 @@ def generate_income_chart(conn: sqlite3.Connection, days: int = 90) -> bytes | N
     monthly_income = []
 
     for d, snap in snapshots:
-        inc = sc.get_income(snap)
+        inc = _income(snap)
         proj = inc.get("projected_monthly_income")
         if isinstance(proj, (int, float)):
             dates.append(d)
@@ -136,7 +150,7 @@ def generate_income_chart(conn: sqlite3.Connection, days: int = 90) -> bytes | N
     ax.plot(dates, monthly_income, linewidth=2.2, color="#f9e2af", label="Projected Monthly")
 
     # Target line
-    goal = sc.get_goal_progress(snapshots[-1][1]).get("target_monthly")
+    goal = _goal_progress(snapshots[-1][1]).get("target_monthly")
     if isinstance(goal, (int, float)):
         ax.axhline(y=goal, color="#f38ba8", linestyle="--", linewidth=1.5, label=f"Target ${goal:,.0f}/mo")
 
@@ -159,7 +173,7 @@ def generate_performance_chart(conn: sqlite3.Connection, days: int = 90) -> byte
     nlv_values = []
 
     for d, snap in snapshots:
-        totals = sc.get_totals(snap)
+        totals = _totals(snap)
         nlv = totals.get("net_liquidation_value")
         if isinstance(nlv, (int, float)):
             dates.append(d)
@@ -198,11 +212,12 @@ def generate_performance_chart(conn: sqlite3.Connection, days: int = 90) -> byte
 
 def generate_attribution_chart(snap: dict) -> bytes | None:
     """Generate pie chart of income by top positions."""
-    holdings = sc.get_holdings_flat(snap)
+    holdings = _holdings_flat(snap)
     income_by_sym = {}
     for h in holdings:
+        u = _holding_ultimate(h)
         sym = h.get("symbol")
-        annual = h.get("forward_12m_dividend") or h.get("projected_annual_dividend") or 0
+        annual = u.get("forward_12m_dividend") or u.get("projected_annual_dividend") or 0
         if sym and isinstance(annual, (int, float)) and annual > 0:
             income_by_sym[sym] = annual
 
@@ -259,8 +274,8 @@ def generate_yield_chart(conn: sqlite3.Connection, days: int = 90) -> bytes | No
     yoc = []
 
     for d, snap in snapshots:
-        inc = sc.get_income(snap)
-        cy = inc.get("portfolio_current_yield_pct")
+        inc = _income(snap)
+        cy = inc.get("portfolio_current_yield_pct") or inc.get("portfolio_yield_pct")
         yc = inc.get("portfolio_yield_on_cost_pct")
         if isinstance(cy, (int, float)):
             dates.append(d)
@@ -313,7 +328,7 @@ def generate_risk_chart(conn: sqlite3.Connection, days: int = 90) -> bytes | Non
     sortino = []
 
     for d, snap in snapshots:
-        rollups = sc.get_rollups(snap)
+        rollups = _rollups(snap)
         risk = rollups.get("risk") or {}
         v = risk.get("vol_30d_pct")
         if isinstance(v, (int, float)):
@@ -379,7 +394,7 @@ def generate_drawdown_chart(conn: sqlite3.Connection, days: int = 90) -> bytes |
     nlv_values = []
 
     for d, snap in snapshots:
-        totals = sc.get_totals(snap)
+        totals = _totals(snap)
         nlv = totals.get("net_liquidation_value")
         if isinstance(nlv, (int, float)):
             dates.append(d)
@@ -434,11 +449,12 @@ def generate_drawdown_chart(conn: sqlite3.Connection, days: int = 90) -> bytes |
 
 def generate_allocation_chart(snap: dict) -> bytes | None:
     """Generate horizontal bar chart of position weights."""
-    holdings = sc.get_holdings_flat(snap)
+    holdings = _holdings_flat(snap)
     positions = []
     for h in holdings:
+        u = _holding_ultimate(h)
         sym = h.get("symbol")
-        weight = h.get("weight_pct")
+        weight = u.get("weight_pct")
         if sym and isinstance(weight, (int, float)) and weight > 0:
             positions.append((sym, weight))
 
@@ -500,8 +516,8 @@ def generate_margin_chart(conn: sqlite3.Connection, days: int = 90) -> bytes | N
     margin_bal = []
 
     for d, snap in snapshots:
-        totals = sc.get_totals(snap)
-        ltv = totals.get("margin_to_portfolio_pct")
+        totals = _totals(snap)
+        ltv = totals.get("margin_to_portfolio_pct") or totals.get("ltv_pct")
         bal = totals.get("margin_loan_balance")
         if isinstance(ltv, (int, float)):
             dates.append(d)
@@ -552,7 +568,7 @@ def generate_margin_chart(conn: sqlite3.Connection, days: int = 90) -> bytes | N
 
 def generate_dividend_calendar_chart(snap: dict) -> bytes | None:
     """Generate bar chart of upcoming dividend payments by date."""
-    upcoming = sc.get_dividends_upcoming(snap)
+    upcoming = _dividends_upcoming(snap)
     events = upcoming.get("events") or []
 
     if not events:

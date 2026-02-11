@@ -7,7 +7,23 @@ from datetime import date, datetime, timedelta
 from typing import List, Tuple, Optional
 
 import structlog
-from ..pipeline import snap_compat as sc
+
+from ..pipeline.snapshot_views import assemble_daily_snapshot
+from ..pipeline.diff_daily import (
+    _totals,
+    _income,
+    _perf,
+    _risk_flat,
+    _rollups,
+    _goal_progress,
+    _goal_tiers,
+    _goal_pace,
+    _margin_stress,
+    _holdings_flat,
+    _dividends,
+    _dividends_upcoming,
+    _macro_snapshot,
+)
 from .constants import (
     DIVIDEND_CUT_THRESHOLD,
     EXTENDED_DRAWDOWN_DAYS,
@@ -60,68 +76,86 @@ from .constants import (
 log = structlog.get_logger()
 
 def _latest_daily(conn: sqlite3.Connection) -> Tuple[Optional[str], Optional[dict]]:
-    cur = conn.cursor()
-    row = cur.execute(
-        "SELECT as_of_date_local, payload_json FROM snapshot_daily_current ORDER BY as_of_date_local DESC LIMIT 1"
-    ).fetchone()
-    if not row:
+    snap = assemble_daily_snapshot(conn, as_of_date=None)
+    if not snap:
         return None, None
-    try:
-        return row[0], json.loads(row[1])
-    except json.JSONDecodeError:
-        return row[0], None
+    as_of = snap.get("as_of_date_local") or (snap.get("timestamps") or {}).get("portfolio_data_as_of_local")
+    return as_of, snap
+
 
 def _load_daily_by_date(conn: sqlite3.Connection, as_of_date_local: str) -> Optional[dict]:
-    cur = conn.cursor()
-    row = cur.execute(
-        "SELECT payload_json FROM snapshot_daily_current WHERE as_of_date_local=?",
-        (as_of_date_local,),
-    ).fetchone()
-    if not row:
-        return None
-    try:
-        return json.loads(row[0])
-    except json.JSONDecodeError:
-        return None
+    return assemble_daily_snapshot(conn, as_of_date=as_of_date_local)
+
 
 def _previous_daily(conn: sqlite3.Connection, as_of_date_local: str) -> Tuple[Optional[str], Optional[dict]]:
-    cur = conn.cursor()
-    row = cur.execute(
-        "SELECT as_of_date_local, payload_json FROM snapshot_daily_current WHERE as_of_date_local < ? ORDER BY as_of_date_local DESC LIMIT 1",
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT as_of_date_local FROM daily_portfolio WHERE as_of_date_local < ? ORDER BY as_of_date_local DESC LIMIT 1",
         (as_of_date_local,),
     ).fetchone()
     if not row:
         return None, None
-    try:
-        return row[0], json.loads(row[1])
-    except json.JSONDecodeError:
-        return row[0], None
+    as_of = row["as_of_date_local"]
+    snap = assemble_daily_snapshot(conn, as_of_date=as_of)
+    return as_of, snap
+
 
 def _snapshot_on_or_before(conn: sqlite3.Connection, target: date) -> Tuple[Optional[str], Optional[dict]]:
-    cur = conn.cursor()
-    row = cur.execute(
-        "SELECT as_of_date_local, payload_json FROM snapshot_daily_current WHERE as_of_date_local <= ? ORDER BY as_of_date_local DESC LIMIT 1",
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT as_of_date_local FROM daily_portfolio WHERE as_of_date_local <= ? ORDER BY as_of_date_local DESC LIMIT 1",
         (target.isoformat(),),
     ).fetchone()
     if not row:
         return None, None
-    try:
-        return row[0], json.loads(row[1])
-    except json.JSONDecodeError:
-        return row[0], None
+    as_of = row["as_of_date_local"]
+    snap = assemble_daily_snapshot(conn, as_of_date=as_of)
+    return as_of, snap
+
 
 def _recent_snapshots(conn: sqlite3.Connection, limit: int = 7) -> list[tuple[str, dict]]:
-    cur = conn.cursor()
-    rows = cur.execute(
-        "SELECT as_of_date_local, payload_json FROM snapshot_daily_current ORDER BY as_of_date_local DESC LIMIT ?",
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT as_of_date_local FROM daily_portfolio ORDER BY as_of_date_local DESC LIMIT ?",
         (limit,),
     ).fetchall()
     out = []
     for row in rows:
-        try:
-            out.append((row[0], json.loads(row[1])))
-        except json.JSONDecodeError:
-            continue
+        as_of = row["as_of_date_local"]
+        snap = assemble_daily_snapshot(conn, as_of_date=as_of)
+        if snap:
+            out.append((as_of, snap))
+    return out
+
+
+def _latest_holdings(conn: sqlite3.Connection, as_of: str) -> list:
+    """Load holdings from daily_holdings for the given as_of_date_local."""
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT * FROM daily_holdings WHERE as_of_date_local=? ORDER BY weight_pct DESC",
+        (as_of,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _margin_guidance(snap: dict) -> dict:
+    if not snap:
+        return {}
+    g = (snap.get("margin") or {}).get("guidance") or (snap.get("margin") or {}).get("stress") or {}
+    return {"selected_mode": g.get("recommended_mode"), "modes": g.get("modes"), "rates": g.get("rates")}
+
+
+def _holding_ultimate(holding: dict) -> dict:
+    """Flatten V5 holding to top-level keys for risk/valuation/income."""
+    if not holding:
+        return {}
+    out = dict(holding)
+    out.update((holding.get("valuation") or {}))
+    out.update((holding.get("income") or {}))
+    out.update((holding.get("analytics") or {}).get("risk") or {})
+    out.update((holding.get("analytics") or {}).get("distribution") or {})
+    if "portfolio_weight_pct" in out and "weight_pct" not in out:
+        out["weight_pct"] = out["portfolio_weight_pct"]
     return out
 
 def _fp(category: str, title: str) -> str:
@@ -327,8 +361,8 @@ def _consecutive_green_days(conn: sqlite3.Connection) -> tuple[int, float | None
     for i in range(1, len(snaps)):
         left = snaps[i - 1][1]
         right = snaps[i][1]
-        lval = sc.get_totals(left).get("net_liquidation_value")
-        rval = sc.get_totals(right).get("net_liquidation_value")
+        lval = _totals(left).get("net_liquidation_value")
+        rval = _totals(right).get("net_liquidation_value")
         if not isinstance(lval, (int, float)) or not isinstance(rval, (int, float)):
             continue
         if rval > lval:
@@ -355,12 +389,12 @@ def _evaluate_pace_alerts(
 ) -> List[dict]:
     """Evaluate goal pace alerts: slippage, tier change, milestones, surplus decline."""
     alerts: List[dict] = []
-    goal_pace = sc.get_goal_pace(snap)
+    goal_pace = _goal_pace(snap)
     if not goal_pace:
         return alerts
 
-    prev_pace = sc.get_goal_pace(prev_snap or {})
-    prev_7d_pace = sc.get_goal_pace(prev_7d_snap or {})
+    prev_pace = _goal_pace(prev_snap or {})
+    prev_7d_pace = _goal_pace(prev_7d_snap or {})
 
     # 1) Pace slippage — behind tier pace for multiple consecutive days
     ytd_window = (goal_pace.get("windows") or {}).get("ytd") or {}
@@ -371,7 +405,7 @@ def _evaluate_pace_alerts(
         # Check consecutive snapshots below threshold
         consecutive_below = 0
         for _, rsnap in recent_snapshots[:PACE_SLIPPAGE_CONSECUTIVE + 1]:
-            rpace = sc.get_goal_pace(rsnap).get("windows", {}).get("ytd", {}).get("pace", {})
+            rpace = _goal_pace(rsnap).get("windows", {}).get("ytd", {}).get("pace", {})
             rpct = rpace.get("pct_of_tier_pace")
             if isinstance(rpct, (int, float)) and rpct < PACE_SLIPPAGE_PCT:
                 consecutive_below += 1
@@ -467,7 +501,7 @@ def _evaluate_event_alerts(
     alerts: List[dict] = []
 
     # 1) Ex-dividend today
-    div_upcoming = sc.get_dividends_upcoming(snap)
+    div_upcoming = _dividends_upcoming(snap)
     events = div_upcoming.get("events") or []
     today_events = [e for e in events if e.get("ex_date") == as_of or e.get("ex_date_est") == as_of]
     if today_events:
@@ -485,8 +519,8 @@ def _evaluate_event_alerts(
 
     # 2) Volatility spike (30d vol up 30%+ day-over-day)
     if prev_snap:
-        risk = sc.get_risk_flat(snap)
-        prev_risk = sc.get_risk_flat(prev_snap)
+        risk = _risk_flat(snap)
+        prev_risk = _risk_flat(prev_snap)
         vol_30d = risk.get("vol_30d_pct")
         prev_vol = prev_risk.get("vol_30d_pct")
         if (
@@ -512,21 +546,21 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
     if not as_of or not snap:
         return []
     alerts: List[dict] = []
-    totals = sc.get_totals(snap)
-    income = sc.get_income(snap)
-    dividends = sc.get_dividends(snap)
-    holdings = sc.get_holdings_flat(snap)
-    div_upcoming = sc.get_dividends_upcoming(snap)
-    portfolio_rollups = sc.get_rollups(snap)
+    totals = _totals(snap)
+    income = _income(snap)
+    dividends = _dividends(snap)
+    holdings = _holdings_flat(snap)
+    div_upcoming = _dividends_upcoming(snap)
+    portfolio_rollups = _rollups(snap)
     risk = portfolio_rollups.get("risk") or {}
     performance = portfolio_rollups.get("performance") or {}
     income_stability = portfolio_rollups.get("income_stability") or {}
     tail_risk = portfolio_rollups.get("tail_risk") or {}
-    macro = sc.get_macro_snapshot(snap)
-    goal_tiers_eval = sc.get_goal_tiers(snap)
-    goal_pace_eval = sc.get_goal_pace(snap)
-    margin_guidance = sc.get_margin_guidance(snap)
-    margin_stress = sc.get_margin_stress(snap)
+    macro = _macro_snapshot(snap)
+    goal_tiers_eval = _goal_tiers(snap)
+    goal_pace_eval = _goal_pace(snap)
+    margin_guidance = _margin_guidance(snap)
+    margin_stress = _margin_stress(snap)
 
     try:
         as_of_dt = date.fromisoformat(as_of)
@@ -537,7 +571,7 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
     prev_7d_date, prev_7d_snap = _snapshot_on_or_before(conn, as_of_dt - timedelta(days=7))
     prev_30d_date, prev_30d_snap = _snapshot_on_or_before(conn, as_of_dt - timedelta(days=30))
 
-    prev_holdings = _holdings_map(sc.get_holdings_flat(prev_snap)) if prev_snap else {}
+    prev_holdings = _holdings_map(_holdings_flat(prev_snap)) if prev_snap else {}
 
     # 1) Dividend cut detection
     total_forward_12m = income.get("forward_12m_total")
@@ -556,7 +590,7 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
         if cut_pct < DIVIDEND_CUT_THRESHOLD:
             continue
         shares = pos.get("shares")
-        freq = _frequency_per_year(sc.get_holding_ultimate(pos).get("distribution_frequency"))
+        freq = _frequency_per_year(_holding_ultimate(pos).get("distribution_frequency"))
         annual_impact = None
         impact_pct = None
         if isinstance(shares, (int, float)):
@@ -564,7 +598,7 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
             if isinstance(total_forward_12m, (int, float)) and total_forward_12m:
                 impact_pct = (annual_impact / total_forward_12m) * 100.0
         severity = 10 if (impact_pct is not None and impact_pct > 10.0) else 9
-        fy = pos.get("current_yield_pct") or sc.get_holding_ultimate(pos).get("forward_yield_pct")
+        fy = pos.get("current_yield_pct") or _holding_ultimate(pos).get("forward_yield_pct")
         title = f"{sym} dividend cut"
         body = f"🚨 <b>Dividend Cut</b> — <b>{sym}</b><br/>Per-share: {amt_prev:.4f} → {amt_last:.4f} (-{cut_pct*100:.1f}%)."
         if isinstance(fy, (int, float)):
@@ -577,7 +611,7 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
     ltv = totals.get("margin_to_portfolio_pct")
     net_change_pct = None
     if prev_snap:
-        prev_nlv = sc.get_totals(prev_snap).get("net_liquidation_value")
+        prev_nlv = _totals(prev_snap).get("net_liquidation_value")
         cur_nlv = totals.get("net_liquidation_value")
         if isinstance(prev_nlv, (int, float)) and isinstance(cur_nlv, (int, float)) and prev_nlv:
             net_change_pct = ((cur_nlv / prev_nlv) - 1.0) * 100.0
@@ -645,7 +679,7 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
         severity = 9 if isinstance(unreal_pct, (int, float)) and unreal_pct <= POSITION_LOSS_SEVERE else 8
         title = f"{sym} position blow-up"
         body = f"🚨 <b>{sym}</b> down <b>{_fmt_pct(unreal_pct, 1)}</b> from cost.<br/>Value {_fmt_money(mv)}."
-        vol30 = sc.get_holding_ultimate(pos).get("vol_30d_pct")
+        vol30 = _holding_ultimate(pos).get("vol_30d_pct")
         if isinstance(vol30, (int, float)):
             body += f"<br/>30d vol: {vol30:.1f}%."
         alerts.append(_mk("position", as_of, severity, title, body))
@@ -712,7 +746,7 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
     hy_spread = macro.get("hy_spread_bps")
     ten_year_prev = None
     if prev_7d_snap:
-        ten_year_prev = sc.get_macro_snapshot(prev_7d_snap).get("ten_year_yield")
+        ten_year_prev = _macro_snapshot(prev_7d_snap).get("ten_year_yield")
     ten_year_delta = None
     if isinstance(ten_year, (int, float)) and isinstance(ten_year_prev, (int, float)):
         ten_year_delta = ten_year - ten_year_prev
@@ -798,7 +832,7 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
         sym = pos.get("symbol")
         if not sym:
             continue
-        u = sc.get_holding_ultimate(pos)
+        u = _holding_ultimate(pos)
         hvol30 = u.get("vol_30d_pct")
         hvol90 = u.get("vol_90d_pct")
         if (
@@ -817,9 +851,9 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
     sharpe_now = risk.get("sharpe_1y")
     sortino_prev = None
     if prev_7d_snap:
-        sortino_prev = sc.get_risk_flat(prev_7d_snap).get("sortino_1y")
+        sortino_prev = _risk_flat(prev_7d_snap).get("sortino_1y")
     if sortino_prev is None and prev_snap:
-        sortino_prev = sc.get_risk_flat(prev_snap).get("sortino_1y")
+        sortino_prev = _risk_flat(prev_snap).get("sortino_1y")
     if isinstance(sortino_now, (int, float)) and sortino_now < PORTFOLIO_SORTINO_MIN:
         title = "Portfolio Sortino Low"
         body = f"⚠️ <b>Portfolio Sortino</b><br/>Sortino: {_fmt_ratio(sortino_now,2)} (below {PORTFOLIO_SORTINO_MIN:.2f})."
@@ -843,7 +877,7 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
         sym = pos.get("symbol")
         if not sym:
             continue
-        pos_ult = sc.get_holding_ultimate(pos)
+        pos_ult = _holding_ultimate(pos)
         sortino_pos = pos.get("sortino_1y")
         if sortino_pos is None:
             sortino_pos = pos_ult.get("sortino_1y")
@@ -881,7 +915,7 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
     current_yield = income.get("portfolio_current_yield_pct")
     prev_yield = None
     if prev_30d_snap:
-        prev_30d_income = sc.get_income(prev_30d_snap)
+        prev_30d_income = _income(prev_30d_snap)
         prev_yield = prev_30d_income.get("portfolio_current_yield_pct")
     if (
         isinstance(current_yield, (int, float))
@@ -905,7 +939,7 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
     cur_pace_cat = cur_pace.get("pace_category", "")
     prev_pace_cat = ""
     if prev_30d_snap:
-        prev_30d_pace = sc.get_goal_pace(prev_30d_snap)
+        prev_30d_pace = _goal_pace(prev_30d_snap)
         prev_pace_cat = (prev_30d_pace.get("current_pace") or {}).get("pace_category", "")
     pace_worsened = (
         (cur_pace_cat in ("behind", "off_track"))
@@ -974,7 +1008,7 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
             body = f"🎉 <b>Milestone</b><br/>Net value: {_fmt_money(cur_net)}."
             alerts.append(_mk("milestone", as_of, 4, title, body))
     cur_monthly = income.get("projected_monthly_income")
-    prev_income_data = sc.get_income(prev_snap) if prev_snap else {}
+    prev_income_data = _income(prev_snap) if prev_snap else {}
     prev_monthly = prev_income_data.get("projected_monthly_income") if prev_snap else None
     for threshold in MILESTONE_MONTHLY_INCOME:
         if isinstance(cur_monthly, (int, float)) and isinstance(prev_monthly, (int, float)) and prev_monthly < threshold <= cur_monthly:
@@ -985,7 +1019,7 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
     gt_target = gt_cs.get("target_monthly", 0)
     gt_current = gt_cs.get("projected_monthly_income", 0)
     cur_progress = round(gt_current / gt_target * 100, 1) if gt_target > 0 else None
-    prev_gt_data = sc.get_goal_tiers(prev_snap) if prev_snap else {}
+    prev_gt_data = _goal_tiers(prev_snap) if prev_snap else {}
     prev_gt_cs = prev_gt_data.get("current_state") or {}
     prev_gt_target = prev_gt_cs.get("target_monthly", 0)
     prev_gt_current = prev_gt_cs.get("projected_monthly_income", 0)
@@ -1090,27 +1124,26 @@ def _get_digest_sections(conn: sqlite3.Connection) -> set[str]:
 
 def build_daily_report_html(conn: sqlite3.Connection):
     from .storage import list_open_alerts
-    from ..pipeline import snap_compat as sc
 
     as_of, snap = _latest_daily(conn)
     if not as_of or not snap:
         return None, "No daily snapshot available."
 
-    totals = sc.get_totals(snap) or {}
-    income = sc.get_income(snap) or {}
-    dividends = sc.get_dividends(snap) or {}
-    div_upcoming = sc.get_dividends_upcoming(snap) or {}
-    rollups = sc.get_rollups(snap) or {}
-    performance = sc.get_perf(snap) or {}
-    risk = sc.get_risk_flat(snap) or {}
+    totals = _totals(snap) or {}
+    income = _income(snap) or {}
+    dividends = _dividends(snap) or {}
+    div_upcoming = _dividends_upcoming(snap) or {}
+    rollups = _rollups(snap) or {}
+    performance = _perf(snap) or {}
+    risk = _risk_flat(snap) or {}
     income_stability = rollups.get("income_stability") or {}
     tail_risk = rollups.get("tail_risk") or {}
-    goal_tiers = sc.get_goal_tiers(snap) or {}
-    goal_pace = sc.get_goal_pace(snap) or {}
-    macro = sc.get_macro_snapshot(snap) or {}
-    margin_guidance = sc.get_margin_guidance(snap) or {}
-    margin_stress = sc.get_margin_stress(snap) or {}
-    holdings = sc.get_holdings_flat(snap) or []
+    goal_tiers = _goal_tiers(snap) or {}
+    goal_pace = _goal_pace(snap) or {}
+    macro = _macro_snapshot(snap) or {}
+    margin_guidance = _margin_guidance(snap) or {}
+    margin_stress = _margin_stress(snap) or {}
+    holdings = _holdings_flat(snap) or []
 
     try:
         as_of_dt = date.fromisoformat(as_of)
@@ -1159,7 +1192,7 @@ def build_daily_report_html(conn: sqlite3.Connection):
         event_projected = proj_vs.get("projected")
         parts.append("")
         parts.append("<b>💰 INCOME UPDATE</b>")
-        parts.append(f"• MTD: {_fmt_money(mtd_realized)} / {_fmt_money(event_projected)} projected")
+        parts.append(f"• MTD: {_fmt_money(mtd_realized)}")
         if isinstance(event_projected, (int, float)) and event_projected > 0 and isinstance(mtd_realized, (int, float)):
             pct = mtd_realized / event_projected * 100
             parts.append(f"• MTD % of projection: {pct:.1f}%")
@@ -1191,7 +1224,7 @@ def build_daily_report_html(conn: sqlite3.Connection):
         sharpe = risk.get("sharpe_1y")
         prev_sortino = None
         if prev_snap:
-            prev_risk = sc.get_risk_flat(prev_snap)
+            prev_risk = _risk_flat(prev_snap)
             prev_sortino = prev_risk.get("sortino_1y")
         sortino_delta = None
         if isinstance(sortino, (int, float)) and isinstance(prev_sortino, (int, float)):
@@ -1226,7 +1259,7 @@ def build_daily_report_html(conn: sqlite3.Connection):
     if "sortino_snapshot" in enabled:
         sortino_rows = []
         for h in holdings:
-            h_ult = sc.get_holding_ultimate(h)
+            h_ult = _holding_ultimate(h)
             sortino_val = h.get("sortino_1y")
             if sortino_val is None:
                 sortino_val = h_ult.get("sortino_1y")
@@ -1236,7 +1269,7 @@ def build_daily_report_html(conn: sqlite3.Connection):
             sortino_rows.sort(key=lambda item: item[1], reverse=True)
             parts.append("")
             parts.append("<b>🧭 SORTINO SNAPSHOT</b>")
-            prev_7d_risk = sc.get_risk_flat(prev_7d_snap or {})
+            prev_7d_risk = _risk_flat(prev_7d_snap or {})
             prev_7d_sortino = prev_7d_risk.get("sortino_1y") if prev_7d_snap else None
             if isinstance(sortino, (int, float)) and isinstance(prev_7d_sortino, (int, float)):
                 trend_delta = sortino - prev_7d_sortino
@@ -1245,7 +1278,7 @@ def build_daily_report_html(conn: sqlite3.Connection):
             if top:
                 parts.append("Top performers (Sortino):")
                 for h, val in top:
-                    h_ult = sc.get_holding_ultimate(h)
+                    h_ult = _holding_ultimate(h)
                     category = h.get("risk_quality_category") or h_ult.get("risk_quality_category")
                     label = f" ({category})" if category else ""
                     parts.append(f"• {h.get('symbol')}: {val:.2f}{label}")
@@ -1255,7 +1288,7 @@ def build_daily_report_html(conn: sqlite3.Connection):
             if low:
                 parts.append("Watch list (low Sortino):")
                 for h, val in low[:3]:
-                    h_ult = sc.get_holding_ultimate(h)
+                    h_ult = _holding_ultimate(h)
                     profile = h.get("volatility_profile") or h_ult.get("volatility_profile")
                     profile_label = _profile_label(profile)
                     max_dd = h_ult.get("max_drawdown_1y_pct")
@@ -1361,7 +1394,7 @@ def build_daily_report_html(conn: sqlite3.Connection):
         for h in holdings:
             w = h.get("weight_pct")
             y = h.get("current_yield_pct")
-            u = sc.get_holding_ultimate(h)
+            u = _holding_ultimate(h)
             vol = u.get("vol_30d_pct")
             perf = u.get("twr_1m_pct")
             if isinstance(w, (int, float)) and (top_weight is None or w > top_weight[1]):
@@ -1384,11 +1417,11 @@ def build_daily_report_html(conn: sqlite3.Connection):
         if top_vol:
             parts.append(f"• Most Volatile: {top_vol[0]} {top_vol[1]:.1f}%")
 
-        high_vol = [h for h in holdings if isinstance(sc.get_holding_ultimate(h).get("vol_30d_pct"), (int, float)) and sc.get_holding_ultimate(h).get("vol_30d_pct") > 15]
+        high_vol = [h for h in holdings if isinstance(_holding_ultimate(h).get("vol_30d_pct"), (int, float)) and _holding_ultimate(h).get("vol_30d_pct") > 15]
         if high_vol:
             parts.append("High Vol Watch:")
             for h in high_vol[:5]:
-                parts.append(f"• {h.get('symbol')} {sc.get_holding_ultimate(h).get('vol_30d_pct'):.1f}%")
+                parts.append(f"• {h.get('symbol')} {_holding_ultimate(h).get('vol_30d_pct'):.1f}%")
 
     return as_of, "\n".join(parts)
 
@@ -1398,17 +1431,16 @@ def build_daily_digest_html(conn: sqlite3.Connection):
 def build_morning_brief_html(conn: sqlite3.Connection):
     """Compact pre-market brief: ex-dates today, top holdings, macro snapshot, open criticals."""
     from .storage import list_open_alerts
-    from ..pipeline import snap_compat as sc
 
     as_of, snap = _latest_daily(conn)
     if not as_of or not snap:
         return None, "No daily snapshot available."
 
-    totals = sc.get_totals(snap) or {}
-    dividends = sc.get_dividends(snap) or {}
-    div_upcoming = sc.get_dividends_upcoming(snap) or {}
-    macro = sc.get_macro_snapshot(snap) or {}
-    holdings = sc.get_holdings_flat(snap) or []
+    totals = _totals(snap) or {}
+    dividends = _dividends(snap) or {}
+    div_upcoming = _dividends_upcoming(snap) or {}
+    macro = _macro_snapshot(snap) or {}
+    holdings = _holdings_flat(snap) or []
 
     try:
         as_of_dt = date.fromisoformat(as_of)
@@ -1430,13 +1462,14 @@ def build_morning_brief_html(conn: sqlite3.Connection):
         parts.append("No ex-dates today.")
 
     # Top 3 holdings by weight
-    weighted = [(h, h.get("weight_pct", 0)) for h in holdings if isinstance(h.get("weight_pct"), (int, float))]
+    weighted = [(h, _holding_ultimate(h).get("weight_pct") or (h.get("valuation") or {}).get("portfolio_weight_pct") or 0) for h in holdings]
+    weighted = [(h, w) for h, w in weighted if isinstance(w, (int, float))]
     weighted.sort(key=lambda x: x[1], reverse=True)
     if weighted:
         parts.append("")
         parts.append("<b>Top Holdings to Watch</b>")
         for h, w in weighted[:3]:
-            y = h.get("current_yield_pct")
+            y = _holding_ultimate(h).get("current_yield_pct")
             yield_text = f" | Yield {y:.2f}%" if isinstance(y, (int, float)) else ""
             parts.append(f"• {h.get('symbol')} {w:.1f}%{yield_text}")
 
@@ -1459,16 +1492,15 @@ def build_morning_brief_html(conn: sqlite3.Connection):
 def build_evening_recap_html(conn: sqlite3.Connection):
     """Compact post-close recap: NLV change, alert summary, income MTD, top/bottom movers."""
     from .storage import list_open_alerts
-    from ..pipeline import snap_compat as sc
 
     as_of, snap = _latest_daily(conn)
     if not as_of or not snap:
         return None, "No daily snapshot available."
 
-    totals = sc.get_totals(snap) or {}
-    income = sc.get_income(snap) or {}
-    dividends = sc.get_dividends(snap) or {}
-    holdings = sc.get_holdings_flat(snap) or []
+    totals = _totals(snap) or {}
+    income = _income(snap) or {}
+    dividends = _dividends(snap) or {}
+    holdings = _holdings_flat(snap) or []
 
     try:
         as_of_dt = date.fromisoformat(as_of)
@@ -1477,7 +1509,7 @@ def build_evening_recap_html(conn: sqlite3.Connection):
 
     _prev_date, prev_snap = _previous_daily(conn, as_of)
     nlv = totals.get("net_liquidation_value")
-    prev_nlv = (prev_snap or {}).get("totals", {}).get("net_liquidation_value") if prev_snap else None
+    prev_nlv = _totals(prev_snap).get("net_liquidation_value") if prev_snap else None
     day_delta = None
     day_delta_pct = None
     if isinstance(nlv, (int, float)) and isinstance(prev_nlv, (int, float)) and prev_nlv:
@@ -1507,7 +1539,7 @@ def build_evening_recap_html(conn: sqlite3.Connection):
     # Top/bottom movers
     movers = []
     for h in holdings:
-        perf = sc.get_holding_ultimate(h).get("twr_1m_pct")
+        perf = _holding_ultimate(h).get("twr_1m_pct")
         if isinstance(perf, (int, float)):
             movers.append((h.get("symbol"), perf))
     if movers:

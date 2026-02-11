@@ -19,12 +19,12 @@ fi
 
 # Run optimizations (safe while service is running)
 sqlite3 "$DB_PATH" <<EOF
--- Create indexes for faster dashboard queries
-CREATE INDEX IF NOT EXISTS idx_daily_as_of
-  ON snapshot_daily_current(as_of_date_local DESC);
+-- Create indexes for faster dashboard queries (flat tables)
+CREATE INDEX IF NOT EXISTS idx_daily_portfolio_as_of
+  ON daily_portfolio(as_of_date_local DESC);
 
-CREATE INDEX IF NOT EXISTS idx_snapshots_period_end
-  ON snapshots(period_type, period_end_date DESC);
+CREATE INDEX IF NOT EXISTS idx_period_summary_type_end
+  ON period_summary(period_type, period_end_date DESC);
 
 -- Optimize query planner
 PRAGMA optimize;
@@ -37,7 +37,7 @@ echo ""
 echo "✓ Database optimization complete!"
 echo ""
 echo "Indexes created:"
-echo "  - idx_daily_as_of (speeds up latest snapshot queries)"
-echo "  - idx_snapshots_period_end (speeds up period queries)"
+echo "  - idx_daily_portfolio_as_of (speeds up latest daily queries)"
+echo "  - idx_period_summary_type_end (speeds up period queries)"
 echo ""
 echo "Note: This is safe to run while lmi-service is running."

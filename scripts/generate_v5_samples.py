@@ -35,17 +35,18 @@ def main():
     conn = get_conn(settings.db_path)
     cur = conn.cursor()
 
-    # Get latest daily snapshot
+    from app.pipeline.snapshot_views import assemble_daily_snapshot
     daily_row = cur.execute(
-        "SELECT as_of_date_local, payload_json FROM snapshot_daily_current ORDER BY as_of_date_local DESC LIMIT 1"
+        "SELECT as_of_date_local FROM daily_portfolio ORDER BY as_of_date_local DESC LIMIT 1"
     ).fetchone()
-
     if not daily_row:
         print("No daily snapshots found!")
         return
-
-    as_of_date, daily_json = daily_row
-    snap = json.loads(daily_json)
+    as_of_date = daily_row[0]
+    snap = assemble_daily_snapshot(conn, as_of_date=as_of_date)
+    if not snap:
+        print("Could not assemble daily snapshot.")
+        return
 
     print(f"Generating V5 samples from {as_of_date}...")
     print(f"Schema version: {snap.get('meta', {}).get('schema_version')}")
@@ -60,18 +61,18 @@ def main():
         json.dump(daily_slim, f, indent=2, sort_keys=True)
     print(f"✓ Generated samples_generated_v3/daily_slim.json ({len(json.dumps(daily_slim))} bytes)")
 
-    # Period samples (get latest of each type)
+    from app.pipeline.snapshot_views import assemble_period_snapshot
     period_types = ['WEEK', 'MONTH', 'QUARTER', 'YEAR']
     for ptype in period_types:
         period_row = cur.execute(
-            "SELECT period_start_date, period_end_date, payload_json FROM snapshots WHERE period_type=? ORDER BY period_end_date DESC LIMIT 1",
+            "SELECT period_start_date, period_end_date FROM period_summary WHERE period_type=? AND is_rolling=0 ORDER BY period_end_date DESC LIMIT 1",
             (ptype,)
         ).fetchone()
-
         if period_row:
-            start_date, end_date, period_json = period_row
-            period_snap = json.loads(period_json)
-
+            start_date, end_date = period_row[0], period_row[1]
+            period_snap = assemble_period_snapshot(conn, ptype, end_date, period_start_date=start_date)
+        if period_row and period_snap:
+            start_date, end_date = period_row[0], period_row[1]
             # Full period sample
             filename = f"samples_generated_v3/period_{ptype.lower()}.json"
             with open(filename, 'w') as f:
@@ -87,7 +88,7 @@ def main():
 
     # Diff daily sample (compare latest two days)
     prev_date_row = cur.execute(
-        "SELECT as_of_date_local FROM snapshot_daily_current WHERE as_of_date_local < ? ORDER BY as_of_date_local DESC LIMIT 1",
+        "SELECT as_of_date_local FROM daily_portfolio WHERE as_of_date_local < ? ORDER BY as_of_date_local DESC LIMIT 1",
         (as_of_date,)
     ).fetchone()
 
@@ -102,7 +103,7 @@ def main():
 
     # Diff period sample (compare two periods)
     period_row1 = cur.execute(
-        "SELECT period_start_date, period_end_date FROM snapshots WHERE period_type='MONTH' ORDER BY period_end_date DESC LIMIT 2"
+        "SELECT period_start_date, period_end_date FROM period_summary WHERE period_type='MONTH' AND is_rolling=0 ORDER BY period_end_date DESC LIMIT 2"
     ).fetchall()
 
     if len(period_row1) >= 2:

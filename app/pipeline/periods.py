@@ -11,7 +11,43 @@ from ..config import settings
 from ..utils import to_local_date
 from .market import MarketData
 from . import metrics
-from . import snap_compat as sc
+from .diff_daily import (
+    _totals,
+    _income,
+    _perf,
+    _risk_flat,
+    _rollups,
+    _goal_progress,
+    _goal_progress_net,
+    _margin_stress,
+    _coverage,
+    _holdings_flat,
+)
+
+
+def _as_of(snap: dict | None) -> str | None:
+    if not snap:
+        return None
+    return snap.get("as_of_date_local") or (snap.get("timestamps") or {}).get("portfolio_data_as_of_local")
+
+
+def _goal_pace(snap: dict | None) -> dict:
+    if not snap:
+        return {}
+    return (snap.get("goals") or {}).get("pace") or {}
+
+
+def _goal_tiers(snap: dict | None) -> dict:
+    if not snap:
+        return {}
+    g = snap.get("goals") or {}
+    return {"tiers": g.get("tiers"), "current_state": g.get("current_state"), "provenance": g.get("tiers_provenance")}
+
+
+def _macro_snapshot(snap: dict | None) -> dict:
+    if not snap:
+        return {}
+    return (snap.get("macro") or {}).get("snapshot") or {}
 
 
 def _parse_date(val):
@@ -29,10 +65,10 @@ def _parse_date(val):
 def _total_market_value(snapshot: dict | None):
     if not isinstance(snapshot, dict):
         return None
-    val = snapshot.get("total_market_value")
+    val = snapshot.get("total_market_value") or snapshot.get("market_value")
     if isinstance(val, (int, float)):
         return float(val)
-    totals = sc.get_totals(snapshot)
+    totals = _totals(snapshot)
     val = totals.get("market_value")
     return float(val) if isinstance(val, (int, float)) else None
 
@@ -53,8 +89,13 @@ def _holding_metric(holding: dict, key: str):
     if not isinstance(holding, dict):
         return None
     val = holding.get(key)
-    if val is None:
-        val = sc.get_holding_ultimate(holding).get(key)
+    if val is None and holding.get("valuation"):
+        v = holding["valuation"]
+        val = v.get("portfolio_weight_pct" if key == "weight_pct" else key)
+    if val is None and holding.get("income") and key in ("projected_monthly_dividend", "current_yield_pct", "yield_on_cost_pct"):
+        val = (holding.get("income") or {}).get(key)
+    if val is None and holding.get("analytics"):
+        val = ((holding.get("analytics") or {}).get("risk") or {}).get(key)
     return val
 
 
@@ -62,7 +103,7 @@ def _coverage_summary(dailies):
     derived = []
     pulled = []
     for snap in dailies:
-        cov = sc.get_coverage(snap)
+        cov = _coverage(snap)
         if isinstance(cov.get("derived_pct"), (int, float)):
             derived.append(float(cov.get("derived_pct")))
         if isinstance(cov.get("pulled_pct"), (int, float)):
@@ -130,73 +171,62 @@ def _expected_days(snapshot_type: str, start: date, end: date):
 
 
 def _load_daily_snapshots(conn: sqlite3.Connection, start: date, end: date):
+    """Load daily snapshots for date range. Prefer flat tables (rebuilt from live-filled data)."""
+    from .snapshot_views import assemble_daily_snapshot
+
     cur = conn.cursor()
-    rows = cur.execute(
+    flat_dates = cur.execute(
         """
-        SELECT as_of_date_local, payload_json
-        FROM snapshot_daily_current
+        SELECT as_of_date_local FROM daily_portfolio
         WHERE as_of_date_local BETWEEN ? AND ?
         ORDER BY as_of_date_local ASC
         """,
         (start.isoformat(), end.isoformat()),
     ).fetchall()
     snapshots = []
-    for as_of_date, payload_json in rows:
-        try:
-            snap = json.loads(payload_json)
-        except Exception:
-            continue
-        snap["as_of_date_local"] = as_of_date
-        snapshots.append(snap)
+    for (as_of_date,) in flat_dates:
+        snap = assemble_daily_snapshot(conn, as_of_date)
+        if snap:
+            snap["as_of_date_local"] = as_of_date
+            snapshots.append(snap)
     return snapshots
 
 
 def _load_period_snapshots(conn: sqlite3.Connection, period_type: str, start: date, end: date):
-    # Normalize period_type to uppercase for database query
+    """Load period snapshots from period_summary (flat), assembled to full snapshot shape."""
+    from .snapshot_views import assemble_period_snapshot
+
     period_type_upper = period_type.upper()
     cur = conn.cursor()
     rows = cur.execute(
         """
-        SELECT period_start_date, period_end_date, payload_json
-        FROM snapshots
-        WHERE period_type=? AND period_end_date BETWEEN ? AND ?
+        SELECT period_start_date, period_end_date
+        FROM period_summary
+        WHERE period_type=? AND is_rolling=0 AND period_end_date BETWEEN ? AND ?
         ORDER BY period_end_date ASC
         """,
         (period_type_upper, start.isoformat(), end.isoformat()),
     ).fetchall()
     out = []
-    for start_date, end_date, payload_json in rows:
-        try:
-            snap = json.loads(payload_json)
-        except Exception:
-            continue
-        if not isinstance(snap, dict) or "snapshot_type" not in snap:
-            # Skip legacy placeholder snapshots.
-            continue
-        snap["_period_start"] = start_date
-        snap["_period_end"] = end_date
-        out.append(snap)
+    for start_date, end_date in rows:
+        snap = assemble_period_snapshot(conn, period_type_upper, end_date, period_start_date=start_date, rolling=False)
+        if snap and isinstance(snap, dict):
+            snap["_period_start"] = start_date
+            snap["_period_end"] = end_date
+            out.append(snap)
     return out
 
 
 def _load_daily_snapshot(conn: sqlite3.Connection, as_of: date):
-    cur = conn.cursor()
-    row = cur.execute(
-        "SELECT payload_json FROM snapshot_daily_current WHERE as_of_date_local=?",
-        (as_of.isoformat(),),
-    ).fetchone()
-    if not row:
-        return None
-    try:
-        return json.loads(row[0])
-    except Exception:
-        return None
+    """Load single daily snapshot from flat tables (assembled to V5)."""
+    from .snapshot_views import assemble_daily_snapshot
+    return assemble_daily_snapshot(conn, as_of.isoformat())
 
 
 def _daily_series(dailies, key_path):
     data = {}
     for snap in dailies:
-        as_of = sc.get_as_of(snap)
+        as_of = _as_of(snap)
         dt = _parse_date(as_of)
         if not dt:
             continue
@@ -338,7 +368,7 @@ def _interval_label(snapshot_type: str, start: date, end: date):
 def _intervals(dailies, snapshot_type: str, as_of_date: date, as_of_daily: dict | None = None):
     groups = defaultdict(list)
     for snap in dailies:
-        dt = _parse_date(sc.get_as_of(snap))
+        dt = _parse_date(_as_of(snap))
         if not dt:
             continue
         if snapshot_type == "weekly":
@@ -354,11 +384,11 @@ def _intervals(dailies, snapshot_type: str, as_of_date: date, as_of_daily: dict 
         items.sort(key=lambda x: x[0])
         start_dt, start_snap = items[0]
         end_dt, end_snap = items[-1]
-        start_totals = sc.get_totals(start_snap) if start_snap else {}
-        end_totals = sc.get_totals(end_snap) if end_snap else {}
-        end_perf = sc.get_perf(end_snap)
-        end_risk = sc.get_risk_flat(end_snap)
-        end_rollups = sc.get_rollups(end_snap)
+        start_totals = _totals(start_snap) if start_snap else {}
+        end_totals = _totals(end_snap) if end_snap else {}
+        end_perf = _perf(end_snap)
+        end_risk = _risk_flat(end_snap)
+        end_rollups = _rollups(end_snap)
         start_mv = _total_market_value(start_snap)
         end_mv = _total_market_value(end_snap)
         pnl = None
@@ -382,15 +412,18 @@ def _intervals(dailies, snapshot_type: str, as_of_date: date, as_of_daily: dict 
                 "unrealized_pct": end_totals.get("unrealized_pct"),
                 "unrealized_pnl": end_totals.get("unrealized_pnl"),
             },
-            "income": sc.get_income(end_snap),
+            "income": _income(end_snap),
             "performance": {
                 "pnl_dollar_period": _round(pnl),
                 "pnl_pct_period": _round(pnl_pct),
                 "twr_1m_pct": end_perf.get("twr_1m_pct"),
                 "twr_3m_pct": end_perf.get("twr_3m_pct"),
+                "twr_6m_pct": end_perf.get("twr_6m_pct"),
                 "twr_12m_pct": end_perf.get("twr_12m_pct"),
             },
             "risk": {
+                "vol_30d_pct": end_risk.get("vol_30d_pct"),
+                "vol_90d_pct": end_risk.get("vol_90d_pct"),
                 "sharpe_1y": end_risk.get("sharpe_1y"),
                 "sortino_1y": end_risk.get("sortino_1y"),
                 "sortino_6m": end_risk.get("sortino_6m"),
@@ -417,6 +450,7 @@ def _intervals(dailies, snapshot_type: str, as_of_date: date, as_of_daily: dict 
                 "max_drawdown_1y_pct": end_risk.get("max_drawdown_1y_pct"),
                 "drawdown_duration_1y_days": end_risk.get("drawdown_duration_1y_days"),
                 "calmar_1y": end_risk.get("calmar_1y"),
+                "beta_portfolio": end_risk.get("beta_portfolio"),
             },
             "income_stability": end_rollups.get("income_stability"),
             "income_growth": end_rollups.get("income_growth"),
@@ -428,25 +462,25 @@ def _intervals(dailies, snapshot_type: str, as_of_date: date, as_of_daily: dict 
             "return_attribution_12m": end_rollups.get("return_attribution_12m"),
             "margin": {
                 "margin_loan_balance": end_totals.get("margin_loan_balance"),
-                "margin_to_portfolio_pct": end_totals.get("margin_to_portfolio_pct"),
-                "ltv_pct": end_totals.get("margin_to_portfolio_pct"),
+                "margin_to_portfolio_pct": end_totals.get("margin_to_portfolio_pct") or end_totals.get("ltv_pct"),
+                "ltv_pct": end_totals.get("margin_to_portfolio_pct") or end_totals.get("ltv_pct"),
                 "available_to_withdraw": 0.0 if end_totals.get("margin_loan_balance") is not None else None,
             },
-            "margin_stress": sc.get_margin_stress(end_snap),
-            "goal_progress": sc.get_goal_progress(end_snap),
-            "goal_progress_net": sc.get_goal_progress_net(end_snap),
-            "goal_tiers": sc.get_goal_tiers(end_snap),
-            "goal_pace": sc.get_goal_pace(end_snap),
+            "margin_stress": _margin_stress(end_snap),
+            "goal_progress": _goal_progress(end_snap),
+            "goal_progress_net": _goal_progress_net(end_snap),
+            "goal_tiers": _goal_tiers(end_snap),
+            "goal_pace": _goal_pace(end_snap),
             "holdings": [
                 {
                     "symbol": h.get("symbol"),
-                    "weight_pct": h.get("weight_pct"),
-                    "market_value": h.get("market_value"),
-                    "pnl_pct": h.get("unrealized_pct"),
-                    "pnl_dollar": h.get("unrealized_pnl"),
-                    "projected_monthly_dividend": h.get("projected_monthly_dividend"),
-                    "current_yield_pct": h.get("current_yield_pct"),
-                    "yield_on_cost_pct": h.get("yield_on_cost_pct"),
+                    "weight_pct": _holding_metric(h, "weight_pct"),
+                    "market_value": _holding_metric(h, "market_value"),
+                    "pnl_pct": _holding_metric(h, "unrealized_pct"),
+                    "pnl_dollar": _holding_metric(h, "unrealized_pnl"),
+                    "projected_monthly_dividend": _holding_metric(h, "projected_monthly_dividend"),
+                    "current_yield_pct": _holding_metric(h, "current_yield_pct"),
+                    "yield_on_cost_pct": _holding_metric(h, "yield_on_cost_pct"),
                     "sharpe_1y": _holding_metric(h, "sharpe_1y"),
                     "sortino_1y": _holding_metric(h, "sortino_1y"),
                     "sortino_6m": _holding_metric(h, "sortino_6m"),
@@ -456,7 +490,7 @@ def _intervals(dailies, snapshot_type: str, as_of_date: date, as_of_daily: dict 
                     "risk_quality_category": _holding_metric(h, "risk_quality_category"),
                     "volatility_profile": _holding_metric(h, "volatility_profile"),
                 }
-                for h in (end_snap.get("holdings") or [])
+                for h in _holdings_flat(end_snap)
             ],
         }
         if end_dt == as_of_date:
@@ -488,17 +522,17 @@ def _intervals_from_periods(period_snaps: list[dict], snapshot_type: str, as_of_
         end_daily = _extract_daily_from_period_snap(snap, end_date)
 
         _end = end_daily or {}
-        totals = sc.get_totals(_end)
+        totals = _totals(_end)
         total_mv = _total_market_value(end_daily)
         margin_loan = totals.get("margin_loan_balance")
         net_liquidation_value = None
         if isinstance(total_mv, (int, float)) and isinstance(margin_loan, (int, float)):
             net_liquidation_value = total_mv - margin_loan
-        income = sc.get_income(_end)
-        perf = sc.get_perf(_end)
-        risk = sc.get_risk_flat(_end)
-        rollups = sc.get_rollups(_end)
-        holdings = (end_daily or {}).get("holdings") or []
+        income = _income(_end)
+        perf = _perf(_end)
+        risk = _risk_flat(_end)
+        rollups = _rollups(_end)
+        holdings = _holdings_flat(end_daily) if end_daily else []
 
         interval = {
             "interval_label": period.get("label") or _interval_label(snapshot_type, _parse_date(start_date) or as_of_date, _parse_date(end_date) or as_of_date),
@@ -517,9 +551,12 @@ def _intervals_from_periods(period_snaps: list[dict], snapshot_type: str, as_of_
                 "pnl_pct_period": None,
                 "twr_1m_pct": perf.get("twr_1m_pct"),
                 "twr_3m_pct": perf.get("twr_3m_pct"),
+                "twr_6m_pct": perf.get("twr_6m_pct"),
                 "twr_12m_pct": perf.get("twr_12m_pct"),
             },
             "risk": {
+                "vol_30d_pct": risk.get("vol_30d_pct"),
+                "vol_90d_pct": risk.get("vol_90d_pct"),
                 "sharpe_1y": risk.get("sharpe_1y"),
                 "sortino_1y": risk.get("sortino_1y"),
                 "sortino_6m": risk.get("sortino_6m"),
@@ -546,6 +583,7 @@ def _intervals_from_periods(period_snaps: list[dict], snapshot_type: str, as_of_
                 "max_drawdown_1y_pct": risk.get("max_drawdown_1y_pct"),
                 "drawdown_duration_1y_days": risk.get("drawdown_duration_1y_days"),
                 "calmar_1y": risk.get("calmar_1y"),
+                "beta_portfolio": risk.get("beta_portfolio"),
             },
             "income_stability": rollups.get("income_stability"),
             "income_growth": rollups.get("income_growth"),
@@ -561,21 +599,21 @@ def _intervals_from_periods(period_snaps: list[dict], snapshot_type: str, as_of_
                 "ltv_pct": totals.get("margin_to_portfolio_pct"),
                 "available_to_withdraw": 0.0 if totals.get("margin_loan_balance") is not None else None,
             },
-            "margin_stress": sc.get_margin_stress(_end),
-            "goal_progress": sc.get_goal_progress(_end),
-            "goal_progress_net": sc.get_goal_progress_net(_end),
-            "goal_tiers": sc.get_goal_tiers(_end),
-            "goal_pace": sc.get_goal_pace(_end),
+            "margin_stress": _margin_stress(_end),
+            "goal_progress": _goal_progress(_end),
+            "goal_progress_net": _goal_progress_net(_end),
+            "goal_tiers": _goal_tiers(_end),
+            "goal_pace": _goal_pace(_end),
             "holdings": [
                 {
                     "symbol": h.get("symbol"),
-                    "weight_pct": h.get("weight_pct"),
-                    "market_value": h.get("market_value"),
-                    "pnl_pct": h.get("unrealized_pct"),
-                    "pnl_dollar": h.get("unrealized_pnl"),
-                    "projected_monthly_dividend": h.get("projected_monthly_dividend"),
-                    "current_yield_pct": h.get("current_yield_pct"),
-                    "yield_on_cost_pct": h.get("yield_on_cost_pct"),
+                    "weight_pct": _holding_metric(h, "weight_pct"),
+                    "market_value": _holding_metric(h, "market_value"),
+                    "pnl_pct": _holding_metric(h, "unrealized_pct"),
+                    "pnl_dollar": _holding_metric(h, "unrealized_pnl"),
+                    "projected_monthly_dividend": _holding_metric(h, "projected_monthly_dividend"),
+                    "current_yield_pct": _holding_metric(h, "current_yield_pct"),
+                    "yield_on_cost_pct": _holding_metric(h, "yield_on_cost_pct"),
                     "sharpe_1y": _holding_metric(h, "sharpe_1y"),
                     "sortino_1y": _holding_metric(h, "sortino_1y"),
                     "sortino_6m": _holding_metric(h, "sortino_6m"),
@@ -613,7 +651,7 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
 
     as_of_daily = _load_daily_snapshot(conn, end_date)
 
-    daily_dates = sorted({sc.get_as_of(s) for s in dailies if sc.get_as_of(s)})
+    daily_dates = sorted({_as_of(s) for s in dailies if _as_of(s)})
     daily_dates = [d for d in daily_dates if d]
     observed_days = len(daily_dates)
     expected_days = _expected_days(snapshot_type, period_start, period_end)
@@ -631,8 +669,8 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
     start_snap = dailies[0]
     end_snap = dailies[-1]
 
-    totals_start = sc.get_totals(start_snap) or {}
-    totals_end = sc.get_totals(end_snap) or {}
+    totals_start = _totals(start_snap) or {}
+    totals_end = _totals(end_snap) or {}
     mv_start = _total_market_value(start_snap)
     mv_end = _total_market_value(end_snap)
     net_start = None
@@ -649,7 +687,7 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
 
     portfolio_data = {}
     for snap in dailies:
-        dt = _parse_date(sc.get_as_of(snap))
+        dt = _parse_date(_as_of(snap))
         mv = _total_market_value(snap)
         if dt and isinstance(mv, (int, float)):
             portfolio_data[dt] = mv
@@ -662,8 +700,8 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
         twr_period_pct = round(pnl_pct, 2)
 
     def _twr_window_delta(key):
-        start_perf = sc.get_perf(start_snap)
-        end_perf = sc.get_perf(end_snap)
+        start_perf = _perf(start_snap)
+        end_perf = _perf(end_snap)
         start_val = start_perf.get(key)
         end_val = end_perf.get(key)
         delta = None
@@ -709,8 +747,8 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
         "calmar_1y",
         "max_drawdown_1y_pct",
     ]
-    risk_start_raw = sc.get_risk_flat(start_snap)
-    risk_end_raw = sc.get_risk_flat(end_snap)
+    risk_start_raw = _risk_flat(start_snap)
+    risk_end_raw = _risk_flat(end_snap)
     risk_start = {key: risk_start_raw.get(key) for key in risk_keys}
     risk_end = {key: risk_end_raw.get(key) for key in risk_keys}
     risk_delta = {}
@@ -719,20 +757,20 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
             risk_delta[key] = round(risk_end.get(key) - risk_start.get(key), 2)
 
     macro_keys = ["ten_year_yield", "two_year_yield", "vix", "cpi_yoy"]
-    macro_start_raw = sc.get_macro_snapshot(start_snap)
-    macro_end_raw = sc.get_macro_snapshot(end_snap)
+    macro_start_raw = _macro_snapshot(start_snap)
+    macro_end_raw = _macro_snapshot(end_snap)
     macro_start = {key: macro_start_raw.get(key) for key in macro_keys}
     macro_end = {key: macro_end_raw.get(key) for key in macro_keys}
     macro_avg = {}
     for key in macro_keys:
-        values = [sc.get_macro_snapshot(s).get(key) for s in dailies]
+        values = [_macro_snapshot(s).get(key) for s in dailies]
         values = [v for v in values if isinstance(v, (int, float))]
         if values:
             macro_avg[key] = round(sum(values) / len(values), 2)
     risk_stats = {}
     for key in ["sortino_1y", "sortino_6m", "sortino_3m", "sortino_1m"]:
         values = [
-            sc.get_risk_flat(s).get(key)
+            _risk_flat(s).get(key)
             for s in dailies
         ]
         values = [v for v in values if isinstance(v, (int, float))]
@@ -744,14 +782,25 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
             }
 
     # Extract V5-compatible data for period summary
-    start_income = sc.get_income(start_snap)
-    end_income = sc.get_income(end_snap)
-    start_gp = sc.get_goal_progress(start_snap)
-    end_gp = sc.get_goal_progress(end_snap)
-    start_gpn = sc.get_goal_progress_net(start_snap)
-    end_gpn = sc.get_goal_progress_net(end_snap)
-    start_holdings = sc.get_holdings_flat(start_snap)
-    end_holdings = sc.get_holdings_flat(end_snap)
+    start_income = _income(start_snap)
+    end_income = _income(end_snap)
+    start_gp = _goal_progress(start_snap)
+    end_gp = _goal_progress(end_snap)
+    start_gpn = _goal_progress_net(start_snap)
+    end_gpn = _goal_progress_net(end_snap)
+    start_holdings = _holdings_flat(start_snap)
+    end_holdings = _holdings_flat(end_snap)
+
+    # Read concentration from the assembled snapshot's allocation block (more reliable than recomputing from holdings)
+    _start_conc = ((start_snap or {}).get("portfolio") or {}).get("allocation", {}).get("concentration", {})
+    _end_conc = ((end_snap or {}).get("portfolio") or {}).get("allocation", {}).get("concentration", {})
+    conc_top5_start = _start_conc.get("top5_weight_pct") or _top5_concentration(start_holdings)
+    conc_top5_end = _end_conc.get("top5_weight_pct") or _top5_concentration(end_holdings)
+
+    margin_start = totals_start.get("margin_loan_balance")
+    margin_end = totals_end.get("margin_loan_balance")
+    ltv_start = totals_start.get("margin_to_portfolio_pct")
+    ltv_end = totals_end.get("margin_to_portfolio_pct")
 
     period_summary = {
         "totals": {
@@ -761,6 +810,8 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
                 "cost_basis": totals_start.get("cost_basis"),
                 "unrealized_pct": totals_start.get("unrealized_pct"),
                 "unrealized_pnl": totals_start.get("unrealized_pnl"),
+                "margin_loan_balance": margin_start,
+                "margin_to_portfolio_pct": ltv_start,
             },
             "end": {
                 "total_market_value": mv_end,
@@ -768,6 +819,8 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
                 "cost_basis": totals_end.get("cost_basis"),
                 "unrealized_pct": totals_end.get("unrealized_pct"),
                 "unrealized_pnl": totals_end.get("unrealized_pnl"),
+                "margin_loan_balance": margin_end,
+                "margin_to_portfolio_pct": ltv_end,
             },
             "delta": {
                 "total_market_value": _round(pnl),
@@ -783,11 +836,17 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
                 "unrealized_pnl": _round(totals_end.get("unrealized_pnl") - totals_start.get("unrealized_pnl"), 2)
                 if isinstance(totals_end.get("unrealized_pnl"), (int, float)) and isinstance(totals_start.get("unrealized_pnl"), (int, float))
                 else None,
+                "margin_loan_balance": _round(margin_end - margin_start, 2)
+                if isinstance(margin_end, (int, float)) and isinstance(margin_start, (int, float))
+                else None,
+                "margin_to_portfolio_pct": _round(ltv_end - ltv_start, 2)
+                if isinstance(ltv_end, (int, float)) and isinstance(ltv_start, (int, float))
+                else None,
             },
         },
         "income": {
-            "start": sc.get_income(start_snap),
-            "end": sc.get_income(end_snap),
+            "start": _income(start_snap),
+            "end": _income(end_snap),
             "delta": {
                 "projected_monthly_income": _round((end_income or {}).get("projected_monthly_income") - (start_income or {}).get("projected_monthly_income"), 2)
                 if isinstance((end_income or {}).get("projected_monthly_income"), (int, float)) and isinstance((start_income or {}).get("projected_monthly_income"), (int, float))
@@ -822,8 +881,8 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
         },
         "risk": {"start": risk_start, "end": risk_end, "delta": risk_delta},
         "goal_progress": {
-            "start": sc.get_goal_progress(start_snap),
-            "end": sc.get_goal_progress(end_snap),
+            "start": _goal_progress(start_snap),
+            "end": _goal_progress(end_snap),
             "delta": {
                 "progress_pct": _round((end_gp or {}).get("progress_pct") - (start_gp or {}).get("progress_pct"), 2)
                 if isinstance((end_gp or {}).get("progress_pct"), (int, float)) and isinstance((start_gp or {}).get("progress_pct"), (int, float))
@@ -837,8 +896,8 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
             },
         },
         "goal_progress_net": {
-            "start": sc.get_goal_progress_net(start_snap),
-            "end": sc.get_goal_progress_net(end_snap),
+            "start": _goal_progress_net(start_snap),
+            "end": _goal_progress_net(end_snap),
             "delta": {
                 "progress_pct": _round((end_gpn or {}).get("progress_pct") - (start_gpn or {}).get("progress_pct"), 2)
                 if isinstance((end_gpn or {}).get("progress_pct"), (int, float)) and isinstance((start_gpn or {}).get("progress_pct"), (int, float))
@@ -848,21 +907,21 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
                 else None,
             },
         },
-        "goal_tiers": sc.get_goal_tiers(end_snap),
-        "goal_pace": sc.get_goal_pace(end_snap),
+        "goal_tiers": _goal_tiers(end_snap),
+        "goal_pace": _goal_pace(end_snap),
         "composition": {
             "start": {
                 "holding_count": len(start_holdings),
-                "concentration_top5_pct": _top5_concentration(start_holdings),
+                "concentration_top5_pct": conc_top5_start,
             },
             "end": {
                 "holding_count": len(end_holdings),
-                "concentration_top5_pct": _top5_concentration(end_holdings),
+                "concentration_top5_pct": conc_top5_end,
             },
             "delta": {
                 "holding_count": len(end_holdings) - len(start_holdings),
-                "concentration_top5_pct": _round(_top5_concentration(end_holdings) - _top5_concentration(start_holdings), 2)
-                if _top5_concentration(start_holdings) is not None and _top5_concentration(end_holdings) is not None
+                "concentration_top5_pct": _round(conc_top5_end - conc_top5_start, 2)
+                if isinstance(conc_top5_start, (int, float)) and isinstance(conc_top5_end, (int, float))
                 else None,
             },
         },
@@ -870,10 +929,14 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
             "start": {
                 "ten_year_yield": macro_start.get("ten_year_yield"),
                 "two_year_yield": macro_start.get("two_year_yield"),
+                "vix": macro_start.get("vix"),
+                "cpi_yoy": macro_start.get("cpi_yoy"),
             },
             "end": {
                 "ten_year_yield": macro_end.get("ten_year_yield"),
                 "two_year_yield": macro_end.get("two_year_yield"),
+                "vix": macro_end.get("vix"),
+                "cpi_yoy": macro_end.get("cpi_yoy"),
             },
             "avg": macro_avg,
             "delta": {

@@ -2,6 +2,9 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime, timezone
 
+_MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
+
+
 def get_conn(db_path: str) -> sqlite3.Connection:
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, isolation_level=None)  # autocommit
@@ -65,32 +68,6 @@ CREATE TABLE IF NOT EXISTS facts_source_daily (
 );
 """,
     "CREATE INDEX IF NOT EXISTS ix_facts_symbol_field ON facts_source_daily(symbol, field_path);",
-
-    # Persisted snapshots (non-to-date)
-    """
-CREATE TABLE IF NOT EXISTS snapshots (
-  snapshot_id TEXT PRIMARY KEY,
-  period_type TEXT NOT NULL,  -- 'WEEK'|'MONTH'|'QUARTER'|'YEAR'
-  period_start_date TEXT NOT NULL,
-  period_end_date TEXT NOT NULL,
-  built_from_run_id TEXT NOT NULL,
-  payload_json TEXT NOT NULL,
-  payload_sha256 TEXT NOT NULL,
-  created_at_utc TEXT NOT NULL
-);
-""",
-    "CREATE UNIQUE INDEX IF NOT EXISTS ux_snapshots_period ON snapshots(period_type, period_start_date, period_end_date);",
-
-    # Current daily snapshot
-    """
-CREATE TABLE IF NOT EXISTS snapshot_daily_current (
-  as_of_date_local TEXT PRIMARY KEY,
-  built_from_run_id TEXT NOT NULL,
-  payload_json TEXT NOT NULL,
-  payload_sha256 TEXT NOT NULL,
-  updated_at_utc TEXT NOT NULL
-);
-""",
 
     # Runs table
     """
@@ -264,4 +241,94 @@ def migrate(conn: sqlite3.Connection):
                 WHERE source!='lunchmoney'
                 """
             )
+    # Flat tables migration (002)
+    _run_flat_tables_migration(conn)
+    # Period interval enrichment (003)
+    _run_period_interval_migration(conn)
+    # Drop legacy snapshot tables only (replaced by daily_portfolio, period_summary).
+    # NEVER drop or truncate account_balances - it holds per-date balance history from sync.
+    cur.execute("DROP TABLE IF EXISTS snapshot_daily_current")
+    cur.execute("DROP TABLE IF EXISTS snapshots")
     conn.commit()
+
+
+def _run_flat_tables_migration(conn: sqlite3.Connection):
+    """Execute migrations/002_flat_tables.sql to create flat schema tables."""
+    path = _MIGRATIONS_DIR / "002_flat_tables.sql"
+    if not path.exists():
+        return
+    sql = path.read_text()
+    conn.executescript(sql)
+
+
+def _run_period_interval_migration(conn: sqlite3.Connection):
+    """Run migrations/003: add period_intervals columns and create child tables (idempotent)."""
+    path = _MIGRATIONS_DIR / "003_period_interval_cols.sql"
+    if not path.exists():
+        return
+    cur = conn.cursor()
+    # Create child tables and indexes (IF NOT EXISTS)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS period_interval_holdings (
+          period_type TEXT NOT NULL,
+          period_start_date TEXT NOT NULL,
+          period_end_date TEXT NOT NULL,
+          interval_label TEXT NOT NULL,
+          symbol TEXT NOT NULL,
+          weight_pct REAL,
+          market_value REAL,
+          pnl_pct REAL,
+          pnl_dollar REAL,
+          projected_monthly_dividend REAL,
+          current_yield_pct REAL,
+          sharpe_1y REAL,
+          sortino_1y REAL,
+          risk_quality_category TEXT,
+          PRIMARY KEY (period_type, period_start_date, period_end_date, interval_label, symbol)
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS period_interval_attribution (
+          period_type TEXT NOT NULL,
+          period_start_date TEXT NOT NULL,
+          period_end_date TEXT NOT NULL,
+          interval_label TEXT NOT NULL,
+          window TEXT NOT NULL,
+          total_return_pct REAL,
+          income_contribution_pct REAL,
+          price_contribution_pct REAL,
+          top_json TEXT,
+          bottom_json TEXT,
+          PRIMARY KEY (period_type, period_start_date, period_end_date, interval_label, window)
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS ix_pih_parent ON period_interval_holdings(period_type, period_start_date, period_end_date)")
+    cur.execute("CREATE INDEX IF NOT EXISTS ix_pia_parent ON period_interval_attribution(period_type, period_start_date, period_end_date)")
+    # Add columns to period_intervals only if missing (idempotent)
+    pi_cols = {row[1] for row in cur.execute("PRAGMA table_info(period_intervals)").fetchall()}
+    new_cols = [
+        ("forward_12m_total", "REAL"),
+        ("yield_pct", "REAL"),
+        ("yield_on_cost_pct", "REAL"),
+        ("twr_6m_pct", "REAL"),
+        ("vol_30d_pct", "REAL"),
+        ("vol_90d_pct", "REAL"),
+        ("calmar_1y", "REAL"),
+        ("max_drawdown_1y_pct", "REAL"),
+        ("var_90_1d_pct", "REAL"),
+        ("var_95_1d_pct", "REAL"),
+        ("cvar_90_1d_pct", "REAL"),
+        ("omega_ratio_1y", "REAL"),
+        ("ulcer_index_1y", "REAL"),
+        ("income_stability_score", "REAL"),
+        ("beta_portfolio", "REAL"),
+        ("annual_interest_expense", "REAL"),
+        ("margin_call_buffer_pct", "REAL"),
+        ("goal_progress_pct", "REAL"),
+        ("goal_months_to_goal", "REAL"),
+        ("goal_projected_monthly", "REAL"),
+        ("goal_net_progress_pct", "REAL"),
+    ]
+    for col_name, col_type in new_cols:
+        if col_name not in pi_cols:
+            cur.execute(f"ALTER TABLE period_intervals ADD COLUMN {col_name} {col_type}")

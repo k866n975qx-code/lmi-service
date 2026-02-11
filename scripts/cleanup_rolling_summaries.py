@@ -19,40 +19,58 @@ from app.db import get_conn
 from app.config import settings
 
 def cleanup_rolling_summaries():
-    """Remove rolling snapshots for periods that have final snapshots."""
+    """Remove rolling snapshots for periods that have final snapshots (flat period_summary)."""
     conn = get_conn(settings.db_path)
     cur = conn.cursor()
 
     total_deleted = 0
 
     for period in ["WEEK", "MONTH", "QUARTER", "YEAR"]:
-        rolling_type = f"{period}_ROLLING"
-
-        # Find all rolling snapshots
-        rolling_snapshots = cur.execute(
-            "SELECT DISTINCT period_start_date FROM snapshots WHERE period_type=?",
-            (rolling_type,),
+        # Flat schema: rolling rows have is_rolling=1, same period_type (e.g. WEEK)
+        rolling_starts = cur.execute(
+            "SELECT DISTINCT period_start_date FROM period_summary WHERE period_type=? AND is_rolling=1",
+            (period,),
         ).fetchall()
 
-        print(f"\nChecking {rolling_type} snapshots...")
-        print(f"  Found {len(rolling_snapshots)} unique period starts")
+        print(f"\nChecking {period} rolling snapshots...")
+        print(f"  Found {len(rolling_starts)} unique period starts")
 
-        for (start_date,) in rolling_snapshots:
+        for (start_date,) in rolling_starts:
             # Check if a final snapshot exists for this period start
             final_exists = cur.execute(
                 """
-                SELECT period_end_date FROM snapshots
-                WHERE period_type=? AND period_start_date=?
+                SELECT period_end_date FROM period_summary
+                WHERE period_type=? AND period_start_date=? AND is_rolling=0
                 LIMIT 1
                 """,
                 (period, start_date),
             ).fetchone()
 
             if final_exists:
-                # Delete all rolling snapshots for this period
+                # Get rolling (period_end_date)s for this start so we can delete child rows
+                rolling_ends = cur.execute(
+                    """
+                    SELECT period_end_date FROM period_summary
+                    WHERE period_type=? AND period_start_date=? AND is_rolling=1
+                    """,
+                    (period, start_date),
+                ).fetchall()
+                for (end_date,) in rolling_ends:
+                    cur.execute(
+                        "DELETE FROM period_risk_stats WHERE period_type=? AND period_start_date=? AND period_end_date=?",
+                        (period, start_date, end_date),
+                    )
+                    cur.execute(
+                        "DELETE FROM period_intervals WHERE period_type=? AND period_start_date=? AND period_end_date=?",
+                        (period, start_date, end_date),
+                    )
+                    cur.execute(
+                        "DELETE FROM period_holding_changes WHERE period_type=? AND period_start_date=? AND period_end_date=?",
+                        (period, start_date, end_date),
+                    )
                 deleted = cur.execute(
-                    "DELETE FROM snapshots WHERE period_type=? AND period_start_date=?",
-                    (rolling_type, start_date),
+                    "DELETE FROM period_summary WHERE period_type=? AND period_start_date=? AND is_rolling=1",
+                    (period, start_date),
                 )
                 deleted_count = deleted.rowcount
                 if deleted_count > 0:

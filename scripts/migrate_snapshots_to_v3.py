@@ -22,6 +22,9 @@ Usage:
 
     # Backfill historical snapshots
     python scripts/migrate_snapshots_to_v3.py --backfill --start-date YYYY-MM-DD [--end-date YYYY-MM-DD]
+
+    # Rebuild: delete flat daily snapshots only (then run --backfill separately if desired)
+    python scripts/migrate_snapshots_to_v3.py --rebuild [--dry-run]
 """
 
 import argparse
@@ -41,25 +44,14 @@ from app.pipeline.snapshots import build_daily_snapshot
 from app.pipeline.null_reasons import replace_nulls_with_reasons
 
 
-# Key v5.0 sections to check for incomplete snapshots
-V5_KEY_SECTIONS = {'summary', 'alerts', 'portfolio', 'goals', 'margin', 'timestamps'}
-
-
 def get_snapshots_to_migrate(conn: sqlite3.Connection, start_date: str | None, end_date: str | None, include_v5: bool = False):
-    """Get list of snapshots that need migration (< v5.0 or incomplete v5.0).
-    
-    Args:
-        conn: Database connection
-        start_date: Optional start date filter
-        end_date: Optional end date filter
-        include_v5: If True, include complete v5.0 snapshots for rebuilding
+    """Get list of daily snapshot dates from flat daily_portfolio to rebuild.
+
+    With flat tables we no longer have payload_json/schema_version; we simply
+    list as_of_date_local from daily_portfolio in the given range for rebuilding
+    (e.g. to re-apply null reasons or refresh data).
     """
-    query = """
-        SELECT as_of_date_local, payload_json,
-               CAST(json_extract(payload_json, '$.meta.schema_version') AS REAL) as schema_version
-        FROM snapshot_daily_current
-        WHERE 1=1
-    """
+    query = "SELECT as_of_date_local FROM daily_portfolio WHERE 1=1"
     params = []
     if start_date:
         query += " AND as_of_date_local >= ?"
@@ -69,38 +61,19 @@ def get_snapshots_to_migrate(conn: sqlite3.Connection, start_date: str | None, e
         params.append(end_date)
     query += " ORDER BY as_of_date_local"
 
-    results = []
-    for row in conn.execute(query, params).fetchall():
-        as_of_date, payload_json, schema_version = row[0], row[1], row[2]
-
-        # Include snapshots < v5.0
-        if schema_version is None or schema_version < 5.0:
-            results.append((as_of_date, schema_version))
-            continue
-
-        # Include v5.0 snapshots if requested (for rebuilding with null reasons)
-        if include_v5 and schema_version >= 5.0:
-            results.append((as_of_date, schema_version))
-            continue
-
-        # Check if v5.0 snapshot is missing key sections
-        snapshot = json.loads(payload_json)
-        missing = V5_KEY_SECTIONS - set(snapshot.keys())
-        if missing:
-            results.append((as_of_date, schema_version))
-
-    return results
+    rows = conn.execute(query, params).fetchall()
+    return [(row[0], None) for row in rows]
 
 
 def get_dates_for_backfill(conn: sqlite3.Connection, start_date: str, end_date: str | None):
-    """Get list of dates that need backfilling (no snapshot exists)."""
+    """Get list of dates that need backfilling (no row in daily_portfolio)."""
     from datetime import timedelta
 
     start = datetime.fromisoformat(start_date).date()
     end = datetime.fromisoformat(end_date).date() if end_date else datetime.now().date()
 
     existing = set()
-    for row in conn.execute("SELECT as_of_date_local FROM snapshot_daily_current").fetchall():
+    for row in conn.execute("SELECT as_of_date_local FROM daily_portfolio").fetchall():
         existing.add(row[0])
 
     results = []
@@ -114,24 +87,65 @@ def get_dates_for_backfill(conn: sqlite3.Connection, start_date: str, end_date: 
     return results
 
 
+# Flat daily tables only. Does NOT touch: period_summary, account_balances, margin_balance_history, runs, investment_transactions, lm_raw, etc.
+DAILY_CHILD_TABLES = [
+    "daily_holdings",
+    "daily_goal_tiers",
+    "daily_margin_rate_scenarios",
+    "daily_return_attribution",
+    "daily_dividends_upcoming",
+]
+
+
+def clear_flat_daily_snapshots(conn: sqlite3.Connection, dry_run: bool = False) -> int:
+    """Delete all rows from flat daily snapshot tables. Returns total rows deleted."""
+    cur = conn.cursor()
+    total_deleted = 0
+    for table in DAILY_CHILD_TABLES + ["daily_portfolio"]:
+        try:
+            n = cur.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        except Exception:
+            n = 0
+        if n == 0:
+            continue
+        if dry_run:
+            print(f"  Would delete {n} rows from {table}")
+        else:
+            cur.execute(f"DELETE FROM {table}")
+            total_deleted += cur.rowcount
+            print(f"  Deleted {cur.rowcount} rows from {table}")
+    return total_deleted
+
+
 def load_snapshot(conn: sqlite3.Connection, as_of_date: str):
-    """Load existing snapshot for a given date."""
-    row = conn.execute("SELECT payload_json FROM snapshot_daily_current WHERE as_of_date_local = ?",
-                      (as_of_date,)).fetchone()
-    return json.loads(row[0]) if row else None
+    """Load existing snapshot for a given date (assembled from flat tables)."""
+    from app.pipeline.snapshot_views import assemble_daily_snapshot
+    return assemble_daily_snapshot(conn, as_of_date=as_of_date)
 
 
 def _load_account_balances_as_of(conn: sqlite3.Connection, as_of_date_str: str):
-    """Load account balances AS OF a specific date."""
+    """Load account balances: latest row on or before as_of_date per account (same logic as main pipeline)."""
     rows = conn.execute("""
         SELECT plaid_account_id, name, type, subtype, balance, as_of_date_local
         FROM account_balances
-        WHERE as_of_date_local = ?
+        WHERE as_of_date_local <= ?
         ORDER BY as_of_date_local DESC
     """, (as_of_date_str,)).fetchall()
 
-    return [{"plaid_account_id": r[0], "name": r[1], "type": r[2], "subtype": r[3],
-             "balance": r[4], "as_of_date_local": r[5]} for r in rows]
+    latest = {}
+    for r in rows:
+        plaid_account_id = r[0]
+        if plaid_account_id in latest:
+            continue
+        latest[plaid_account_id] = {
+            "plaid_account_id": plaid_account_id,
+            "name": r[1],
+            "type": r[2],
+            "subtype": r[3],
+            "balance": r[4],
+            "as_of_date_local": r[5],
+        }
+    return list(latest.values())
 
 
 def migrate_snapshot(conn: sqlite3.Connection, as_of_date_str: str, old_snapshot: dict | None, schema_version: float | None, verbose: bool = False):
@@ -285,22 +299,16 @@ def migrate_snapshot(conn: sqlite3.Connection, as_of_date_str: str, old_snapshot
 
 
 def save_snapshot(conn: sqlite3.Connection, as_of_date: str, snapshot: dict):
-    """Save snapshot to database."""
+    """Save snapshot to flat tables via persist_daily_snapshot (force overwrite)."""
     try:
+        from app.pipeline.snapshots import persist_daily_snapshot
+
         # Apply null reason engine before saving
         snapshot = replace_nulls_with_reasons(snapshot, kind="daily", conn=conn)
-        payload_json = json.dumps(snapshot, separators=(',', ':'))
-        import hashlib
-        payload_sha256 = hashlib.sha256(payload_json.encode('utf-8')).hexdigest()
         updated_at_utc = datetime.now(timezone.utc).isoformat()
-        built_from_run_id = f"migration_v5_{as_of_date}_{updated_at_utc[:19].replace(':', '-')}"
+        run_id = f"migration_v5_{as_of_date}_{updated_at_utc[:19].replace(':', '-').replace(' ', '_')}"
 
-        conn.execute("""
-            INSERT OR REPLACE INTO snapshot_daily_current
-            (as_of_date_local, built_from_run_id, payload_json, payload_sha256, updated_at_utc)
-            VALUES (?, ?, ?, ?, ?)
-        """, (as_of_date, built_from_run_id, payload_json, payload_sha256, updated_at_utc))
-
+        persist_daily_snapshot(conn, snapshot, run_id, force=True)
         return True
     except Exception as e:
         print(f"    ERROR saving: {e}")
@@ -324,6 +332,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true", help="Show what would be done without making changes")
     parser.add_argument("--backfill", action="store_true", help="Backfill snapshots for dates with no existing snapshot")
+    parser.add_argument("--rebuild", action="store_true", help="Delete flat daily snapshot tables only (no backfill; run --backfill separately)")
     parser.add_argument("--single-date", help="Migrate a single date (YYYY-MM-DD) — for testing one at a time")
     parser.add_argument("--start-date", help="Start date (YYYY-MM-DD)")
     parser.add_argument("--end-date", help="End date (YYYY-MM-DD)")
@@ -334,6 +343,20 @@ def main():
 
     conn = get_conn(settings.db_path)
     print(f"Connected to: {settings.db_path}\n")
+
+    # Rebuild only: delete flat daily snapshots, then exit (backfill is separate)
+    if args.rebuild:
+        print("[REBUILD] Delete flat daily snapshot data only.\n")
+        deleted = clear_flat_daily_snapshots(conn, dry_run=args.dry_run)
+        if args.dry_run:
+            print("\nRun without --dry-run to delete.")
+        elif deleted:
+            conn.commit()
+            print(f"\nDone. Deleted {deleted} rows. Run --backfill --start-date ... to repopulate.")
+        else:
+            print("\nNo rows to delete.")
+        conn.close()
+        return 0
 
     # Single-date mode: migrate one date and optionally dump output
     if args.single_date:

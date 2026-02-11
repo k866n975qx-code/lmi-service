@@ -180,26 +180,24 @@ def _load_json(path: str):
 
 
 def _load_latest_daily(conn):
-    row = conn.execute(
-        "SELECT as_of_date_local, payload_json FROM snapshot_daily_current ORDER BY as_of_date_local DESC LIMIT 1"
-    ).fetchone()
-    if not row:
-        return None
-    return json.loads(row[1])
+    from app.pipeline.snapshot_views import assemble_daily_snapshot
+    return assemble_daily_snapshot(conn, as_of_date=None)
 
 
 def _load_latest_periods(conn):
-    rows = conn.execute(
-        "SELECT period_type, period_end_date, payload_json FROM snapshots ORDER BY period_end_date DESC"
-    ).fetchall()
+    from app.pipeline.snapshot_views import assemble_period_snapshot
+    cur = conn.execute(
+        "SELECT period_type, period_end_date, period_start_date FROM period_summary WHERE is_rolling=0 ORDER BY period_end_date DESC"
+    )
+    rows = cur.fetchall()
     latest: dict[str, dict] = {}
-    for period_type, _end, payload in rows:
+    for row in rows:
+        period_type, end_date, start_date = row[0], row[1], row[2]
         if period_type in latest:
             continue
-        try:
-            latest[period_type] = json.loads(payload)
-        except json.JSONDecodeError:
-            continue
+        snap = assemble_period_snapshot(conn, period_type, end_date, period_start_date=start_date)
+        if snap:
+            latest[period_type] = snap
     return latest
 
 

@@ -1,15 +1,14 @@
 from collections import deque
-import json
 from datetime import date
 from pathlib import Path
 import os
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from .schemas import SyncRun, StatusResponse, SyncWindowRequest
-from ..pipeline.orchestrator import trigger_sync, trigger_sync_window, get_status, get_snapshot
+from ..pipeline.orchestrator import trigger_sync, trigger_sync_window, get_status
 from ..pipeline.periods import _period_bounds
 from ..pipeline.diff_daily import diff_daily_from_db
 from ..pipeline.diff_periods import diff_periods_from_db
-from ..pipeline.snapshot_views import slim_snapshot
+from ..pipeline.snapshot_views import assemble_daily_snapshot, assemble_period_snapshot
 from ..pipeline.null_reasons import replace_nulls_with_reasons
 from ..config import settings
 from ..db import get_conn
@@ -25,12 +24,7 @@ _PERIOD_MAP = {
     "yearly": "YEAR",
 }
 
-_PERIOD_ROLLING_MAP = {
-    "weekly": "WEEK_ROLLING",
-    "monthly": "MONTH_ROLLING",
-    "quarterly": "QUARTER_ROLLING",
-    "yearly": "YEAR_ROLLING",
-}
+# Rolling summaries use the same period_type (WEEK, MONTH, etc.) with is_rolling=1
 
 @router.get(
     '/health',
@@ -130,12 +124,13 @@ def list_available_period_summaries(snapshot_type: str | None = None):
     if snapshot_type and snapshot_type not in {"daily", "weekly", "monthly", "quarterly", "yearly"}:
         raise HTTPException(400, 'snapshot_type must be daily|weekly|monthly|quarterly|yearly')
     daily_rows = cur.execute(
-        "SELECT as_of_date_local FROM snapshot_daily_current ORDER BY as_of_date_local DESC"
+        "SELECT as_of_date_local FROM daily_portfolio ORDER BY as_of_date_local DESC"
     ).fetchall()
     period_rows = cur.execute(
         """
-        SELECT period_type, period_start_date, period_end_date, snapshot_id, created_at_utc
-        FROM snapshots
+        SELECT period_type, period_start_date, period_end_date, built_from_run_id, created_at_utc
+        FROM period_summary
+        WHERE is_rolling = 0
         ORDER BY period_end_date DESC
         """
     ).fetchall()
@@ -165,20 +160,21 @@ def list_available_period_summaries(snapshot_type: str | None = None):
     description=(
         "Returns the most recent daily portfolio snapshot. "
         "Schema: samples/daily.json. "
-        "Use slim=false for full payload."
+        "Use slim=false for full payload. "
+        "Use apply_null_reasons=false to return raw nulls instead of placeholder reason strings."
     ),
     tags=["Snapshots"],
 )
-def get_latest_daily_portfolio(slim: bool = True):
+def get_latest_daily_portfolio(
+    slim: bool = True,
+    apply_null_reasons: bool = Query(True, description="If false, return raw nulls; no placeholder reason strings."),
+):
     conn = get_conn(settings.db_path)
-    cur = conn.cursor()
-    row = cur.execute(
-        "SELECT payload_json FROM snapshot_daily_current ORDER BY as_of_date_local DESC LIMIT 1"
-    ).fetchone()
-    if not row:
+    payload = assemble_daily_snapshot(conn, as_of_date=None, slim=slim)
+    if not payload:
         raise HTTPException(404, 'daily snapshot not found')
-    payload = json.loads(row[0])
-    payload = slim_snapshot(payload) if slim else payload
+    if not apply_null_reasons:
+        return payload
     return replace_nulls_with_reasons(payload, kind="daily", conn=conn)
 
 @router.get(
@@ -187,21 +183,22 @@ def get_latest_daily_portfolio(slim: bool = True):
     description=(
         "Returns a daily portfolio snapshot for the given date. "
         "Schema: samples/daily.json. "
-        "Use slim=false for full payload."
+        "Use slim=false for full payload. "
+        "Use apply_null_reasons=false to return raw nulls instead of placeholder reason strings."
     ),
     tags=["Snapshots"],
 )
-def get_daily_portfolio(as_of: str, slim: bool = True):
+def get_daily_portfolio(
+    as_of: str,
+    slim: bool = True,
+    apply_null_reasons: bool = Query(True, description="If false, return raw nulls; no placeholder reason strings."),
+):
     conn = get_conn(settings.db_path)
-    cur = conn.cursor()
-    row = cur.execute(
-        "SELECT payload_json FROM snapshot_daily_current WHERE as_of_date_local=?",
-        (as_of,),
-    ).fetchone()
-    if not row:
+    payload = assemble_daily_snapshot(conn, as_of_date=as_of, slim=slim)
+    if not payload:
         raise HTTPException(404, 'daily snapshot not found')
-    payload = json.loads(row[0])
-    payload = slim_snapshot(payload) if slim else payload
+    if not apply_null_reasons:
+        return payload
     return replace_nulls_with_reasons(payload, kind="daily", conn=conn)
 
 @router.get(
@@ -215,31 +212,32 @@ def get_daily_portfolio(as_of: str, slim: bool = True):
     ),
     tags=["Periods"],
 )
-def get_latest_period_summary(kind: str, slim: bool = True):
+def get_latest_period_summary(kind: str):
     kind = kind.lower()
     if kind not in ('weekly', 'monthly', 'quarterly', 'yearly'):
         raise HTTPException(400, 'kind must be weekly|monthly|quarterly|yearly')
 
     conn = get_conn(settings.db_path)
     cur = conn.cursor()
-
-    # Get the most recent final snapshot for this period type
+    period_type = _PERIOD_MAP[kind]
     row = cur.execute(
         """
-        SELECT payload_json
-        FROM snapshots
-        WHERE period_type = ?
+        SELECT period_start_date, period_end_date
+        FROM period_summary
+        WHERE period_type = ? AND is_rolling = 0
         ORDER BY period_end_date DESC
         LIMIT 1
         """,
-        (_PERIOD_MAP[kind],),
+        (period_type,),
     ).fetchone()
 
     if not row:
         raise HTTPException(404, f'no {kind} snapshots found')
 
-    snap = json.loads(row[0])
-    snap = slim_snapshot(snap) if slim else snap
+    snap = assemble_period_snapshot(conn, period_type, row[1], period_start_date=row[0], rolling=False)
+    if not snap:
+        raise HTTPException(404, f'no {kind} snapshots found')
+    # Period snapshots are already summary-level; slim_snapshot is for daily V5 shape only
     return replace_nulls_with_reasons(snap, kind="period", conn=conn)
 
 @router.get(
@@ -249,35 +247,34 @@ def get_latest_period_summary(kind: str, slim: bool = True):
         "Returns the current incomplete period summary (rolling snapshot). "
         "Example: /period-summary/monthly/rolling returns month-to-date. "
         "Schema: samples/period.json. "
-        "Use slim=false for full payload."
     ),
     tags=["Periods"],
 )
-def get_rolling_period_summary(kind: str, slim: bool = True):
+def get_rolling_period_summary(kind: str):
     kind = kind.lower()
     if kind not in ('weekly', 'monthly', 'quarterly', 'yearly'):
         raise HTTPException(400, 'kind must be weekly|monthly|quarterly|yearly')
 
     conn = get_conn(settings.db_path)
     cur = conn.cursor()
-
-    # Get the current rolling snapshot for this period type
+    period_type = _PERIOD_MAP[kind]
     row = cur.execute(
         """
-        SELECT payload_json
-        FROM snapshots
-        WHERE period_type = ?
+        SELECT period_start_date, period_end_date
+        FROM period_summary
+        WHERE period_type = ? AND is_rolling = 1
         ORDER BY period_end_date DESC
         LIMIT 1
         """,
-        (_PERIOD_ROLLING_MAP[kind],),
+        (period_type,),
     ).fetchone()
 
     if not row:
         raise HTTPException(404, f'no rolling {kind} snapshot found')
 
-    snap = json.loads(row[0])
-    snap = slim_snapshot(snap) if slim else snap
+    snap = assemble_period_snapshot(conn, period_type, row[1], period_start_date=row[0], rolling=True)
+    if not snap:
+        raise HTTPException(404, f'no rolling {kind} snapshot found')
     return replace_nulls_with_reasons(snap, kind="period", conn=conn)
 
 @router.get(
@@ -290,7 +287,7 @@ def get_rolling_period_summary(kind: str, slim: bool = True):
     ),
     tags=["Periods"],
 )
-def get_period_summary(kind: str, as_of: str, slim: bool = True):
+def get_period_summary(kind: str, as_of: str):
     kind = kind.lower()
     if kind not in _PERIOD_MAP:
         raise HTTPException(400, 'kind must be weekly|monthly|quarterly|yearly')
@@ -299,11 +296,10 @@ def get_period_summary(kind: str, as_of: str, slim: bool = True):
     except ValueError:
         raise HTTPException(400, 'as_of must be YYYY-MM-DD')
     start, end = _period_bounds(kind, as_of_date)
-    snap = get_snapshot(_PERIOD_MAP[kind], start.isoformat(), end.isoformat())
+    conn = get_conn(settings.db_path)
+    snap = assemble_period_snapshot(conn, _PERIOD_MAP[kind], end.isoformat(), period_start_date=start.isoformat(), rolling=False)
     if not snap:
         raise HTTPException(404, 'snapshot not found')
-    snap = slim_snapshot(snap) if slim else snap
-    conn = get_conn(settings.db_path)
     return replace_nulls_with_reasons(snap, kind="period", conn=conn)
 
 @router.get(
@@ -367,14 +363,10 @@ def read_logs(lines: int = 200):
 )
 def get_goal_tiers():
     conn = get_conn(settings.db_path)
-    cur = conn.cursor()
-    row = cur.execute(
-        "SELECT payload_json FROM snapshot_daily_current ORDER BY as_of_date_local DESC LIMIT 1"
-    ).fetchone()
-    if not row:
+    payload = assemble_daily_snapshot(conn, as_of_date=None)
+    if not payload:
         raise HTTPException(404, 'daily snapshot not found')
-    payload = json.loads(row[0])
-    goal_tiers = payload.get("goal_tiers")
+    goal_tiers = payload.get("goals") or payload.get("goal_tiers")
     if not goal_tiers:
         raise HTTPException(404, 'goal tiers not available')
     return goal_tiers
@@ -390,14 +382,10 @@ def send_goal_tiers_telegram():
         raise HTTPException(400, 'telegram not configured')
 
     conn = get_conn(settings.db_path)
-    cur = conn.cursor()
-    row = cur.execute(
-        "SELECT payload_json FROM snapshot_daily_current ORDER BY as_of_date_local DESC LIMIT 1"
-    ).fetchone()
-    if not row:
+    payload = assemble_daily_snapshot(conn, as_of_date=None)
+    if not payload:
         raise HTTPException(404, 'daily snapshot not found')
-    payload = json.loads(row[0])
-    goal_tiers = payload.get("goal_tiers")
+    goal_tiers = payload.get("goals") or payload.get("goal_tiers")
     if not goal_tiers:
         raise HTTPException(404, 'goal tiers not available')
 

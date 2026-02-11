@@ -2,9 +2,32 @@
 from __future__ import annotations
 
 import structlog
-from ..pipeline import snap_compat as sc
+
+from ..pipeline.diff_daily import (
+    _totals,
+    _income,
+    _goal_tiers,
+    _goal_pace,
+    _rollups,
+    _margin_stress,
+    _holdings_flat,
+)
+from ..alerts.evaluator import _holding_ultimate
 
 log = structlog.get_logger()
+
+
+def _as_of(snap: dict) -> str:
+    """As-of date from V5 or legacy snapshot."""
+    if not snap:
+        return "unknown"
+    ts = snap.get("timestamps") or {}
+    return (
+        snap.get("as_of_date_local")
+        or snap.get("as_of")
+        or ts.get("portfolio_data_as_of_local")
+        or "unknown"
+    )
 
 SYSTEM_PROMPT = """\
 You are a dividend portfolio analyst assistant. The user tracks a dividend-income \
@@ -84,38 +107,43 @@ def _safe_get(d: dict, *keys, default=0):
 
 def _extract_context(snap: dict) -> dict:
     """Extract key metrics from snapshot for the AI prompt."""
-    totals = sc.get_totals(snap)
-    income = sc.get_income(snap)
-    goal_tiers = sc.get_goal_tiers(snap)
-    goal_cs = goal_tiers.get("current_state") or {}
-    pace = sc.get_goal_pace(snap)
-    rollups = sc.get_rollups(snap)
+    totals = _totals(snap)
+    income = _income(snap)
+    goal_tiers_data = _goal_tiers(snap)
+    goal_cs = goal_tiers_data.get("current_state") or {}
+    pace = _goal_pace(snap)
+    rollups = _rollups(snap)
     risk = rollups.get("risk") or {}
     macro_data = snap.get("macro") or {}
     macro_snap = macro_data.get("snapshot") or {}
-    stress = sc.get_margin_stress(snap)
+    stress = _margin_stress(snap)
     stress_scenarios = stress.get("stress_scenarios") or {}
 
     current_pace = pace.get("current_pace") or {}
     likely_tier = pace.get("likely_tier") or {}
-    tiers = goal_tiers.get("tiers") or []
+    tiers = goal_tiers_data.get("tiers") or []
     # Use likely tier's months_to_goal if available
     likely_tier_data = next((t for t in tiers if t.get("tier") == likely_tier.get("tier")), {})
     months_to_goal = likely_tier_data.get("months_to_goal")
 
-    # Top holdings by weight
-    holdings = sc.get_holdings_flat(snap)
-    sorted_h = sorted(holdings, key=lambda h: h.get("weight_pct", 0), reverse=True)
+    # Top holdings by weight (use flattened holding for weight/yield/dividend)
+    holdings = _holdings_flat(snap)
+    sorted_h = sorted(
+        holdings,
+        key=lambda h: (_holding_ultimate(h).get("weight_pct") or 0),
+        reverse=True,
+    )
     top_lines = []
     for h in sorted_h[:10]:
+        u = _holding_ultimate(h)
         sym = h.get("symbol", "?")
-        w = h.get("weight_pct", 0)
-        yld = h.get("current_yield_pct", 0)
-        mo_div = h.get("projected_monthly_dividend", 0)
+        w = u.get("weight_pct", 0) or 0
+        yld = u.get("current_yield_pct", 0) or 0
+        mo_div = u.get("projected_monthly_dividend", 0) or 0
         top_lines.append(f"  {sym}: {w:.1f}% weight, {yld:.1f}% yield, ${mo_div:.2f}/mo")
 
     return {
-        "as_of": sc.get_as_of(snap) or "unknown",
+        "as_of": _as_of(snap),
         "nlv": _safe_get(totals, "net_liquidation_value"),
         "market_value": _safe_get(totals, "market_value"),
         "cost_basis": _safe_get(totals, "cost_basis"),

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sqlite3
 import statistics
 from collections import defaultdict
@@ -163,6 +162,10 @@ def _reason_for_null(path: list[Any], root: dict, context: _NullReasonContext) -
     # V5: better fallbacks for common field groups
     if "income_stability" in path or "income_growth" in path:
         return "insufficient dividend history to compute metric"
+    if "reliability" in path and path and path[-1] == "trend_6m":
+        return "insufficient dividend history for 6m trend"
+    if "income" in path and path and path[-1] in ("projected_annual_dividend", "dividends_30d", "dividends_qtd", "dividends_ytd"):
+        return "no dividends received or projected for this period"
     if "margin" in path:
         field = path[-1] if path else ""
         if "coverage" in str(field) or "ltv" in str(field):
@@ -171,9 +174,36 @@ def _reason_for_null(path: list[Any], root: dict, context: _NullReasonContext) -
             return "insufficient history for trend calculation"
         return "margin data not available for this date"
     if "goals" in path:
+        field = path[-1] if path else ""
+        if field == "reason":
+            return "likely tier reason not available"
+        if field == "pct_of_tier_pace":
+            return "pace vs tier not computed"
+        if field == "confidence":
+            return "tier confidence not derived"
         return "goal data not available for this date"
+    if path and len(path) >= 2 and path[0] == "meta":
+        field = path[-1]
+        if field == "schema_version":
+            return "schema version not recorded"
+        if field == "health_status":
+            return "health status not computed for this snapshot"
     if "projected_vs_received" in path:
         return "insufficient income history for projection comparison"
+    if "vs_benchmark" in path:
+        field = path[-1] if path else ""
+        if field == "benchmark_twr_1y_pct":
+            return "benchmark 1y return not available (insufficient price history or benchmark symbol)"
+        return "benchmark comparison not available for this metric"
+    if "risk" in path:
+        field = path[-1] if path else ""
+        if field in ("sortino_6m", "sortino_3m", "sortino_1m"):
+            return "insufficient return history for short-horizon Sortino ratio"
+        if field == "sortino_sharpe_divergence":
+            return "requires both Sortino and Sharpe 1y to compute divergence"
+        if field == "beta_portfolio":
+            return "portfolio beta requires benchmark price history"
+        return "risk metric not available in source data"
     return "value not available in source data"
 
 
@@ -228,20 +258,12 @@ def _path_contains_token(path: list[Any], tokens: set[str]) -> bool:
 
 
 def _load_schema_versions(conn: sqlite3.Connection | None) -> dict[str, str | None]:
+    """Load as_of dates from flat daily_portfolio; always treat as V5 (no V4/V5 detection)."""
     if conn is None:
         return {}
     cur = conn.cursor()
-    rows = cur.execute("SELECT as_of_date_local, payload_json FROM snapshot_daily_current").fetchall()
-    out = {}
-    for as_of_date, payload in rows:
-        schema_version = None
-        try:
-            meta = json.loads(payload).get("meta", {})
-            schema_version = meta.get("schema_version")
-        except Exception:
-            schema_version = None
-        out[str(as_of_date)] = schema_version
-    return out
+    rows = cur.execute("SELECT as_of_date_local FROM daily_portfolio").fetchall()
+    return {str(row[0]): "5.0" for row in rows}
 
 
 def _is_pre_v3(schema: str | None) -> bool:

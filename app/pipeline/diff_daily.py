@@ -4,7 +4,7 @@ import json
 import sqlite3
 from datetime import date
 
-from . import snap_compat as sc
+from .snapshot_views import assemble_daily_snapshot
 
 HOLDINGS_CHANGE_MIN_WEIGHT_PCT = 0.10
 HOLDINGS_CHANGE_MIN_MARKET_VALUE = 25.0
@@ -14,17 +14,147 @@ _HOLDING_ULTIMATE_FIELDS = {"sortino_1y", "sortino_6m", "sortino_3m", "sortino_1
 
 
 def _load_daily_snapshot(conn: sqlite3.Connection, as_of_date_local: str):
-    cur = conn.cursor()
-    row = cur.execute(
-        "SELECT payload_json FROM snapshot_daily_current WHERE as_of_date_local=?",
-        (as_of_date_local,),
-    ).fetchone()
-    if not row:
-        return None
-    try:
-        return json.loads(row[0])
-    except Exception:
-        return None
+    """Load daily snapshot from flat tables (assembled to V5 shape for diff)."""
+    return assemble_daily_snapshot(conn, as_of_date=as_of_date_local)
+
+
+# Helpers that read from assembled V5 snapshot (no snap_compat)
+def _totals(snap: dict | None) -> dict:
+    if not snap:
+        return {}
+    return (snap.get("portfolio") or {}).get("totals") or snap.get("totals") or {}
+
+
+def _income(snap: dict | None) -> dict:
+    if not snap:
+        return {}
+    return (snap.get("portfolio") or {}).get("income") or {}
+
+
+def _perf(snap: dict | None) -> dict:
+    if not snap:
+        return {}
+    return (snap.get("portfolio") or {}).get("performance") or {}
+
+
+def _risk_flat(snap: dict | None) -> dict:
+    if not snap:
+        return {}
+    pr = (snap.get("portfolio") or {}).get("risk") or {}
+    out = {}
+    for key in ("volatility", "ratios", "drawdown", "var"):
+        sub = pr.get(key)
+        if isinstance(sub, dict):
+            out.update(sub)
+    for key in ("tail_risk", "portfolio_risk_quality", "income_stability_score", "beta_portfolio"):
+        if pr.get(key) is not None:
+            out[key] = pr[key]
+    return out
+
+
+def _rollups(snap: dict | None) -> dict:
+    if not snap:
+        return {}
+    portfolio = snap.get("portfolio") or {}
+    inc = portfolio.get("income") or {}
+    attr = portfolio.get("attribution") or {}
+    perf = portfolio.get("performance") or {}
+    return {
+        "performance": perf,
+        "risk": _risk_flat(snap),
+        "income_stability": inc.get("income_stability"),
+        "income_growth": inc.get("income_growth"),
+        "tail_risk": (portfolio.get("risk") or {}).get("tail_risk"),
+        "vs_benchmark": perf.get("vs_benchmark"),
+        "return_attribution_1m": attr.get("1m"),
+        "return_attribution_3m": attr.get("3m"),
+        "return_attribution_6m": attr.get("6m"),
+        "return_attribution_12m": attr.get("12m"),
+    }
+
+
+def _goal_progress(snap: dict | None) -> dict:
+    if not snap:
+        return {}
+    return (snap.get("goals") or {}).get("baseline") or snap.get("goal_progress") or {}
+
+
+def _goal_progress_net(snap: dict | None) -> dict:
+    if not snap:
+        return {}
+    return (snap.get("goals") or {}).get("net_of_interest") or snap.get("goal_progress_net") or {}
+
+
+def _goal_tiers(snap: dict | None) -> dict:
+    if not snap:
+        return {}
+    g = snap.get("goals") or {}
+    return {"tiers": g.get("tiers"), "current_state": g.get("current_state"), "provenance": g.get("tiers_provenance")}
+
+
+def _goal_pace(snap: dict | None) -> dict:
+    if not snap:
+        return {}
+    return (snap.get("goals") or {}).get("pace") or {}
+
+
+def _macro_snapshot(snap: dict | None) -> dict:
+    if not snap:
+        return {}
+    return (snap.get("macro") or {}).get("snapshot") or {}
+
+
+def _margin_stress(snap: dict | None) -> dict:
+    if not snap:
+        return {}
+    margin = snap.get("margin") or {}
+    result = {}
+    if margin.get("current"):
+        result["current"] = margin["current"]
+    stress = margin.get("stress") or {}
+    mc = stress.get("margin_call_risk")
+    if mc:
+        buf = mc.get("buffer_to_margin_call_pct")
+        result["stress_scenarios"] = {
+            "margin_call_distance": {
+                "buffer_to_margin_call_pct": buf if isinstance(buf, (int, float)) else None,
+                "portfolio_decline_to_call_pct": -abs(buf) if isinstance(buf, (int, float)) else buf,
+                "dollar_decline_to_call": mc.get("dollar_decline_to_call"),
+                "days_at_current_volatility": mc.get("days_at_current_volatility"),
+                "buffer_status": mc.get("buffer_status"),
+            }
+        }
+    # So flat_persist can write margin_history_90d_json
+    result["historical_trends_90d"] = margin.get("historical_trends_90d") or margin.get("history_90d")
+    return result
+
+
+def _dividends(snap: dict | None) -> dict:
+    if not snap:
+        return {}
+    realized = (snap.get("dividends") or {}).get("realized") or {}
+    return {"realized_mtd": realized.get("mtd"), "windows": realized}
+
+
+def _dividends_upcoming(snap: dict | None) -> dict:
+    if not snap:
+        return {}
+    up = (snap.get("dividends") or {}).get("upcoming_this_month") or snap.get("dividends_upcoming") or {}
+    events = up.get("events") or []
+    projected = sum((e.get("amount_est") or 0) for e in events) if events else None
+    return {"events": events, "projected": projected}
+
+
+def _coverage(snap: dict | None) -> dict:
+    if not snap:
+        return {}
+    return (snap.get("meta") or {}).get("data_quality") or snap.get("coverage") or {}
+
+
+def _holdings_flat(snap: dict | None) -> list:
+    if not snap:
+        return []
+    return snap.get("holdings") or []
 
 
 def _delta(left, right, precision=3):
@@ -45,6 +175,17 @@ def _section_diff(left: dict, right: dict, keys: list[str], precision=3):
             "delta": _delta(left.get(key) if left else None, right.get(key) if right else None, precision),
         }
     return out
+
+
+def _drop_section_keys_missing_both_sides(section: dict) -> dict:
+    """Remove keys where both left and right are None so we don't output 'missing in source data' for fields not in daily snapshots."""
+    if not section or not isinstance(section, dict):
+        return section
+    return {
+        k: v
+        for k, v in section.items()
+        if not (isinstance(v, dict) and v.get("left") is None and v.get("right") is None)
+    }
 
 
 def _is_number(val):
@@ -114,7 +255,7 @@ def _numeric_tree(left, right, precision=3):
 
 
 def _holdings_map(snapshot: dict):
-    holdings = sc.get_holdings_flat(snapshot)
+    holdings = _holdings_flat(snapshot)
     out = {}
     for holding in holdings:
         sym = holding.get("symbol")
@@ -129,7 +270,18 @@ def _holding_field_value(holding: dict, field: str):
         return None
     val = holding.get(field)
     if val is None and field in _HOLDING_ULTIMATE_FIELDS:
-        val = sc.get_holding_ultimate(holding).get(field)
+        risk = (holding.get("analytics") or {}).get("risk") or {}
+        val = risk.get(field)
+    if val is None and holding.get("valuation"):
+        v = holding["valuation"]
+        if field == "market_value":
+            val = v.get("market_value")
+        elif field == "weight_pct":
+            val = v.get("portfolio_weight_pct")
+        elif field in ("last_price", "unrealized_pnl", "unrealized_pct"):
+            val = v.get(field)
+    if val is None and field == "projected_monthly_dividend" and holding.get("income"):
+        val = (holding["income"] or {}).get("projected_monthly_dividend")
     return val
 
 
@@ -161,16 +313,16 @@ def _holdings_weight_shift(left: dict, right: dict):
     symbols = set(left_map.keys()) | set(right_map.keys())
     total = 0.0
     for sym in symbols:
-        lval = left_map.get(sym, {}).get("weight_pct") or 0.0
-        rval = right_map.get(sym, {}).get("weight_pct") or 0.0
+        lval = _holding_field_value(left_map.get(sym, {}), "weight_pct") or 0.0
+        rval = _holding_field_value(right_map.get(sym, {}), "weight_pct") or 0.0
         if _is_number(lval) and _is_number(rval):
             total += abs(rval - lval)
     return round(total, 3)
 
 
 def _holding_income_delta(left: dict, right: dict):
-    lval = left.get("projected_monthly_dividend")
-    rval = right.get("projected_monthly_dividend")
+    lval = _holding_field_value(left, "projected_monthly_dividend")
+    rval = _holding_field_value(right, "projected_monthly_dividend")
     return _delta(lval, rval, 3)
 
 
@@ -238,8 +390,8 @@ def _holdings_diff(left: dict, right: dict, min_weight_delta: float | None = Non
 
 
 def _summary_block(left: dict, right: dict, holdings_diff: dict, days_apart: int | None = None, period_type: str | None = None, range_metrics: dict | None = None):
-    left_totals = sc.get_totals(left) if left else {}
-    right_totals = sc.get_totals(right) if right else {}
+    left_totals = _totals(left)
+    right_totals = _totals(right)
     mv_left = left_totals.get("market_value")
     mv_right = right_totals.get("market_value")
     mv_delta = _delta(mv_left, mv_right, 2)
@@ -249,8 +401,8 @@ def _summary_block(left: dict, right: dict, holdings_diff: dict, days_apart: int
     unreal_right = right_totals.get("unrealized_pnl")
     unreal_delta = _delta(unreal_left, unreal_right, 2)
 
-    income_left = sc.get_income(left).get("forward_12m_total")
-    income_right = sc.get_income(right).get("forward_12m_total")
+    income_left = _income(left).get("forward_12m_total")
+    income_right = _income(right).get("forward_12m_total")
     income_delta = _delta(income_left, income_right, 2)
 
     if mv_delta is None or unreal_delta is None:
@@ -276,12 +428,12 @@ def _summary_block(left: dict, right: dict, holdings_diff: dict, days_apart: int
     if days_apart is None:
         days_apart = 0
         try:
-            left_date = left.get("as_of")
-            right_date = right.get("as_of")
+            left_date = (left or {}).get("as_of_date_local") or (left or {}).get("as_of") or ((left or {}).get("timestamps") or {}).get("portfolio_data_as_of_local")
+            right_date = (right or {}).get("as_of_date_local") or (right or {}).get("as_of") or ((right or {}).get("timestamps") or {}).get("portfolio_data_as_of_local")
             if left_date and right_date:
                 days_apart = abs((date.fromisoformat(right_date) - date.fromisoformat(left_date)).days)
         except Exception:
-            days_apart = 0
+            pass
 
     if mv_delta is None:
         headline = "Mixed change with incomplete data."
@@ -307,7 +459,7 @@ def _summary_block(left: dict, right: dict, holdings_diff: dict, days_apart: int
     if income_delta is not None:
         highlights.append(f"Forward 12m income {_format_money(income_delta)}")
     if period_type in (None, "daily"):
-        twr_1m = sc.get_rollups(right).get("performance", {}).get("twr_1m_pct")
+        twr_1m = _perf(right).get("twr_1m_pct")
         if _is_number(twr_1m):
             highlights.append(f"1M TWR {_format_pct(twr_1m)}")
     added = len(holdings_diff.get("added") or [])
@@ -318,9 +470,9 @@ def _summary_block(left: dict, right: dict, holdings_diff: dict, days_apart: int
         highlights.append(f"Holdings added {added}, removed {removed}")
 
     if period_type and period_type != "daily":
-        right_rollups = sc.get_rollups(right)
+        right_rollups = _rollups(right)
         perf = right_rollups.get("performance", {})
-        risk = right_rollups.get("risk", {})
+        risk = right_rollups.get("risk") or {}
         if period_type == "weekly":
             per_day = (range_metrics or {}).get("per_day_return_pct")
             if _is_number(per_day):
@@ -386,23 +538,23 @@ def build_daily_diff(
 ):
     """Builds a diff payload. For period diffs, pass period_type plus period bounds and dividend totals."""
     totals = _section_diff(
-        sc.get_totals(left),
-        sc.get_totals(right),
+        _totals(left),
+        _totals(right),
         ["market_value", "net_liquidation_value", "cost_basis", "unrealized_pnl", "unrealized_pct", "margin_loan_balance", "margin_to_portfolio_pct"],
     )
     income = _section_diff(
-        sc.get_income(left),
-        sc.get_income(right),
+        _income(left),
+        _income(right),
         ["projected_monthly_income", "forward_12m_total", "portfolio_current_yield_pct", "portfolio_yield_on_cost_pct"],
     )
     rollup_perf = _section_diff(
-        sc.get_perf(left),
-        sc.get_perf(right),
+        _perf(left),
+        _perf(right),
         ["twr_1m_pct", "twr_3m_pct", "twr_6m_pct", "twr_12m_pct"],
     )
     rollup_risk = _section_diff(
-        sc.get_risk_flat(left),
-        sc.get_risk_flat(right),
+        _risk_flat(left),
+        _risk_flat(right),
         [
             "vol_30d_pct",
             "vol_90d_pct",
@@ -433,9 +585,10 @@ def build_daily_diff(
             "cvar_95_1m_pct",
         ],
     )
+    rollup_risk = _drop_section_keys_missing_both_sides(rollup_risk)
 
-    left_rollups = sc.get_rollups(left)
-    right_rollups = sc.get_rollups(right)
+    left_rollups = _rollups(left)
+    right_rollups = _rollups(right)
     rollup_income_stability = _numeric_tree(
         left_rollups.get("income_stability", {}),
         right_rollups.get("income_stability", {}),
@@ -470,18 +623,18 @@ def build_daily_diff(
     )
 
     goal_progress = _section_diff(
-        sc.get_goal_progress(left),
-        sc.get_goal_progress(right),
+        _goal_progress(left),
+        _goal_progress(right),
         ["progress_pct", "current_projected_monthly", "months_to_goal"],
     )
     goal_progress_net = _section_diff(
-        sc.get_goal_progress_net(left),
-        sc.get_goal_progress_net(right),
+        _goal_progress_net(left),
+        _goal_progress_net(right),
         ["progress_pct", "current_projected_monthly_net"],
     )
 
-    left_totals = sc.get_totals(left)
-    right_totals = sc.get_totals(right)
+    left_totals = _totals(left)
+    right_totals = _totals(right)
     margin_left = {
         "margin_loan_balance": left_totals.get("margin_loan_balance"),
         "margin_to_portfolio_pct": left_totals.get("margin_to_portfolio_pct"),
@@ -493,24 +646,24 @@ def build_daily_diff(
         "ltv_pct": right_totals.get("margin_to_portfolio_pct"),
     }
     margin = _section_diff(margin_left, margin_right, ["margin_loan_balance", "margin_to_portfolio_pct", "ltv_pct"])
-    margin_stress = _numeric_tree(sc.get_margin_stress(left), sc.get_margin_stress(right))
+    margin_stress = _numeric_tree(_margin_stress(left), _margin_stress(right))
 
     dividends_compact = _section_diff(
         {
-            "forward_12m_total": sc.get_income(left).get("forward_12m_total"),
-            "realized_mtd_total": sc.get_dividends(left).get("realized_mtd", {}).get("total_dividends"),
-            "next_30d_total": sc.get_dividends_upcoming(left).get("projected"),
+            "forward_12m_total": _income(left).get("forward_12m_total"),
+            "realized_mtd_total": (_dividends(left).get("realized_mtd") or {}).get("total_dividends"),
+            "next_30d_total": _dividends_upcoming(left).get("projected"),
         },
         {
-            "forward_12m_total": sc.get_income(right).get("forward_12m_total"),
-            "realized_mtd_total": sc.get_dividends(right).get("realized_mtd", {}).get("total_dividends"),
-            "next_30d_total": sc.get_dividends_upcoming(right).get("projected"),
+            "forward_12m_total": _income(right).get("forward_12m_total"),
+            "realized_mtd_total": (_dividends(right).get("realized_mtd") or {}).get("total_dividends"),
+            "next_30d_total": _dividends_upcoming(right).get("projected"),
         },
         ["forward_12m_total", "realized_mtd_total", "next_30d_total"],
     )
 
-    coverage_left = sc.get_coverage(left)
-    coverage_right = sc.get_coverage(right)
+    coverage_left = _coverage(left)
+    coverage_right = _coverage(right)
     coverage = _section_diff(coverage_left, coverage_right, ["derived_pct", "missing_pct"])
     note = "Data quality unchanged."
     if coverage.get("derived_pct", {}).get("delta") is not None or coverage.get("missing_pct", {}).get("delta") is not None:
@@ -543,8 +696,8 @@ def build_daily_diff(
 
     range_metrics = None
     if days_apart and days_apart > 0:
-        left_mv = (left.get("totals") or {}).get("market_value")
-        right_mv = (right.get("totals") or {}).get("market_value")
+        left_mv = _totals(left).get("market_value")
+        right_mv = _totals(right).get("market_value")
         if _is_number(left_mv) and _is_number(right_mv) and left_mv:
             simple_pnl = right_mv - left_mv
             simple_return_pct = (right_mv / left_mv - 1.0) * 100
@@ -577,22 +730,22 @@ def build_daily_diff(
         if dividends_mtd_totals:
             realized_mtd_left, realized_mtd_right = dividends_mtd_totals
         else:
-            realized_mtd_left = (left.get("dividends") or {}).get("realized_mtd", {}).get("total_dividends")
-            realized_mtd_right = (right.get("dividends") or {}).get("realized_mtd", {}).get("total_dividends")
+            realized_mtd_left = (_dividends(left).get("realized_mtd") or {}).get("total_dividends")
+            realized_mtd_right = (_dividends(right).get("realized_mtd") or {}).get("total_dividends")
 
     if include_period_fields:
         dividends_compact = _section_diff(
             {
-                "forward_12m_total": (left.get("income") or {}).get("forward_12m_total"),
+                "forward_12m_total": _income(left).get("forward_12m_total"),
                 "realized_period_total": realized_period_left,
                 "realized_mtd_total": realized_mtd_left if include_realized_mtd else None,
-                "next_30d_total": (left.get("dividends_upcoming") or {}).get("projected"),
+                "next_30d_total": _dividends_upcoming(left).get("projected"),
             },
             {
-                "forward_12m_total": (right.get("income") or {}).get("forward_12m_total"),
+                "forward_12m_total": _income(right).get("forward_12m_total"),
                 "realized_period_total": realized_period_right,
                 "realized_mtd_total": realized_mtd_right if include_realized_mtd else None,
-                "next_30d_total": (right.get("dividends_upcoming") or {}).get("projected"),
+                "next_30d_total": _dividends_upcoming(right).get("projected"),
             },
             ["forward_12m_total", "realized_period_total", "realized_mtd_total", "next_30d_total"],
         )

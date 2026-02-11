@@ -51,9 +51,11 @@ def _coerce_float(val):
         return None
 
 def _upsert_account_balances(conn: sqlite3.Connection, run_id: str, items: list[dict]):
+    """Upsert account balances. Only advances as_of_date_local when balance actually changes,
+    so day-over-day snapshots use the same margin when nothing changed (no phantom margin delta)."""
     if not items:
         return
-    as_of_date_local = to_local_date(datetime.now(timezone.utc), settings.local_tz, settings.daily_cutover).isoformat()
+    today = to_local_date(datetime.now(timezone.utc), settings.local_tz, settings.daily_cutover).isoformat()
     pulled_at = now_utc_iso()
     cur = conn.cursor()
     for item in items:
@@ -62,6 +64,21 @@ def _upsert_account_balances(conn: sqlite3.Connection, run_id: str, items: list[
         plaid_account_id = item.get("id")
         if plaid_account_id is None:
             continue
+        plaid_account_id = str(plaid_account_id)
+        new_balance = _coerce_float(item.get("balance"))
+        row = cur.execute(
+            """
+            SELECT as_of_date_local, balance FROM account_balances
+            WHERE plaid_account_id = ?
+            ORDER BY as_of_date_local DESC LIMIT 1
+            """,
+            (plaid_account_id,),
+        ).fetchone()
+        prev_balance = _coerce_float(row[1]) if row and row[1] is not None else None
+        if row and new_balance is not None and prev_balance is not None and abs(prev_balance - new_balance) < 0.01:
+            as_of_date_local = row[0]
+        else:
+            as_of_date_local = today
         cur.execute(
             """
             INSERT OR REPLACE INTO account_balances (
@@ -71,12 +88,12 @@ def _upsert_account_balances(conn: sqlite3.Connection, run_id: str, items: list[
             """,
             (
                 as_of_date_local,
-                str(plaid_account_id),
+                plaid_account_id,
                 item.get("name") or item.get("display_name") or item.get("official_name"),
                 item.get("institution_name"),
                 item.get("type"),
                 item.get("subtype"),
-                _coerce_float(item.get("balance")),
+                new_balance,
                 _coerce_float(item.get("limit")),
                 item.get("currency"),
                 item.get("balance_last_update"),

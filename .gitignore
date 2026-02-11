@@ -55,6 +55,7 @@ htmlcov/
 
 # Project data
 data/
+data/app.db.pre-flat-migration
 TASKS.md
 blueprint.md
 *.md

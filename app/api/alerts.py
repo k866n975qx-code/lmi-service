@@ -6,7 +6,20 @@ from pydantic import BaseModel
 
 from ..config import settings
 from ..db import get_conn
-from ..pipeline import snap_compat as sc
+from ..pipeline.snapshot_views import assemble_daily_snapshot
+from ..pipeline.diff_daily import (
+    _totals,
+    _income,
+    _dividends,
+    _dividends_upcoming,
+    _perf,
+    _risk_flat,
+    _rollups,
+    _goal_tiers,
+    _goal_pace,
+    _holdings_flat,
+    _macro_snapshot,
+)
 from ..alerts.evaluator import (
     evaluate_alerts,
     build_daily_report_html,
@@ -15,6 +28,7 @@ from ..alerts.evaluator import (
     build_evening_recap_html,
     DIGEST_SECTIONS,
     _get_digest_sections,
+    _holding_ultimate,
 )
 from ..alerts.storage import (
     migrate_alerts,
@@ -162,23 +176,24 @@ def _help_text() -> str:
         "<i>Or ask in plain English, e.g. \"how much dividend this month?\"</i>"
     )
 
+def _as_of(snap: dict | None) -> str | None:
+    if not snap:
+        return None
+    return snap.get("as_of_date_local") or (snap.get("timestamps") or {}).get("portfolio_data_as_of_local")
+
+
 def _latest_snapshot(conn):
-    cur = conn.cursor()
-    row = cur.execute(
-        "SELECT as_of_date_local, payload_json FROM snapshot_daily_current ORDER BY as_of_date_local DESC LIMIT 1"
-    ).fetchone()
-    if not row:
+    snap = assemble_daily_snapshot(conn, as_of_date=None)
+    if not snap:
         return None, None
-    import json
-    try:
-        return row[0], json.loads(row[1])
-    except json.JSONDecodeError:
-        return row[0], None
+    as_of = _as_of(snap)
+    return as_of, snap
+
 
 def _prev_snapshot_date(conn, as_of_date_local: str):
-    cur = conn.cursor()
-    row = cur.execute(
-        "SELECT as_of_date_local FROM snapshot_daily_current WHERE as_of_date_local < ? ORDER BY as_of_date_local DESC LIMIT 1",
+    conn.row_factory = None
+    row = conn.execute(
+        "SELECT as_of_date_local FROM daily_portfolio WHERE as_of_date_local < ? ORDER BY as_of_date_local DESC LIMIT 1",
         (as_of_date_local,),
     ).fetchone()
     return row[0] if row else None
@@ -202,10 +217,10 @@ def _fmt_ratio(val, precision: int = 2):
         return "—"
 
 def _status_text(snap: dict) -> str:
-    totals = sc.get_totals(snap)
-    income = sc.get_income(snap)
+    totals = _totals(snap)
+    income = _income(snap)
     nlv = totals.get("net_liquidation_value")
-    ltv = totals.get("margin_to_portfolio_pct")
+    ltv = totals.get("margin_to_portfolio_pct") or totals.get("ltv_pct")
     proj = income.get("projected_monthly_income")
     return (
         "<b>Quick Status</b>\n"
@@ -215,7 +230,7 @@ def _status_text(snap: dict) -> str:
     )
 
 def _income_text(snap: dict) -> str:
-    divs = sc.get_dividends_upcoming(snap)
+    divs = _dividends_upcoming(snap)
     events = divs.get("events") or []
     if not events:
         return "No upcoming dividends in the current window."
@@ -230,8 +245,8 @@ def _income_text(snap: dict) -> str:
     return "\n".join(lines)
 
 def _mtd_text(snap: dict) -> str:
-    divs = sc.get_dividends(snap)
-    proj_vs = divs.get("projected_vs_received") or {}
+    divs = _dividends(snap)
+    proj_vs = (snap.get("dividends") or {}).get("projected_vs_received") or divs.get("projected_vs_received") or {}
     projected = proj_vs.get("projected")
     received = proj_vs.get("received")
     pct = proj_vs.get("pct_of_projection")
@@ -243,7 +258,7 @@ def _mtd_text(snap: dict) -> str:
     )
 
 def _received_text(snap: dict) -> str:
-    divs = sc.get_dividends(snap)
+    divs = _dividends(snap)
     window = (divs.get("windows") or {}).get("30d") or {}
     by_symbol = window.get("by_symbol") or {}
     lines = ["<b>Last 30 Days (by symbol)</b>"]
@@ -254,7 +269,7 @@ def _received_text(snap: dict) -> str:
     return "\n".join(lines)
 
 def _perf_text(snap: dict) -> str:
-    perf = sc.get_perf(snap)
+    perf = _perf(snap)
     return (
         "<b>Performance</b>\n"
         f"1M: {_fmt_pct(perf.get('twr_1m_pct'),2)}\n"
@@ -264,19 +279,28 @@ def _perf_text(snap: dict) -> str:
     )
 
 def _holdings_text(snap: dict) -> str:
-    holdings = sc.get_holdings_flat(snap)
-    holdings = [h for h in holdings if isinstance(h.get("weight_pct"), (int, float))]
-    holdings.sort(key=lambda h: h.get("weight_pct") or 0.0, reverse=True)
+    holdings = _holdings_flat(snap)
+    weighted = [(h, _holding_ultimate(h).get("weight_pct") or (h.get("valuation") or {}).get("portfolio_weight_pct")) for h in holdings]
+    weighted = [(h, w) for h, w in weighted if isinstance(w, (int, float))]
+    weighted.sort(key=lambda x: x[1] or 0.0, reverse=True)
     lines = ["<b>Top Holdings</b>"]
-    for h in holdings[:10]:
-        lines.append(f"• {h.get('symbol')}: {h.get('weight_pct'):.1f}% ({_fmt_money(h.get('market_value'))})")
+    for h, w in weighted[:10]:
+        mv = _holding_ultimate(h).get("market_value") or (h.get("valuation") or {}).get("market_value")
+        lines.append(f"• {h.get('symbol')}: {w:.1f}% ({_fmt_money(mv)})")
     return "\n".join(lines)
 
 def _risk_text(snap: dict) -> str:
-    risk = sc.get_risk_flat(snap)
-    rollups = sc.get_rollups(snap)
+    risk = _risk_flat(snap)
+    rollups = _rollups(snap)
     stability = rollups.get("income_stability") or {}
     tail = rollups.get("tail_risk") or {}
+    # Fallbacks when assembly has score/cvar in flat risk but not in nested rollups
+    stability_score = stability.get("stability_score") if isinstance(stability, dict) else None
+    if stability_score is None:
+        stability_score = risk.get("income_stability_score")
+    cvar_1d = tail.get("cvar_95_1d_pct") if isinstance(tail, dict) else None
+    if cvar_1d is None:
+        cvar_1d = risk.get("cvar_95_1d_pct") or risk.get("cvar_90_1d_pct")
     return (
         "<b>Risk</b>\n"
         f"30d Vol: {_fmt_pct(risk.get('vol_30d_pct'),2)}\n"
@@ -285,13 +309,13 @@ def _risk_text(snap: dict) -> str:
         f"Sortino: {_fmt_ratio(risk.get('sortino_1y'),2)}\n"
         f"Sortino/Sharpe: {_fmt_ratio(risk.get('sortino_sharpe_ratio'),2)}\n"
         f"Max DD: {_fmt_pct(risk.get('max_drawdown_1y_pct'),2)}\n"
-        f"Income Stability: {_fmt_ratio(stability.get('stability_score'),2)}\n"
-        f"CVaR 1d: {_fmt_pct(tail.get('cvar_95_1d_pct'),1)}"
+        f"Income Stability: {_fmt_ratio(stability_score,2)}\n"
+        f"CVaR 1d: {_fmt_pct(cvar_1d,1)}"
     )
 
 def _goal_text(snap: dict) -> str:
-    goal_tiers = sc.get_goal_tiers(snap)
-    goal_pace = sc.get_goal_pace(snap)
+    goal_tiers = _goal_tiers(snap)
+    goal_pace = _goal_pace(snap)
     current_state = goal_tiers.get("current_state") or {}
     tiers = goal_tiers.get("tiers") or []
     likely = goal_pace.get("likely_tier") or {}
@@ -346,8 +370,8 @@ def _goal_text(snap: dict) -> str:
     return "\n".join(lines)
 
 def _projection_text(snap: dict) -> str:
-    goal_tiers = sc.get_goal_tiers(snap)
-    goal_pace = sc.get_goal_pace(snap)
+    goal_tiers = _goal_tiers(snap)
+    goal_pace = _goal_pace(snap)
     tiers = goal_tiers.get("tiers") or []
     likely = goal_pace.get("likely_tier") or {}
 
@@ -378,7 +402,10 @@ def _projection_text(snap: dict) -> str:
             desc_parts.append(f"{assumptions['annual_appreciation_pct']:.0f}% growth")
         if assumptions.get("ltv_maintained"):
             desc_parts.append(f"{assumptions.get('target_ltv_pct', 0):.0f}% LTV")
-        desc = " + ".join(desc_parts) if desc_parts else "No action"
+        if desc_parts:
+            desc = " + ".join(desc_parts)
+        else:
+            desc = (t.get("description") or "").strip() or "Hold only; no contributions or leverage"
 
         if months is not None:
             y, m = divmod(months, 12)
@@ -408,7 +435,7 @@ def _settings_text(conn) -> str:
 
 def _snapshot_text(snap: dict) -> str:
     meta = snap.get("meta") or {}
-    as_of = sc.get_as_of(snap)
+    as_of = _as_of(snap)
     # V5 schema: timestamps.snapshot_created_utc
     created_at = meta.get("snapshot_created_at") or meta.get("created_at") or ""
     # V5 schema: timestamps.macro_data_as_of_date
@@ -423,7 +450,7 @@ def _snapshot_text(snap: dict) -> str:
     )
 
 def _macro_text(snap: dict) -> str:
-    macro = sc.get_macro_snapshot(snap)
+    macro = _macro_snapshot(snap)
     return (
         "<b>Macro</b>\n"
         f"VIX: {macro.get('vix', '—')}\n"
@@ -484,6 +511,9 @@ def _compare_text(diff: dict) -> str:
     if ret_pct is not None or ret_pnl is not None:
         icon = _delta_icon(ret_pnl)
         lines.append(f"{icon} <b>Day Return:</b> {_delta_str(ret_pnl)} ({_delta_str(ret_pct, 'pct')})")
+        # Two different dates but zero return → flat tables may have same data for both (need separate sync runs per date)
+        if left_date != right_date and (ret_pnl is None or abs(float(ret_pnl)) < 0.01) and (ret_pct is None or abs(float(ret_pct)) < 0.001):
+            lines.append("<i>Identical values for both dates; run sync on each day to get deltas.</i>")
         lines.append("")
 
     # Portfolio totals
@@ -615,7 +645,7 @@ def _compare_text(diff: dict) -> str:
 
 def _pace_text(snap: dict) -> str:
     """Format goal pace tracking data as HTML."""
-    pace = sc.get_goal_pace(snap)
+    pace = _goal_pace(snap)
     if not pace:
         return "Goal pace tracking not available. Run a sync to generate pace data."
 
@@ -702,7 +732,7 @@ def _health_text(conn, snap: dict) -> str:
 
     # Snapshot freshness
     meta = snap.get("meta") or {} if snap else {}
-    as_of = sc.get_as_of(snap) or "—" if snap else "—"
+    as_of = _as_of(snap) or "—" if snap else "—"
     age_days = meta.get("snapshot_age_days", "—")
     schema = meta.get("schema_version", "—")
 
@@ -742,7 +772,7 @@ def _health_text(conn, snap: dict) -> str:
 
 def _position_text(snap: dict, symbol: str) -> str:
     """Format detailed position info for a single holding."""
-    holdings = sc.get_holdings_flat(snap)
+    holdings = _holdings_flat(snap)
     symbol_upper = symbol.upper()
 
     holding = next((h for h in holdings if (h.get("symbol") or "").upper() == symbol_upper), None)
@@ -791,7 +821,7 @@ def _position_text(snap: dict, symbol: str) -> str:
         lines.append("")
 
     # Risk metrics from ultimate if available
-    ultimate = sc.get_holding_ultimate(holding)
+    ultimate = _holding_ultimate(holding)
     if ultimate.get("sortino_1y") or ultimate.get("vol_30d_pct"):
         lines.append("<b>Risk:</b>")
         if ultimate.get("vol_30d_pct"):
@@ -908,7 +938,7 @@ def _digest_keyboard_and_text(conn) -> tuple[str, dict]:
 
 def _simulate_text(snap: dict, tier_num: int | None = None) -> str:
     """Format simulation output comparing tiers."""
-    goal_tiers = sc.get_goal_tiers(snap)
+    goal_tiers = _goal_tiers(snap)
     if not goal_tiers or not goal_tiers.get("tiers"):
         return "Goal tiers not available. Run a sync to generate tier data."
 
@@ -1012,12 +1042,12 @@ def _simple_projection(
 
 def _whatif_text(snap: dict, args: list[str]) -> str:
     """Format what-if scenario analysis."""
-    goal_tiers = sc.get_goal_tiers(snap)
+    goal_tiers = _goal_tiers(snap)
     current_state = goal_tiers.get("current_state") or {}
 
     target_monthly = current_state.get("target_monthly", 0)
     current_monthly = current_state.get("projected_monthly_income", 0)
-    portfolio_value = current_state.get("total_market_value", 0) or sc.get_totals(snap).get("market_value", 0)
+    portfolio_value = current_state.get("total_market_value", 0) or _totals(snap).get("market_value", 0)
     yield_pct = current_state.get("portfolio_yield_pct", 0)
 
     if not target_monthly:
@@ -1048,12 +1078,12 @@ def _whatif_text(snap: dict, args: list[str]) -> str:
     if value is None:
         return f"Usage: /whatif {param_type} &lt;number&gt;"
 
-    goal_pace = sc.get_goal_pace(snap)
+    goal_pace = _goal_pace(snap)
     likely_tier = goal_pace.get("likely_tier") or {}
     tiers = goal_tiers.get("tiers") or []
     current_tier = next((t for t in tiers if t.get("tier") == likely_tier.get("tier")), {})
 
-    goal_pace = sc.get_goal_pace(snap)
+    goal_pace = _goal_pace(snap)
     likely_tier = goal_pace.get("likely_tier") or {}
     tiers = goal_tiers.get("tiers") or []
     current_tier = next((t for t in tiers if t.get("tier") == likely_tier.get("tier")), {})
@@ -1170,13 +1200,13 @@ def _trend_text(conn, category: str | None = None) -> str:
 
 def _rebalance_text(snap: dict) -> str:
     """Format portfolio rebalancing suggestions."""
-    holdings = sc.get_holdings_flat(snap)
+    holdings = _holdings_flat(snap)
     if not holdings:
         return "No holdings data available."
 
-    rollups = sc.get_rollups(snap)
+    rollups = _rollups(snap)
     stability = rollups.get("income_stability") or {}
-    risk = sc.get_risk_flat(snap)
+    risk = _risk_flat(snap)
 
     over_weight = []
     low_sortino = []
@@ -1188,7 +1218,7 @@ def _rebalance_text(snap: dict) -> str:
         if not sym:
             continue
         weight = h.get("weight_pct", 0)
-        u = sc.get_holding_ultimate(h)
+        u = _holding_ultimate(h)
         sortino = u.get("sortino_1y")
         yield_pct = h.get("current_yield_pct", 0)
 
@@ -1253,12 +1283,12 @@ def _rebalance_text(snap: dict) -> str:
 
 def _quick_summary_text(snap: dict, conn) -> str:
     """Build compact daily summary for collapsible view."""
-    totals = sc.get_totals(snap)
-    income = sc.get_income(snap)
-    goal_tiers = sc.get_goal_tiers(snap)
-    goal_pace = sc.get_goal_pace(snap)
+    totals = _totals(snap)
+    income = _income(snap)
+    goal_tiers = _goal_tiers(snap)
+    goal_pace = _goal_pace(snap)
     current_state = goal_tiers.get("current_state") or {}
-    rollups = sc.get_rollups(snap)
+    rollups = _rollups(snap)
     perf = rollups.get("performance") or {}
     risk = rollups.get("risk") or {}
 
@@ -1273,7 +1303,7 @@ def _quick_summary_text(snap: dict, conn) -> str:
     open_crit = list_open_alerts(conn, min_severity=8)
     open_warn = list_open_alerts(conn, min_severity=5, max_severity=7)
 
-    as_of = sc.get_as_of(snap)
+    as_of = _as_of(snap)
     lines = [
         f"📊 <b>Daily Summary</b> | {as_of or '—'}\n",
         f"• Net: {_fmt_money(totals.get('net_liquidation_value'))}",
@@ -1464,7 +1494,7 @@ async def _handle_callback_query(callback_query: dict):
             "macro": lambda: _macro_text(snap) if snap else no_snap,
             "mtd": lambda: _mtd_text(snap) if snap else no_snap,
             "holdings": lambda: _holdings_text(snap) if snap else no_snap,
-            "goals": lambda: format_goal_tiers_html(sc.get_goal_tiers(snap)) if snap and sc.get_goal_tiers(snap) else "No tier data.",
+            "goals": lambda: format_goal_tiers_html(_goal_tiers(snap)) if snap and _goal_tiers(snap) else "No tier data.",
             "received": lambda: _received_text(snap) if snap else no_snap,
             "simulate": lambda: _simulate_text(snap) if snap else no_snap,
             "projection": lambda: _projection_text(snap) if snap else no_snap,
@@ -1684,7 +1714,7 @@ async def telegram_webhook(update: dict):
         if not snap:
             reply = "No daily snapshot available."
         else:
-            goal_tiers = sc.get_goal_tiers(snap)
+            goal_tiers = _goal_tiers(snap)
             if goal_tiers:
                 reply = format_goal_tiers_html(goal_tiers)
             else:

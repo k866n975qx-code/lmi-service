@@ -1,4 +1,4 @@
-import json, uuid, time, os
+import uuid, time, os
 import structlog
 from ..db import get_conn, migrate
 from ..config import settings
@@ -160,20 +160,22 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
             except (TypeError, ValueError):
                 return None
 
-        existing_row = cur.execute(
-            "SELECT payload_json FROM snapshot_daily_current WHERE as_of_date_local=?",
+        # Prefer flat table (daily_portfolio) so skip logic uses live-filled data as of that date
+        existing_flat = cur.execute(
+            "SELECT market_value, prices_as_of_utc FROM daily_portfolio WHERE as_of_date_local=?",
             (as_of_date_local,),
         ).fetchone()
-        existing_payload = None
-        if existing_row and existing_row[0]:
-            try:
-                existing_payload = json.loads(existing_row[0])
-            except json.JSONDecodeError:
-                existing_payload = None
-        has_daily = existing_payload is not None
+        if existing_flat is not None:
+            has_daily = True
+            existing_mv = round(float(existing_flat[0]), 2) if existing_flat[0] is not None else None
+            existing_prices_as_of = existing_flat[1] if existing_flat[1] else None
+        else:
+            has_daily = False
+            existing_mv = None
+            existing_prices_as_of = None
+
         force_daily = bool(has_daily and new_tx_count > 0)
         current_mv = _market_value(daily)
-        existing_mv = _market_value(existing_payload)
         market_value_changed = False
         if has_daily:
             if existing_mv is None or current_mv is None:
@@ -182,12 +184,7 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
                 market_value_changed = existing_mv != current_mv
         prices_as_of_changed = False
         if has_daily:
-            # Get prices_as_of from V5 timestamps or fall back to V4 format
-            def _get_prices_as_of(payload: dict):
-                timestamps = payload.get("timestamps") or {}
-                return timestamps.get("price_data_as_of_utc") or payload.get("prices_as_of_utc") or payload.get("prices_as_of")
-            existing_prices_as_of = _get_prices_as_of(existing_payload or {})
-            current_prices_as_of = _get_prices_as_of(daily)
+            current_prices_as_of = (daily.get("timestamps") or {}).get("price_data_as_of_utc") or daily.get("prices_as_of_utc") or daily.get("prices_as_of")
             prices_as_of_changed = existing_prices_as_of != current_prices_as_of
 
         should_persist_daily = force_daily or not has_daily or market_value_changed or prices_as_of_changed
@@ -255,9 +252,7 @@ def get_status(run_id: str):
     return get_run_status(conn, run_id)
 
 def get_snapshot(period: str, start: str, end: str):
-    # TODO: implement retrieval of persisted snapshots per period
+    """Return assembled period snapshot from flat tables (or None if not found)."""
+    from .snapshot_views import assemble_period_snapshot
     conn = get_conn(settings.db_path)
-    cur = conn.cursor()
-    cur.execute("SELECT payload_json FROM snapshots WHERE period_type=? AND period_start_date=? AND period_end_date=?", (period, start, end))
-    row = cur.fetchone()
-    return json.loads(row[0]) if row else None
+    return assemble_period_snapshot(conn, period, end, period_start_date=start)

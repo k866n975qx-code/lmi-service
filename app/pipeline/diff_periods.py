@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import calendar
-import json
 import sqlite3
 from datetime import date
 
-from . import snap_compat as sc
-from .diff_daily import build_daily_diff
+from .diff_daily import build_daily_diff, _rollups
 from .periods import _period_bounds
+from .snapshot_views import assemble_period_snapshot
 from ..config import settings
 
 _PERIOD_MAP = {
@@ -19,17 +18,8 @@ _PERIOD_MAP = {
 
 
 def _load_period_snapshot(conn: sqlite3.Connection, period_type: str, start_date: str, end_date: str):
-    cur = conn.cursor()
-    row = cur.execute(
-        "SELECT payload_json FROM snapshots WHERE period_type=? AND period_start_date=? AND period_end_date=?",
-        (period_type, start_date, end_date),
-    ).fetchone()
-    if not row:
-        return None
-    try:
-        return json.loads(row[0])
-    except Exception:
-        return None
+    """Load period snapshot from flat tables (assembled to V5 period shape)."""
+    return assemble_period_snapshot(conn, period_type, end_date, period_start_date=start_date, rolling=False)
 
 
 def _last_interval_holdings(period_snap: dict):
@@ -117,7 +107,7 @@ def _period_to_daily_like(period_snap: dict):
         "margin_to_portfolio_pct": margin_end.get("margin_to_portfolio_pct") or margin_end.get("ltv_pct"),
     }
 
-    rollups_daily = sc.get_rollups(interval_daily) if interval_daily else {}
+    rollups_daily = _rollups(interval_daily) if interval_daily else {}
     portfolio_rollups = {
         "performance": {
             "twr_1m_pct": twr_windows.get("twr_1m_pct_end"),

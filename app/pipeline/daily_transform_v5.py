@@ -1,4 +1,4 @@
-"""V5 schema transformer for daily snapshots.
+"""V5 schema transformer for daily snapshots (renamed from snapshot_v5).
 
 Transforms v4 daily snapshot dict into v5 schema:
 - Holdings restructured into sub-objects (cost, valuation, income, analytics, reliability, performance[])
@@ -78,8 +78,9 @@ def transform_to_v5(daily: dict) -> dict:
             "downside_dev_1y_pct": risk.get("downside_dev_1y_pct"),
         },
         "ratios": _pick(risk, [
-            "sharpe_1y", "sortino_1y", "calmar_1y",
-            "omega_ratio_1y", "ulcer_index_1y", "ulcer_index_category",
+            "sharpe_1y", "sortino_1y", "sortino_6m", "sortino_3m", "sortino_1m",
+            "sortino_sharpe_ratio", "sortino_sharpe_divergence",
+            "calmar_1y", "omega_ratio_1y", "ulcer_index_1y", "ulcer_index_category",
             "pain_adjusted_return",
         ]),
         "drawdown": {

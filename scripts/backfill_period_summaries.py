@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """
 Backfill/rebuild period summaries (WEEK, MONTH, QUARTER, YEAR) from existing daily snapshots.
-
-Useful when:
-- Schema changes have caused artifacts in existing period summaries
-- You want to regenerate historical period summaries with updated logic
-- Data corrections were made to daily snapshots
+Generates both final summaries for completed periods and rolling summaries for
+currently-incomplete periods.
 
 Usage:
     python scripts/backfill_period_summaries.py                        # Only generate missing summaries
@@ -13,6 +10,7 @@ Usage:
     python scripts/backfill_period_summaries.py 2025-01-01 2025-12-31  # Missing summaries in date range
     python scripts/backfill_period_summaries.py --rebuild-all          # Rebuild ALL summaries (even existing)
     python scripts/backfill_period_summaries.py --rebuild-all 2025-01-01  # Rebuild all from date onwards
+    python scripts/backfill_period_summaries.py --dry-run              # Show what would be done
 """
 from pathlib import Path
 import os
@@ -27,31 +25,49 @@ os.chdir(ROOT)
 
 from app.db import get_conn
 from app.config import settings
-from app.pipeline.snapshots import _period_bounds, sha256_json, now_utc_iso
+from app.pipeline.snapshots import _period_bounds, now_utc_iso
 from app.pipeline.periods import build_period_snapshot
 from app.pipeline.validation import validate_period_snapshot
+from app.pipeline.flat_persist import _write_period_flat
 import structlog
-import json
-import uuid
 
 log = structlog.get_logger()
 
-def backfill_period_summaries(conn, start_date: str | None = None, end_date: str | None = None, only_missing: bool = True):
+_PERIOD_TYPES = [
+    ("WEEK", "weekly"),
+    ("MONTH", "monthly"),
+    ("QUARTER", "quarterly"),
+    ("YEAR", "yearly"),
+]
+
+
+def backfill_period_summaries(
+    conn,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    only_missing: bool = True,
+    dry_run: bool = False,
+):
     """
     Backfill period summaries by rebuilding them from daily snapshots.
+
+    Generates:
+    1. Final summaries for all completed periods
+    2. One rolling (to-date) summary for each currently-incomplete period
 
     Args:
         conn: Database connection
         start_date: Optional start date (YYYY-MM-DD) to limit backfill range
         end_date: Optional end date (YYYY-MM-DD) to limit backfill range
-        only_missing: If True, only generate missing summaries. If False, regenerate all.
+        only_missing: If True, skip periods that already have a final summary.
+                      If False (--rebuild-all), delete and regenerate.
+        dry_run: If True, log what would be done but don't write.
     """
     cur = conn.cursor()
 
     # Get all daily snapshot dates
-    query = "SELECT as_of_date_local FROM snapshot_daily_current"
+    query = "SELECT as_of_date_local FROM daily_portfolio"
     params = []
-
     if start_date and end_date:
         query += " WHERE as_of_date_local BETWEEN ? AND ?"
         params = [start_date, end_date]
@@ -61,7 +77,6 @@ def backfill_period_summaries(conn, start_date: str | None = None, end_date: str
     elif end_date:
         query += " WHERE as_of_date_local <= ?"
         params = [end_date]
-
     query += " ORDER BY as_of_date_local ASC"
 
     rows = cur.execute(query, params).fetchall()
@@ -71,123 +86,125 @@ def backfill_period_summaries(conn, start_date: str | None = None, end_date: str
         log.info("backfill_no_daily_snapshots")
         return
 
-    # Get existing period summaries if only_missing is True
-    existing_periods = set()
+    # Existing final summaries (for skip check when only_missing)
+    existing_finals = set()
     if only_missing:
         existing_rows = cur.execute(
-            "SELECT period_type, period_start_date, period_end_date FROM snapshots"
+            "SELECT period_type, period_start_date, period_end_date FROM period_summary WHERE is_rolling=0"
         ).fetchall()
-        existing_periods = {(row[0], row[1], row[2]) for row in existing_rows}
-        log.info("backfill_existing_summaries", count=len(existing_periods))
+        existing_finals = {(row[0], row[1], row[2]) for row in existing_rows}
+        log.info("backfill_existing_finals", count=len(existing_finals))
 
-    log.info("backfill_period_summaries_started", total_dates=len(dates), start_date=start_date, end_date=end_date, only_missing=only_missing)
+    log.info("backfill_started", total_dates=len(dates), only_missing=only_missing, dry_run=dry_run)
 
     run_id = "backfill_periods_" + now_utc_iso().replace(":", "").replace("-", "").replace(".", "")[:19]
 
-    # Track which periods we've already processed
     processed_periods = set()
     rebuilt_count = 0
     skipped_count = 0
     failed_count = 0
 
+    # ── Phase 1: Final summaries for completed periods ──────────────────
     for dt in dates:
-        # Check each period type to see if this date is a period end
-        for period_type, snapshot_type in [
-            ("WEEK", "weekly"),
-            ("MONTH", "monthly"),
-            ("QUARTER", "quarterly"),
-            ("YEAR", "yearly"),
-        ]:
+        for period_type, snapshot_type in _PERIOD_TYPES:
             start, end = _period_bounds(period_type, dt)
 
-            # Skip if this date is not a period end
+            # Only build final when dt is the period end date
             if dt != end:
                 continue
 
-            # Skip if we've already processed this period
             period_key = (period_type, str(start), str(end))
             if period_key in processed_periods:
                 continue
-
             processed_periods.add(period_key)
 
-            # Skip if only_missing is True and this period already exists
-            if only_missing and period_key in existing_periods:
-                log.debug("backfill_period_exists", period=period_type, start=str(start), end=str(end))
+            # Skip if already exists and only_missing mode
+            if only_missing and period_key in existing_finals:
                 skipped_count += 1
                 continue
 
-            try:
-                # Build the period snapshot from daily snapshots
-                snapshot = build_period_snapshot(
-                    conn,
-                    snapshot_type=snapshot_type,
-                    as_of=str(end),
-                    mode="final"
-                )
+            if dry_run:
+                log.info("dry_run_would_build_final", period=period_type, start=str(start), end=str(end))
+                rebuilt_count += 1
+                continue
 
-                # Validate the snapshot
+            try:
+                snapshot = build_period_snapshot(conn, snapshot_type=snapshot_type, as_of=str(end), mode="final")
                 ok, reasons = validate_period_snapshot(snapshot)
                 if not ok:
-                    log.error("backfill_period_invalid", period=period_type, start=str(start), end=str(end), reasons=reasons)
+                    log.error("backfill_final_invalid", period=period_type, start=str(start), end=str(end), reasons=reasons)
                     failed_count += 1
                     continue
 
-                # Only check hash if not only_missing (for regeneration mode)
-                if not only_missing:
-                    payload_sha = sha256_json(snapshot)
-                    existing = cur.execute(
-                        """
-                        SELECT payload_sha256
-                        FROM snapshots
-                        WHERE period_type=? AND period_start_date=? AND period_end_date=?
-                        """,
-                        (period_type, str(start), str(end)),
-                    ).fetchone()
-
-                    if existing and existing[0] == payload_sha:
-                        log.debug("backfill_period_unchanged", period=period_type, start=str(start), end=str(end))
-                        skipped_count += 1
-                        continue
-                else:
-                    payload_sha = sha256_json(snapshot)
-
-                # Insert or replace the period snapshot
-                cur.execute(
-                    """
-                    INSERT OR REPLACE INTO snapshots(snapshot_id, period_type, period_start_date, period_end_date, built_from_run_id, payload_json, payload_sha256, created_at_utc)
-                    VALUES(?,?,?,?,?,?,?,?)
-                    """,
-                    (str(uuid.uuid4()), period_type, str(start), str(end), run_id, json.dumps(snapshot), payload_sha, now_utc_iso()),
-                )
+                # In rebuild mode, _write_period_flat does DELETE then INSERT (idempotent)
+                _write_period_flat(conn, snapshot, run_id)
                 conn.commit()
-
-                log.info("backfill_period_rebuilt", period=period_type, start=str(start), end=str(end))
+                log.info("backfill_final_rebuilt", period=period_type, start=str(start), end=str(end))
                 rebuilt_count += 1
 
-                if rebuilt_count % 10 == 0:
-                    log.info("backfill_progress", rebuilt=rebuilt_count, skipped=skipped_count, failed=failed_count)
-
             except Exception as exc:
-                log.error("backfill_period_failed", period=period_type, start=str(start), end=str(end), err=str(exc))
+                log.error("backfill_final_failed", period=period_type, start=str(start), end=str(end), err=str(exc))
+                failed_count += 1
+
+            if rebuilt_count % 10 == 0 and rebuilt_count > 0:
+                log.info("backfill_progress", rebuilt=rebuilt_count, skipped=skipped_count, failed=failed_count)
+
+    # ── Phase 2: Rolling summaries for currently-incomplete periods ──────
+    latest_date = dates[-1]
+    rolling_count = 0
+    for period_type, snapshot_type in _PERIOD_TYPES:
+        start, end = _period_bounds(period_type, latest_date)
+
+        # If the latest daily IS the period end, a final summary covers it — no rolling needed
+        if latest_date == end:
+            continue
+
+        if dry_run:
+            log.info("dry_run_would_build_rolling", period=period_type, start=str(start), end=str(latest_date))
+            rolling_count += 1
+            continue
+
+        try:
+            snapshot = build_period_snapshot(conn, snapshot_type=snapshot_type, as_of=str(latest_date), mode="to_date")
+            ok, reasons = validate_period_snapshot(snapshot)
+            if not ok:
+                log.error("backfill_rolling_invalid", period=period_type, start=str(start), reasons=reasons)
                 failed_count += 1
                 continue
 
-    log.info("backfill_period_summaries_complete", rebuilt=rebuilt_count, skipped=skipped_count, failed=failed_count, total_processed=len(processed_periods))
+            # _write_period_flat handles delete-before-insert; stores period_type=WEEK + is_rolling=1
+            _write_period_flat(conn, snapshot, run_id)
+            conn.commit()
+            log.info("backfill_rolling_built", period=period_type, start=str(start), end=str(latest_date))
+            rolling_count += 1
+
+        except Exception as exc:
+            log.error("backfill_rolling_failed", period=period_type, start=str(start), err=str(exc))
+            failed_count += 1
+
+    log.info(
+        "backfill_complete",
+        finals_rebuilt=rebuilt_count,
+        rolling_built=rolling_count,
+        skipped=skipped_count,
+        failed=failed_count,
+        total_periods=len(processed_periods),
+    )
+
 
 if __name__ == '__main__':
-    # Parse arguments
     args = [arg for arg in sys.argv[1:] if not arg.startswith('--')]
     flags = [arg for arg in sys.argv[1:] if arg.startswith('--')]
 
     rebuild_all = '--rebuild-all' in flags
+    dry_run = '--dry-run' in flags
     only_missing = not rebuild_all
 
     start_date = args[0] if len(args) > 0 else None
     end_date = args[1] if len(args) > 1 else None
 
-    mode = 'Rebuilding ALL' if rebuild_all else 'Generating MISSING'
-    print(f'{mode} period summaries from daily snapshots...')
+    mode_label = 'DRY RUN' if dry_run else ('Rebuilding ALL' if rebuild_all else 'Generating MISSING')
+    print(f'{mode_label} period summaries from daily snapshots...')
 
     if start_date and end_date:
         print(f'Date range: {start_date} to {end_date}')
@@ -197,5 +214,5 @@ if __name__ == '__main__':
         print('All dates')
 
     conn = get_conn(settings.db_path)
-    backfill_period_summaries(conn, start_date=start_date, end_date=end_date, only_missing=only_missing)
+    backfill_period_summaries(conn, start_date=start_date, end_date=end_date, only_missing=only_missing, dry_run=dry_run)
     print('Done.')

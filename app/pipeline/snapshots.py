@@ -1255,17 +1255,29 @@ def _estimate_expected_pay_events(
     return expected, _round_money(total_raw)
 
 
-def _load_account_balances(conn: sqlite3.Connection):
+def _load_account_balances(conn: sqlite3.Connection, as_of_date_local: str | None = None):
+    """Load account balances. If as_of_date_local is set, use latest row on or before that date per account."""
     cur = conn.cursor()
-    rows = cur.execute(
-        """
-        SELECT plaid_account_id, name, type, subtype, balance, as_of_date_local
-        FROM account_balances
-        ORDER BY as_of_date_local DESC
-        """
-    ).fetchall()
+    if as_of_date_local:
+        rows = cur.execute(
+            """
+            SELECT plaid_account_id, name, type, subtype, balance, as_of_date_local
+            FROM account_balances
+            WHERE as_of_date_local <= ?
+            ORDER BY as_of_date_local DESC
+            """,
+            (as_of_date_local,),
+        ).fetchall()
+    else:
+        rows = cur.execute(
+            """
+            SELECT plaid_account_id, name, type, subtype, balance, as_of_date_local
+            FROM account_balances
+            ORDER BY as_of_date_local DESC
+            """
+        ).fetchall()
     latest = {}
-    for plaid_account_id, name, type_val, subtype, balance, as_of_date_local in rows:
+    for plaid_account_id, name, type_val, subtype, balance, row_date in rows:
         if plaid_account_id in latest:
             continue
         latest[plaid_account_id] = {
@@ -1274,27 +1286,27 @@ def _load_account_balances(conn: sqlite3.Connection):
             "type": type_val,
             "subtype": subtype,
             "balance": balance,
-            "as_of_date_local": as_of_date_local,
+            "as_of_date_local": row_date,
         }
     return list(latest.values())
 
 
 def _load_daily_snapshots_range(conn: sqlite3.Connection, start_date: date, end_date: date) -> list[tuple[date, dict]]:
+    from .snapshot_views import assemble_daily_snapshot
     cur = conn.cursor()
     rows = cur.execute(
         """
-        SELECT as_of_date_local, payload_json
-        FROM snapshot_daily_current
+        SELECT as_of_date_local
+        FROM daily_portfolio
         WHERE as_of_date_local BETWEEN ? AND ?
         ORDER BY as_of_date_local ASC
         """,
         (start_date.isoformat(), end_date.isoformat()),
     ).fetchall()
     out = []
-    for as_of_str, payload in rows:
-        try:
-            snap = json.loads(payload)
-        except Exception:
+    for (as_of_str,) in rows:
+        snap = assemble_daily_snapshot(conn, as_of_date=as_of_str)
+        if not snap:
             continue
         try:
             dt = date.fromisoformat(as_of_str)
@@ -2739,18 +2751,21 @@ def _build_goal_pace(
     windows = {}
 
     for window_name, (start_date, end_date) in windows_def.items():
-        # Get snapshot at start of window
-        start_snapshot = cur.execute(
-            """SELECT payload_json FROM snapshot_daily_current
+        # Get snapshot at start of window (from flat tables)
+        start_as_of_row = cur.execute(
+            """SELECT as_of_date_local FROM daily_portfolio
                WHERE as_of_date_local <= ?
                ORDER BY as_of_date_local DESC LIMIT 1""",
             (start_date.isoformat(),)
         ).fetchone()
 
-        if not start_snapshot:
+        if not start_as_of_row:
             continue
 
-        start_data = json.loads(start_snapshot[0])
+        from .snapshot_views import assemble_daily_snapshot
+        start_data = assemble_daily_snapshot(conn, as_of_date=start_as_of_row[0])
+        if not start_data:
+            continue
         # Support both v4 (top-level totals/income) and v5 (portfolio.totals/income)
         start_totals = start_data.get("totals") or (start_data.get("portfolio") or {}).get("totals") or {}
         start_inc = start_data.get("income") or (start_data.get("portfolio") or {}).get("income") or {}
@@ -2873,8 +2888,12 @@ def _build_goal_pace(
     inception_mv_delta = inception_window.get("delta", {}).get("portfolio_value", 0.0)
     inception_income_delta = inception_window.get("delta", {}).get("monthly_income", 0.0)
 
+    # Expose reason from detection_basis.notes so API/persist have it
+    reason = (likely_tier_info.get("detection_basis") or {}).get("notes")
+    likely_tier_with_reason = {**likely_tier_info, "reason": reason}
+
     return {
-        "likely_tier": likely_tier_info,
+        "likely_tier": likely_tier_with_reason,
         "baseline_projection": {
             "tier_number": likely_tier_num,
             "tier_name": likely_tier.get("name"),
@@ -2890,7 +2909,8 @@ def _build_goal_pace(
             "revised_goal_date": revised_goal_date.isoformat() if revised_goal_date else None,
             "revised_months_to_goal": int(revised_months) if revised_months is not None else None,
             "on_track": pace_category in ("ahead", "on_track"),
-            "pace_category": pace_category
+            "pace_category": pace_category,
+            "pct_of_tier_pace": inception_pace.get("pct_of_tier_pace"),
         },
         "factors": {
             "market_value_impact": _round_money(inception_mv_delta),
@@ -3141,8 +3161,21 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
     reconcile_estimates_with_provider(conn)
     pay_lag_by_symbol = _load_symbol_pay_lag_days(conn)
     lm_ex_dates = _load_lm_ex_dates(conn)
-    account_balances = _load_account_balances(conn)
+    account_balances = _load_account_balances(conn, as_of_date_local=as_of_date_str)
     first_acquired_dates = _load_first_acquired_dates(conn)
+
+    # Align with backfill/migrate script: filter price series to snapshot date so last_price
+    # and prices_as_of_date from series don't extend past as_of_date_local (live quotes
+    # still supply today's price and timestamp when available).
+    for symbol in list(getattr(md, "prices", {}) or {}):
+        df = md.prices.get(symbol)
+        if df is None or getattr(df, "empty", True):
+            continue
+        if "date" not in getattr(df, "columns", []):
+            continue
+        df_dates = pd.to_datetime(df["date"]).dt.date
+        mask = df_dates <= as_of_date_local
+        md.prices[symbol] = df[mask].reset_index(drop=True)
 
     holding_symbols = set(holdings.keys())
     position_index = _build_position_index(conn, holding_symbols)
@@ -3603,6 +3636,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         excess_return = performance.get("twr_12m_pct") - bench_twr_12m_pct
     vs_benchmark = {
         "benchmark": benchmark_symbol,
+        "benchmark_twr_1y_pct": _round_pct(bench_twr_12m_pct),
         "excess_return_1y_pct": _round_pct(excess_return),
         "tracking_error_1y_pct": risk.get("tracking_error_1y_pct"),
         "information_ratio_1y": risk.get("information_ratio_1y"),
@@ -3796,6 +3830,13 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         prices_as_of_date = as_of_date_local
     if prices_as_of_utc:
         prices_as_of_date = max(prices_as_of_date, prices_as_of_utc.date())
+    # When no quote timestamp: set price_data to EOD of the date we have (so backfill gets "prices as of that date")
+    if prices_as_of_utc is None and prices_as_of_date is not None:
+        # Prefer snapshot date when we have price data for it (align portfolio date and price date)
+        use_date = prices_as_of_date
+        if as_of_date_local is not None and prices_as_of_date >= as_of_date_local:
+            use_date = as_of_date_local
+        prices_as_of_utc = datetime(use_date.year, use_date.month, use_date.day, 20, 0, 0, tzinfo=timezone.utc)
 
     daily = {
         "as_of": as_of_date_str,
@@ -3835,8 +3876,8 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         "cached": False,
     }
 
-    # ── Transform to V5 schema ───────────────────────────────────────────
-    from .snapshot_v5 import transform_to_v5
+    # ── Transform to V5 schema (single path: only this dict is ever persisted to flat)
+    from .daily_transform_v5 import transform_to_v5
     daily = transform_to_v5(daily)
 
     return daily, sources
@@ -3849,23 +3890,19 @@ def persist_daily_snapshot(conn: sqlite3.Connection, daily: dict, run_id: str, f
     if not as_of_date_local:
         as_of_utc = timestamps.get("portfolio_data_as_of_utc") or daily.get("as_of_utc") or ""
         as_of_date_local = as_of_utc[:10] if as_of_utc else ""
-    payload_sha = sha256_json(daily)
     cur = conn.cursor()
     if not force:
+        # Skip if flat row exists with same market_value (unchanged)
+        totals = (daily.get("portfolio") or {}).get("totals") or daily.get("totals") or {}
+        new_mv = totals.get("market_value")
         existing = cur.execute(
-            "SELECT payload_sha256 FROM snapshot_daily_current WHERE as_of_date_local=?",
+            "SELECT market_value FROM daily_portfolio WHERE as_of_date_local=?",
             (as_of_date_local,),
         ).fetchone()
-        if existing and existing[0] == payload_sha:
+        if existing and new_mv is not None and existing[0] is not None and abs(float(existing[0]) - float(new_mv)) < 0.01:
             return False
-    cur.execute(
-        """
-        INSERT OR REPLACE INTO snapshot_daily_current(as_of_date_local, built_from_run_id, payload_json, payload_sha256, updated_at_utc)
-        VALUES(?,?,?,?,?)
-        """,
-        (as_of_date_local, run_id, json.dumps(daily), payload_sha, now_utc_iso()),
-    )
-    conn.commit()
+    from .flat_persist import _write_daily_flat
+    _write_daily_flat(conn, daily, run_id)
     return True
 
 
@@ -3919,73 +3956,72 @@ def maybe_persist_periodic(conn: sqlite3.Connection, run_id: str, daily: dict):
         if not ok:
             log.error("period_snapshot_invalid", run_id=run_id, period=period, reasons=reasons)
             continue
-        payload_sha = sha256_json(snapshot)
         cur = conn.cursor()
         existing = cur.execute(
             """
-            SELECT payload_sha256
-            FROM snapshots
-            WHERE period_type=? AND period_start_date=? AND period_end_date=?
+            SELECT 1 FROM period_summary
+            WHERE period_type=? AND period_start_date=? AND period_end_date=? AND is_rolling=0
             """,
             (period, str(start), str(end)),
         ).fetchone()
-        if existing and existing[0] == payload_sha:
+        if existing:
             continue
-        cur.execute(
-            """
-            INSERT OR REPLACE INTO snapshots(snapshot_id, period_type, period_start_date, period_end_date, built_from_run_id, payload_json, payload_sha256, created_at_utc)
-            VALUES(?,?,?,?,?,?,?,?)
-            """,
-            (str(uuid.uuid4()), period, str(start), str(end), run_id, json.dumps(snapshot), payload_sha, now_utc_iso()),
-        )
-        conn.commit()
+        try:
+            from .flat_persist import _write_period_flat
+            _write_period_flat(conn, snapshot, run_id)
+            conn.commit()
+        except NotImplementedError:
+            log.debug("period_snapshot_skip_flat_not_implemented", period=period, start=str(start), end=str(end))
+            continue
 
-        # Clean up rolling snapshots for this completed period
-        rolling_type = f"{period}_ROLLING"
-        deleted = cur.execute(
-            """
-            DELETE FROM snapshots
-            WHERE period_type=? AND period_start_date=?
-            """,
-            (rolling_type, str(start)),
-        )
-        deleted_count = deleted.rowcount
+        # Clean up rolling rows for this completed period
+        deleted_count = _delete_rolling_children(cur, period, str(start))
         if deleted_count > 0:
             conn.commit()
             log.info("rolling_snapshots_cleaned", period=period, start=str(start), deleted=deleted_count)
 
 
+def _delete_rolling_children(cur, period_type: str, period_start: str):
+    """Delete all rolling rows + child table rows for a given period type and start date."""
+    rolling_ends = cur.execute(
+        "SELECT period_end_date FROM period_summary WHERE period_type=? AND period_start_date=? AND is_rolling=1",
+        (period_type, period_start),
+    ).fetchall()
+    for (end_date,) in rolling_ends:
+        cur.execute("DELETE FROM period_risk_stats WHERE period_type=? AND period_start_date=? AND period_end_date=?", (period_type, period_start, end_date))
+        cur.execute("DELETE FROM period_intervals WHERE period_type=? AND period_start_date=? AND period_end_date=?", (period_type, period_start, end_date))
+        cur.execute("DELETE FROM period_holding_changes WHERE period_type=? AND period_start_date=? AND period_end_date=?", (period_type, period_start, end_date))
+    deleted = cur.execute("DELETE FROM period_summary WHERE period_type=? AND period_start_date=? AND is_rolling=1", (period_type, period_start))
+    return deleted.rowcount
+
+
 def persist_rolling_summaries(conn: sqlite3.Connection, run_id: str, daily: dict, as_of_date_local: str):
     """
     Persist rolling period summaries (week-to-date, month-to-date, etc.) whenever daily snapshot updates.
-    These summaries are stored with period_type WEEK_ROLLING, MONTH_ROLLING, etc.
+    These summaries are stored with the base period_type (WEEK, MONTH, etc.) and is_rolling=1.
     """
-    from . import snap_compat as sc
-    
     log = structlog.get_logger()
     # as_of_date_local is passed from DB column (V5 stores in timestamps.portfolio_data_as_of_local)
     dt = date.fromisoformat(as_of_date_local)
 
-    # Define rolling period types
+    # Rolling periods: use base type (WEEK not WEEK_ROLLING) + is_rolling=1
+    # _write_period_flat derives period_type from snapshot_type and stores is_rolling=1 for mode="to_date"
     rolling_periods = [
-        ("WEEK_ROLLING", "weekly"),
-        ("MONTH_ROLLING", "monthly"),
-        ("QUARTER_ROLLING", "quarterly"),
-        ("YEAR_ROLLING", "yearly"),
+        ("WEEK", "weekly"),
+        ("MONTH", "monthly"),
+        ("QUARTER", "quarterly"),
+        ("YEAR", "yearly"),
     ]
 
     for period_db_type, period_snapshot_type in rolling_periods:
         try:
-            # Calculate period bounds for this rolling type
-            start, end = _period_bounds(period_db_type.replace("_ROLLING", ""), dt)
+            start, end = _period_bounds(period_db_type, dt)
 
-            # Skip if this date is the period end - a final snapshot should exist or will be created
-            # Rolling summaries are only for incomplete periods
+            # Skip if this date is the period end — final snapshot handles it
             if dt == end:
                 log.debug("rolling_snapshot_skipped_period_complete", period=period_db_type, date=str(dt))
                 continue
 
-            # Build the rolling summary using existing build_period_snapshot logic
             from .periods import build_period_snapshot
             snapshot = build_period_snapshot(
                 conn,
@@ -3997,49 +4033,30 @@ def persist_rolling_summaries(conn: sqlite3.Connection, run_id: str, daily: dict
             log.error("rolling_snapshot_build_failed", run_id=run_id, period=period_db_type, err=str(exc))
             continue
 
-        # Validate the snapshot
         ok, reasons = validate_period_snapshot(snapshot)
         if not ok:
             log.error("rolling_snapshot_invalid", run_id=run_id, period=period_db_type, reasons=reasons)
             continue
 
-        # Check if it changed before persisting (check latest rolling snapshot for this period)
-        payload_sha = sha256_json(snapshot)
         cur = conn.cursor()
         existing = cur.execute(
             """
-            SELECT payload_sha256, period_end_date
-            FROM snapshots
-            WHERE period_type=? AND period_start_date=?
-            ORDER BY period_end_date DESC
-            LIMIT 1
+            SELECT period_end_date FROM period_summary
+            WHERE period_type=? AND period_start_date=? AND is_rolling=1
+            ORDER BY period_end_date DESC LIMIT 1
             """,
             (period_db_type, str(start)),
         ).fetchone()
 
-        if existing and existing[0] == payload_sha and existing[1] == str(dt):
+        if existing and existing[0] == str(dt):
             log.debug("rolling_snapshot_unchanged", period=period_db_type, start=str(start), end=str(dt))
             continue
 
-        # Delete any existing rolling snapshot for this period (we only keep the latest one)
-        deleted = cur.execute(
-            """
-            DELETE FROM snapshots
-            WHERE period_type=? AND period_start_date=?
-            """,
-            (period_db_type, str(start)),
-        )
-        if deleted.rowcount > 0:
-            log.debug("rolling_snapshot_replaced", period=period_db_type, start=str(start), old_count=deleted.rowcount)
+        # Delete previous rolling row(s) — only keep the latest
+        _delete_rolling_children(cur, period_db_type, str(start))
 
-        # Persist the new rolling summary
-        cur.execute(
-            """
-            INSERT INTO snapshots(snapshot_id, period_type, period_start_date, period_end_date, built_from_run_id, payload_json, payload_sha256, created_at_utc)
-            VALUES(?,?,?,?,?,?,?,?)
-            """,
-            (str(uuid.uuid4()), period_db_type, str(start), str(dt), run_id, json.dumps(snapshot), payload_sha, now_utc_iso()),
-        )
+        from .flat_persist import _write_period_flat
+        _write_period_flat(conn, snapshot, run_id)
         conn.commit()
         log.info("rolling_snapshot_persisted", period=period_db_type, start=str(start), end=str(dt))
 
@@ -4057,8 +4074,8 @@ def backfill_rolling_summaries(conn: sqlite3.Connection, start_date: str | None 
     log = structlog.get_logger()
     cur = conn.cursor()
 
-    # Get all daily snapshot dates
-    query = "SELECT as_of_date_local, payload_json FROM snapshot_daily_current"
+    # Get all daily snapshot dates from flat table
+    query = "SELECT as_of_date_local FROM daily_portfolio"
     params = []
 
     if start_date and end_date:
@@ -4086,34 +4103,30 @@ def backfill_rolling_summaries(conn: sqlite3.Connection, start_date: str | None 
     processed = 0
     failed = 0
 
-    for as_of_date_local, payload_json in rows:
+    from .snapshot_views import assemble_daily_snapshot
+    for (as_of_date_local,) in rows:
         try:
-            daily = json.loads(payload_json)
+            daily = assemble_daily_snapshot(conn, as_of_date=as_of_date_local)
+            if not daily:
+                continue
             dt = date.fromisoformat(as_of_date_local)
 
             # Create rolling summaries for this date (skips if period end)
             persist_rolling_summaries(conn, run_id, daily, as_of_date_local)
 
-            # If this is a period end date, clean up rolling snapshots for completed periods
+            # If this is a period end date, clean up rolling snapshots for completed periods (flat period_summary)
             for period in ["WEEK", "MONTH", "QUARTER", "YEAR"]:
                 start, end = _period_bounds(period, dt)
                 if dt == end:
-                    # Check if final snapshot exists for this period
                     final_exists = cur.execute(
-                        "SELECT 1 FROM snapshots WHERE period_type=? AND period_start_date=? AND period_end_date=?",
+                        "SELECT 1 FROM period_summary WHERE period_type=? AND period_start_date=? AND period_end_date=? AND is_rolling=0",
                         (period, str(start), str(end)),
                     ).fetchone()
-
                     if final_exists:
-                        # Clean up rolling snapshots for this completed period
-                        rolling_type = f"{period}_ROLLING"
-                        deleted = cur.execute(
-                            "DELETE FROM snapshots WHERE period_type=? AND period_start_date=?",
-                            (rolling_type, str(start)),
-                        )
-                        if deleted.rowcount > 0:
+                        deleted_count = _delete_rolling_children(cur, period, str(start))
+                        if deleted_count > 0:
                             conn.commit()
-                            log.debug("backfill_cleanup_rolling", period=period, start=str(start), deleted=deleted.rowcount)
+                            log.debug("backfill_cleanup_rolling", period=period, start=str(start), deleted=deleted_count)
 
             processed += 1
             if processed % 10 == 0:

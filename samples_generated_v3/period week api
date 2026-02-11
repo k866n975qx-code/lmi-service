@@ -1,0 +1,1174 @@
+{
+  "summary_id": "weekly_2026-02-08",
+  "snapshot_type": "weekly",
+  "snapshot_mode": "final",
+  "as_of": "2026-02-08",
+  "period": {
+    "label": "2026-W06",
+    "start_date": "2026-02-02",
+    "end_date": "2026-02-08",
+    "expected_days": 7,
+    "observed_days": 7,
+    "coverage_pct": 100,
+    "is_complete": true
+  },
+  "benchmark": {
+    "symbol": "^GSPC",
+    "period_return_pct": -0.63,
+    "twr_1y": {
+      "start": 16.38,
+      "end": 14.27,
+      "delta": -2.11
+    },
+    "twr_1y_pct_start": 16.38,
+    "twr_1y_pct_end": 14.27,
+    "twr_1y_pct_delta": -2.11
+  },
+  "period_summary": {
+    "goal_tiers": {
+      "tiers": [
+        {
+          "tier": 1,
+          "name": "Modest Appreciation",
+          "description": "10.4% appreciation only (no contributions, no DRIP)",
+          "target_monthly": 4000,
+          "required_portfolio_value": 323325.12,
+          "final_portfolio_value": 325065.49,
+          "progress_pct": 18.156,
+          "months_to_goal": 198,
+          "estimated_goal_date": "2042-08-08",
+          "confidence": "low",
+          "assumptions": {
+            "monthly_contribution": 0,
+            "drip_enabled": false,
+            "annual_appreciation_pct": 10.418,
+            "ltv_maintained": false,
+            "target_ltv_pct": "value not available in source data"
+          }
+        },
+        {
+          "tier": 2,
+          "name": "Conservative Build",
+          "description": "$3000.0/mo contributions, 10.4% appreciation (no DRIP)",
+          "target_monthly": 4000,
+          "required_portfolio_value": 323325.12,
+          "final_portfolio_value": 327656.46,
+          "progress_pct": 18.156,
+          "months_to_goal": 59,
+          "estimated_goal_date": "2031-01-08",
+          "confidence": "low",
+          "assumptions": {
+            "monthly_contribution": 3000,
+            "drip_enabled": false,
+            "annual_appreciation_pct": 10.418,
+            "ltv_maintained": false,
+            "target_ltv_pct": "value not available in source data"
+          }
+        },
+        {
+          "tier": 3,
+          "name": "DRIP Build",
+          "description": "DRIP + $3000.0/mo + 10.4% appreciation",
+          "target_monthly": 4000,
+          "required_portfolio_value": 323325.12,
+          "final_portfolio_value": 331286.37,
+          "progress_pct": 18.156,
+          "months_to_goal": 41,
+          "estimated_goal_date": "2029-07-08",
+          "confidence": "low",
+          "assumptions": {
+            "monthly_contribution": 3000,
+            "drip_enabled": true,
+            "annual_appreciation_pct": 10.418,
+            "ltv_maintained": false,
+            "target_ltv_pct": "value not available in source data"
+          }
+        },
+        {
+          "tier": 4,
+          "name": "Leveraged Growth",
+          "description": "DRIP + $3000.0/mo + 10.4% + 30.0% LTV",
+          "target_monthly": 4000,
+          "required_portfolio_value": 323325.12,
+          "final_portfolio_value": 336461.17,
+          "progress_pct": 18.156,
+          "months_to_goal": 30,
+          "estimated_goal_date": "2028-08-08",
+          "confidence": "low",
+          "assumptions": {
+            "monthly_contribution": 3000,
+            "drip_enabled": true,
+            "annual_appreciation_pct": 10.418,
+            "ltv_maintained": true,
+            "target_ltv_pct": 30
+          }
+        },
+        {
+          "tier": 5,
+          "name": "Optimized Growth",
+          "description": "DRIP + $3000.0/mo + 11.6% + 30.0% LTV",
+          "target_monthly": 4000,
+          "required_portfolio_value": 323325.12,
+          "final_portfolio_value": 332924.4,
+          "progress_pct": 18.156,
+          "months_to_goal": 29,
+          "estimated_goal_date": "2028-07-08",
+          "confidence": "high",
+          "assumptions": {
+            "monthly_contribution": 3000,
+            "drip_enabled": true,
+            "annual_appreciation_pct": 11.64,
+            "ltv_maintained": true,
+            "target_ltv_pct": 30
+          }
+        },
+        {
+          "tier": 6,
+          "name": "Maximum Growth",
+          "description": "DRIP + $3000.0/mo + 12.9% + 30.0% LTV",
+          "target_monthly": 4000,
+          "required_portfolio_value": 323325.12,
+          "final_portfolio_value": 328608.22,
+          "progress_pct": 18.156,
+          "months_to_goal": 28,
+          "estimated_goal_date": "2028-06-08",
+          "confidence": "low",
+          "assumptions": {
+            "monthly_contribution": 3000,
+            "drip_enabled": true,
+            "annual_appreciation_pct": 12.862,
+            "ltv_maintained": true,
+            "target_ltv_pct": 30
+          }
+        }
+      ],
+      "current_state": {
+        "portfolio_value": 58702.1,
+        "projected_monthly_income": 726.23,
+        "portfolio_yield_pct": 14.846
+      }
+    },
+    "goal_pace": {
+      "current_pace": {
+        "months_ahead_behind": 9.29,
+        "pace_category": "ahead",
+        "on_track": true,
+        "revised_goal_date": "2027-09-08",
+        "pct_of_tier_pace": 331.041
+      },
+      "likely_tier": {
+        "tier": 5,
+        "name": "Optimized Growth",
+        "confidence": "high",
+        "reason": "DRIP active, contributions enabled, leverage maintained"
+      },
+      "windows": {
+        "mtd": {
+          "window_name": "MTD",
+          "start_date": "2026-02-01",
+          "end_date": "2026-02-08",
+          "days_in_window": 7,
+          "months_elapsed": 0.23,
+          "expected": {
+            "portfolio_value": 58541.6,
+            "monthly_income": 709.09,
+            "margin_balance": 17786.93
+          },
+          "actual": {
+            "portfolio_value": 58702.1,
+            "monthly_income": 726.23,
+            "margin_balance": 17832.02
+          },
+          "delta": {
+            "portfolio_value": 160.5,
+            "portfolio_value_pct": 0.274,
+            "monthly_income": 17.14,
+            "monthly_income_pct": 2.418
+          },
+          "pace": {
+            "months_ahead_behind": 0,
+            "pct_of_tier_pace": 100.274,
+            "on_track": true,
+            "amount_needed": 0,
+            "amount_surplus": 160.5
+          }
+        },
+        "qtd": {
+          "window_name": "QTD",
+          "start_date": "2026-01-01",
+          "end_date": "2026-02-08",
+          "days_in_window": 38,
+          "months_elapsed": 1.27,
+          "expected": {
+            "portfolio_value": 19316.3,
+            "monthly_income": 211,
+            "margin_balance": 7180.49
+          },
+          "actual": {
+            "portfolio_value": 58702.1,
+            "monthly_income": 726.23,
+            "margin_balance": 17832.02
+          },
+          "delta": {
+            "portfolio_value": 39385.8,
+            "portfolio_value_pct": 203.899,
+            "monthly_income": 515.23,
+            "monthly_income_pct": 244.188
+          },
+          "pace": {
+            "months_ahead_behind": 14.98,
+            "pct_of_tier_pace": 303.899,
+            "on_track": true,
+            "amount_needed": 0,
+            "amount_surplus": 39385.8
+          }
+        },
+        "ytd": {
+          "window_name": "YTD",
+          "start_date": "2026-01-01",
+          "end_date": "2026-02-08",
+          "days_in_window": 38,
+          "months_elapsed": 1.27,
+          "expected": {
+            "portfolio_value": 19316.3,
+            "monthly_income": 211,
+            "margin_balance": 7180.49
+          },
+          "actual": {
+            "portfolio_value": 58702.1,
+            "monthly_income": 726.23,
+            "margin_balance": 17832.02
+          },
+          "delta": {
+            "portfolio_value": 39385.8,
+            "portfolio_value_pct": 203.899,
+            "monthly_income": 515.23,
+            "monthly_income_pct": 244.188
+          },
+          "pace": {
+            "months_ahead_behind": 14.98,
+            "pct_of_tier_pace": 303.899,
+            "on_track": true,
+            "amount_needed": 0,
+            "amount_surplus": 39385.8
+          }
+        },
+        "30d": {
+          "window_name": "30D",
+          "start_date": "2026-01-09",
+          "end_date": "2026-02-08",
+          "days_in_window": 30,
+          "months_elapsed": 1,
+          "expected": {
+            "portfolio_value": 56918.21,
+            "monthly_income": 623.02,
+            "margin_balance": 17075.46
+          },
+          "actual": {
+            "portfolio_value": 58702.1,
+            "monthly_income": 726.23,
+            "margin_balance": 17832.02
+          },
+          "delta": {
+            "portfolio_value": 1783.89,
+            "portfolio_value_pct": 3.134,
+            "monthly_income": 103.21,
+            "monthly_income_pct": 16.567
+          },
+          "pace": {
+            "months_ahead_behind": 0.15,
+            "pct_of_tier_pace": 103.134,
+            "on_track": true,
+            "amount_needed": 0,
+            "amount_surplus": 1783.89
+          }
+        },
+        "60d": {
+          "window_name": "60D",
+          "start_date": "2025-12-10",
+          "end_date": "2026-02-08",
+          "days_in_window": 60,
+          "months_elapsed": 2,
+          "expected": {
+            "portfolio_value": 26457.42,
+            "monthly_income": 266.38,
+            "margin_balance": 7937.23
+          },
+          "actual": {
+            "portfolio_value": 58702.1,
+            "monthly_income": 726.23,
+            "margin_balance": 17832.02
+          },
+          "delta": {
+            "portfolio_value": 32244.68,
+            "portfolio_value_pct": 121.874,
+            "monthly_income": 459.85,
+            "monthly_income_pct": 172.627
+          },
+          "pace": {
+            "months_ahead_behind": 5.56,
+            "pct_of_tier_pace": 221.874,
+            "on_track": true,
+            "amount_needed": 0,
+            "amount_surplus": 32244.68
+          }
+        },
+        "90d": {
+          "window_name": "90D",
+          "start_date": "2025-11-10",
+          "end_date": "2026-02-08",
+          "days_in_window": 90,
+          "months_elapsed": 3,
+          "expected": {
+            "portfolio_value": 17804.5,
+            "monthly_income": 151.09,
+            "margin_balance": 5341.35
+          },
+          "actual": {
+            "portfolio_value": 58702.1,
+            "monthly_income": 726.23,
+            "margin_balance": 17832.02
+          },
+          "delta": {
+            "portfolio_value": 40897.6,
+            "portfolio_value_pct": 229.704,
+            "monthly_income": 575.14,
+            "monthly_income_pct": 380.673
+          },
+          "pace": {
+            "months_ahead_behind": 9.73,
+            "pct_of_tier_pace": 329.704,
+            "on_track": true,
+            "amount_needed": 0,
+            "amount_surplus": 40897.6
+          }
+        },
+        "since_inception": {
+          "window_name": "SINCE_INCEPTION",
+          "start_date": "2025-10-31",
+          "end_date": "2026-02-08",
+          "days_in_window": 100,
+          "months_elapsed": 3.33,
+          "expected": {
+            "portfolio_value": 17732.55,
+            "monthly_income": 115.82,
+            "margin_balance": 5319.77
+          },
+          "actual": {
+            "portfolio_value": 58702.1,
+            "monthly_income": 726.23,
+            "margin_balance": 17832.02
+          },
+          "delta": {
+            "portfolio_value": 40969.55,
+            "portfolio_value_pct": 231.041,
+            "monthly_income": 610.41,
+            "monthly_income_pct": 527.016
+          },
+          "pace": {
+            "months_ahead_behind": 9.29,
+            "pct_of_tier_pace": 331.041,
+            "on_track": true,
+            "amount_needed": 0,
+            "amount_surplus": 40969.55
+          }
+        }
+      },
+      "baseline_projection": {
+        "tier_number": 5,
+        "tier_name": "Optimized Growth",
+        "original_goal_date": "2028-07-08",
+        "original_months_to_goal": 29,
+        "required_portfolio_value": 323325.12,
+        "assumptions": {
+          "monthly_contribution": 3000,
+          "drip_enabled": true,
+          "annual_appreciation_pct": 11.64,
+          "ltv_maintained": true,
+          "target_ltv_pct": 30
+        }
+      }
+    },
+    "totals": {
+      "start": {
+        "total_market_value": 58570.67,
+        "net_liquidation_value": 40783.74,
+        "cost_basis": 58062.97,
+        "unrealized_pct": 0.874,
+        "unrealized_pnl": 507.7,
+        "margin_loan_balance": 17786.93,
+        "margin_to_portfolio_pct": 30.368
+      },
+      "end": {
+        "total_market_value": 58702.1,
+        "net_liquidation_value": 40870.08,
+        "cost_basis": 58812.96,
+        "unrealized_pct": -0.188,
+        "unrealized_pnl": -110.86,
+        "margin_loan_balance": 17832.02,
+        "margin_to_portfolio_pct": 30.377
+      },
+      "delta": {
+        "total_market_value": 131.43,
+        "net_liquidation_value": 86.34,
+        "cost_basis": 749.99,
+        "unrealized_pct": -1.06,
+        "unrealized_pnl": -618.56,
+        "margin_loan_balance": 45.09,
+        "margin_to_portfolio_pct": 0.01
+      }
+    },
+    "income": {
+      "start": {
+        "projected_monthly_income": 715.06,
+        "forward_12m_total": 8580.72,
+        "portfolio_current_yield_pct": 14.65,
+        "portfolio_yield_on_cost_pct": 14.778
+      },
+      "end": {
+        "projected_monthly_income": 726.23,
+        "forward_12m_total": 8714.81,
+        "portfolio_current_yield_pct": 14.846,
+        "portfolio_yield_on_cost_pct": 14.818
+      },
+      "delta": {
+        "projected_monthly_income": 11.17,
+        "forward_12m_total": 134.09,
+        "portfolio_current_yield_pct": 0.2,
+        "portfolio_yield_on_cost_pct": 0.04
+      }
+    },
+    "performance": {
+      "period": {
+        "twr_period_pct": 0.22,
+        "pnl_dollar_period": 131.43,
+        "pnl_pct_period": 0.22
+      },
+      "twr_windows": {
+        "twr_1m_pct_start": 3.169,
+        "twr_1m_pct_end": 0.458,
+        "twr_1m_pct_delta": -2.71,
+        "twr_3m_pct_start": 5.811,
+        "twr_3m_pct_end": 6.483,
+        "twr_3m_pct_delta": 0.67,
+        "twr_6m_pct_start": 13.868,
+        "twr_6m_pct_end": 10.418,
+        "twr_6m_pct_delta": -3.45,
+        "twr_12m_pct_start": 15.762,
+        "twr_12m_pct_end": 12.862,
+        "twr_12m_pct_delta": -2.9
+      }
+    },
+    "risk": {
+      "start": {
+        "vol_30d_pct": 13.355,
+        "vol_90d_pct": 11.918,
+        "sharpe_1y": 0.815,
+        "sortino_1y": 1.053,
+        "sortino_6m": 3.317,
+        "sortino_3m": 3.108,
+        "sortino_1m": 4.076,
+        "calmar_1y": 0.776,
+        "max_drawdown_1y_pct": -20.305,
+        "portfolio_risk_quality": "excellent"
+      },
+      "end": {
+        "vol_30d_pct": 14.612,
+        "vol_90d_pct": 12.45,
+        "sharpe_1y": 0.688,
+        "sortino_1y": 0.897,
+        "sortino_6m": 2.523,
+        "sortino_3m": 3.268,
+        "sortino_1m": 0.68,
+        "calmar_1y": 0.633,
+        "max_drawdown_1y_pct": -20.307,
+        "portfolio_risk_quality": "good"
+      },
+      "delta": {
+        "vol_30d_pct": 1.26,
+        "vol_90d_pct": 0.53,
+        "sharpe_1y": -0.13,
+        "sortino_1y": -0.16,
+        "sortino_6m": -0.79,
+        "sortino_3m": 0.16,
+        "sortino_1m": -3.4,
+        "calmar_1y": -0.14,
+        "max_drawdown_1y_pct": 0
+      },
+      "stats": {
+        "sortino_1m": {
+          "avg": 1.755,
+          "min": -0.13,
+          "max": 4.076
+        },
+        "sortino_1y": {
+          "avg": 0.951,
+          "min": 0.868,
+          "max": 1.053
+        },
+        "sortino_3m": {
+          "avg": 3.17,
+          "min": 2.785,
+          "max": 3.289
+        },
+        "sortino_6m": {
+          "avg": 2.711,
+          "min": 2.184,
+          "max": 3.317
+        }
+      }
+    },
+    "goal_progress": {
+      "start": {
+        "progress_pct": 17.876,
+        "current_projected_monthly": 715.06,
+        "months_to_goal": 73
+      },
+      "end": {
+        "progress_pct": 18.156,
+        "current_projected_monthly": 726.23,
+        "months_to_goal": 72
+      },
+      "delta": {
+        "progress_pct": 0.28,
+        "current_projected_monthly": 11.17,
+        "months_to_goal": -1
+      }
+    },
+    "goal_progress_net": {
+      "start": {
+        "progress_pct": 16.339,
+        "current_projected_monthly_net": 653.55
+      },
+      "end": {
+        "progress_pct": 16.614,
+        "current_projected_monthly_net": 664.56
+      },
+      "delta": {
+        "progress_pct": 0.28,
+        "current_projected_monthly_net": 11.01
+      }
+    },
+    "composition": {
+      "start": {
+        "holding_count": 7,
+        "concentration_top5_pct": 94.487
+      },
+      "end": {
+        "holding_count": 7,
+        "concentration_top5_pct": 94.146
+      },
+      "delta": {
+        "holding_count": 0,
+        "concentration_top5_pct": -0.34
+      }
+    },
+    "macro": {
+      "start": {
+        "ten_year_yield": 4.29,
+        "two_year_yield": 3.57,
+        "vix": 16.34,
+        "cpi_yoy": 3.03
+      },
+      "end": {
+        "ten_year_yield": 4.22,
+        "two_year_yield": 3.5,
+        "vix": 17.76,
+        "cpi_yoy": 3.03
+      },
+      "avg": {
+        "ten_year_yield": 4.25,
+        "two_year_yield": 3.53,
+        "vix": 18.29,
+        "cpi_yoy": 3.03
+      },
+      "delta": {
+        "ten_year_yield": -0.07,
+        "two_year_yield": -0.07,
+        "vix": 1.42,
+        "cpi_yoy": 0
+      }
+    }
+  },
+  "portfolio_changes": {
+    "holdings_added": [],
+    "holdings_removed": [],
+    "top_gainers": [],
+    "top_losers": [],
+    "weight_increases": [],
+    "weight_decreases": []
+  },
+  "intervals": [
+    {
+      "period": {
+        "label": "2026-02-02",
+        "start_date": "2026-02-02",
+        "end_date": "2026-02-02"
+      },
+      "end_date": "2026-02-02",
+      "holdings": [],
+      "return_attribution_1m": "value not available in source data",
+      "return_attribution_3m": "value not available in source data",
+      "return_attribution_6m": "value not available in source data",
+      "return_attribution_12m": "value not available in source data",
+      "period_summary": {
+        "totals": {
+          "end": {
+            "total_market_value": 58570.67,
+            "cost_basis": 58062.97,
+            "net_liquidation_value": 40783.74,
+            "unrealized_pct": 0.874,
+            "unrealized_pnl": 507.7,
+            "margin_loan_balance": 17786.93,
+            "margin_to_portfolio_pct": 30.368
+          }
+        },
+        "performance": {
+          "period": {
+            "pnl_dollar_period": 0,
+            "pnl_pct_period": 0
+          },
+          "twr_1m_pct": 3.169,
+          "twr_3m_pct": 5.811,
+          "twr_6m_pct": "value not available in source data",
+          "twr_12m_pct": 15.762
+        },
+        "risk": {
+          "end": {
+            "vol_30d_pct": "risk metric not available in source data",
+            "vol_90d_pct": "risk metric not available in source data",
+            "sharpe_1y": 0.815,
+            "sortino_1y": 1.053,
+            "sortino_6m": 3.317,
+            "sortino_3m": 3.108,
+            "sortino_1m": 4.076,
+            "calmar_1y": "risk metric not available in source data",
+            "max_drawdown_1y_pct": "risk metric not available in source data",
+            "var_90_1d_pct": "risk metric not available in source data",
+            "var_95_1d_pct": "risk metric not available in source data",
+            "cvar_90_1d_pct": "risk metric not available in source data",
+            "omega_ratio_1y": "risk metric not available in source data",
+            "ulcer_index_1y": "risk metric not available in source data",
+            "income_stability_score": "risk metric not available in source data",
+            "beta_portfolio": "portfolio beta requires benchmark price history",
+            "portfolio_risk_quality": "excellent"
+          }
+        },
+        "income": {
+          "end": {
+            "projected_monthly_income": 715.06,
+            "forward_12m_total": "value not available in source data",
+            "portfolio_current_yield_pct": "value not available in source data",
+            "portfolio_yield_on_cost_pct": "value not available in source data"
+          }
+        },
+        "margin": {
+          "annual_interest_expense": "margin data not available for this date",
+          "margin_call_buffer_pct": "margin data not available for this date"
+        },
+        "goal_progress": {
+          "end": {
+            "progress_pct": "value not available in source data",
+            "months_to_goal": "value not available in source data",
+            "current_projected_monthly": "value not available in source data"
+          }
+        },
+        "goal_progress_net": {
+          "end": {
+            "progress_pct": "value not available in source data"
+          }
+        }
+      }
+    },
+    {
+      "period": {
+        "label": "2026-02-03",
+        "start_date": "2026-02-03",
+        "end_date": "2026-02-03"
+      },
+      "end_date": "2026-02-03",
+      "holdings": [],
+      "return_attribution_1m": "value not available in source data",
+      "return_attribution_3m": "value not available in source data",
+      "return_attribution_6m": "value not available in source data",
+      "return_attribution_12m": "value not available in source data",
+      "period_summary": {
+        "totals": {
+          "end": {
+            "total_market_value": 58357.17,
+            "cost_basis": 58062.97,
+            "net_liquidation_value": 40570.24,
+            "unrealized_pct": 0.507,
+            "unrealized_pnl": 294.2,
+            "margin_loan_balance": 17786.93,
+            "margin_to_portfolio_pct": 30.479
+          }
+        },
+        "performance": {
+          "period": {
+            "pnl_dollar_period": 0,
+            "pnl_pct_period": 0
+          },
+          "twr_1m_pct": 2.793,
+          "twr_3m_pct": 6.181,
+          "twr_6m_pct": "value not available in source data",
+          "twr_12m_pct": 15.34
+        },
+        "risk": {
+          "end": {
+            "vol_30d_pct": "risk metric not available in source data",
+            "vol_90d_pct": "risk metric not available in source data",
+            "sharpe_1y": 0.796,
+            "sortino_1y": 1.029,
+            "sortino_6m": 3.055,
+            "sortino_3m": 3.289,
+            "sortino_1m": 3.593,
+            "calmar_1y": "risk metric not available in source data",
+            "max_drawdown_1y_pct": "risk metric not available in source data",
+            "var_90_1d_pct": "risk metric not available in source data",
+            "var_95_1d_pct": "risk metric not available in source data",
+            "cvar_90_1d_pct": "risk metric not available in source data",
+            "omega_ratio_1y": "risk metric not available in source data",
+            "ulcer_index_1y": "risk metric not available in source data",
+            "income_stability_score": "risk metric not available in source data",
+            "beta_portfolio": "portfolio beta requires benchmark price history",
+            "portfolio_risk_quality": "excellent"
+          }
+        },
+        "income": {
+          "end": {
+            "projected_monthly_income": 715.06,
+            "forward_12m_total": "value not available in source data",
+            "portfolio_current_yield_pct": "value not available in source data",
+            "portfolio_yield_on_cost_pct": "value not available in source data"
+          }
+        },
+        "margin": {
+          "annual_interest_expense": "margin data not available for this date",
+          "margin_call_buffer_pct": "margin data not available for this date"
+        },
+        "goal_progress": {
+          "end": {
+            "progress_pct": "value not available in source data",
+            "months_to_goal": "value not available in source data",
+            "current_projected_monthly": "value not available in source data"
+          }
+        },
+        "goal_progress_net": {
+          "end": {
+            "progress_pct": "value not available in source data"
+          }
+        }
+      }
+    },
+    {
+      "period": {
+        "label": "2026-02-04",
+        "start_date": "2026-02-04",
+        "end_date": "2026-02-04"
+      },
+      "end_date": "2026-02-04",
+      "holdings": [],
+      "return_attribution_1m": "value not available in source data",
+      "return_attribution_3m": "value not available in source data",
+      "return_attribution_6m": "value not available in source data",
+      "return_attribution_12m": "value not available in source data",
+      "period_summary": {
+        "totals": {
+          "end": {
+            "total_market_value": 57935.57,
+            "cost_basis": 58062.97,
+            "net_liquidation_value": 40103.55,
+            "unrealized_pct": -0.219,
+            "unrealized_pnl": -127.4,
+            "margin_loan_balance": 17832.02,
+            "margin_to_portfolio_pct": 30.779
+          }
+        },
+        "performance": {
+          "period": {
+            "pnl_dollar_period": 0,
+            "pnl_pct_period": 0
+          },
+          "twr_1m_pct": 2.05,
+          "twr_3m_pct": 6.017,
+          "twr_6m_pct": "value not available in source data",
+          "twr_12m_pct": 15.067
+        },
+        "risk": {
+          "end": {
+            "vol_30d_pct": "risk metric not available in source data",
+            "vol_90d_pct": "risk metric not available in source data",
+            "sharpe_1y": 0.784,
+            "sortino_1y": 1.015,
+            "sortino_6m": 2.85,
+            "sortino_3m": 3.201,
+            "sortino_1m": 2.708,
+            "calmar_1y": "risk metric not available in source data",
+            "max_drawdown_1y_pct": "risk metric not available in source data",
+            "var_90_1d_pct": "risk metric not available in source data",
+            "var_95_1d_pct": "risk metric not available in source data",
+            "cvar_90_1d_pct": "risk metric not available in source data",
+            "omega_ratio_1y": "risk metric not available in source data",
+            "ulcer_index_1y": "risk metric not available in source data",
+            "income_stability_score": "risk metric not available in source data",
+            "beta_portfolio": "portfolio beta requires benchmark price history",
+            "portfolio_risk_quality": "excellent"
+          }
+        },
+        "income": {
+          "end": {
+            "projected_monthly_income": 715.06,
+            "forward_12m_total": "value not available in source data",
+            "portfolio_current_yield_pct": "value not available in source data",
+            "portfolio_yield_on_cost_pct": "value not available in source data"
+          }
+        },
+        "margin": {
+          "annual_interest_expense": "margin data not available for this date",
+          "margin_call_buffer_pct": "margin data not available for this date"
+        },
+        "goal_progress": {
+          "end": {
+            "progress_pct": "value not available in source data",
+            "months_to_goal": "value not available in source data",
+            "current_projected_monthly": "value not available in source data"
+          }
+        },
+        "goal_progress_net": {
+          "end": {
+            "progress_pct": "value not available in source data"
+          }
+        }
+      }
+    },
+    {
+      "period": {
+        "label": "2026-02-05",
+        "start_date": "2026-02-05",
+        "end_date": "2026-02-05"
+      },
+      "end_date": "2026-02-05",
+      "holdings": [],
+      "return_attribution_1m": "value not available in source data",
+      "return_attribution_3m": "value not available in source data",
+      "return_attribution_6m": "value not available in source data",
+      "return_attribution_12m": "value not available in source data",
+      "period_summary": {
+        "totals": {
+          "end": {
+            "total_market_value": 57086.61,
+            "cost_basis": 58062.97,
+            "net_liquidation_value": 39254.59,
+            "unrealized_pct": -1.682,
+            "unrealized_pnl": -976.36,
+            "margin_loan_balance": 17832.02,
+            "margin_to_portfolio_pct": 31.237
+          }
+        },
+        "performance": {
+          "period": {
+            "pnl_dollar_period": 0,
+            "pnl_pct_period": 0
+          },
+          "twr_1m_pct": -0.189,
+          "twr_3m_pct": 5.46,
+          "twr_6m_pct": "value not available in source data",
+          "twr_12m_pct": 12.345
+        },
+        "risk": {
+          "end": {
+            "vol_30d_pct": "risk metric not available in source data",
+            "vol_90d_pct": "risk metric not available in source data",
+            "sharpe_1y": 0.667,
+            "sortino_1y": 0.868,
+            "sortino_6m": 2.184,
+            "sortino_3m": 2.785,
+            "sortino_1m": -0.13,
+            "calmar_1y": "risk metric not available in source data",
+            "max_drawdown_1y_pct": "risk metric not available in source data",
+            "var_90_1d_pct": "risk metric not available in source data",
+            "var_95_1d_pct": "risk metric not available in source data",
+            "cvar_90_1d_pct": "risk metric not available in source data",
+            "omega_ratio_1y": "risk metric not available in source data",
+            "ulcer_index_1y": "risk metric not available in source data",
+            "income_stability_score": "risk metric not available in source data",
+            "beta_portfolio": "portfolio beta requires benchmark price history",
+            "portfolio_risk_quality": "good"
+          }
+        },
+        "income": {
+          "end": {
+            "projected_monthly_income": 715.06,
+            "forward_12m_total": "value not available in source data",
+            "portfolio_current_yield_pct": "value not available in source data",
+            "portfolio_yield_on_cost_pct": "value not available in source data"
+          }
+        },
+        "margin": {
+          "annual_interest_expense": "margin data not available for this date",
+          "margin_call_buffer_pct": "margin data not available for this date"
+        },
+        "goal_progress": {
+          "end": {
+            "progress_pct": "value not available in source data",
+            "months_to_goal": "value not available in source data",
+            "current_projected_monthly": "value not available in source data"
+          }
+        },
+        "goal_progress_net": {
+          "end": {
+            "progress_pct": "value not available in source data"
+          }
+        }
+      }
+    },
+    {
+      "period": {
+        "label": "2026-02-06",
+        "start_date": "2026-02-06",
+        "end_date": "2026-02-06"
+      },
+      "end_date": "2026-02-06",
+      "holdings": [],
+      "return_attribution_1m": "value not available in source data",
+      "return_attribution_3m": "value not available in source data",
+      "return_attribution_6m": "value not available in source data",
+      "return_attribution_12m": "value not available in source data",
+      "period_summary": {
+        "totals": {
+          "end": {
+            "total_market_value": 58702.1,
+            "cost_basis": 58812.96,
+            "net_liquidation_value": 40870.08,
+            "unrealized_pct": -0.188,
+            "unrealized_pnl": -110.86,
+            "margin_loan_balance": 17832.02,
+            "margin_to_portfolio_pct": 30.377
+          }
+        },
+        "performance": {
+          "period": {
+            "pnl_dollar_period": 0,
+            "pnl_pct_period": 0
+          },
+          "twr_1m_pct": 0.458,
+          "twr_3m_pct": 6.483,
+          "twr_6m_pct": "value not available in source data",
+          "twr_12m_pct": 12.862
+        },
+        "risk": {
+          "end": {
+            "vol_30d_pct": "risk metric not available in source data",
+            "vol_90d_pct": "risk metric not available in source data",
+            "sharpe_1y": 0.688,
+            "sortino_1y": 0.897,
+            "sortino_6m": 2.523,
+            "sortino_3m": 3.268,
+            "sortino_1m": 0.68,
+            "calmar_1y": "risk metric not available in source data",
+            "max_drawdown_1y_pct": "risk metric not available in source data",
+            "var_90_1d_pct": "risk metric not available in source data",
+            "var_95_1d_pct": "risk metric not available in source data",
+            "cvar_90_1d_pct": "risk metric not available in source data",
+            "omega_ratio_1y": "risk metric not available in source data",
+            "ulcer_index_1y": "risk metric not available in source data",
+            "income_stability_score": "risk metric not available in source data",
+            "beta_portfolio": "portfolio beta requires benchmark price history",
+            "portfolio_risk_quality": "good"
+          }
+        },
+        "income": {
+          "end": {
+            "projected_monthly_income": 726.23,
+            "forward_12m_total": "value not available in source data",
+            "portfolio_current_yield_pct": "value not available in source data",
+            "portfolio_yield_on_cost_pct": "value not available in source data"
+          }
+        },
+        "margin": {
+          "annual_interest_expense": "margin data not available for this date",
+          "margin_call_buffer_pct": "margin data not available for this date"
+        },
+        "goal_progress": {
+          "end": {
+            "progress_pct": "value not available in source data",
+            "months_to_goal": "value not available in source data",
+            "current_projected_monthly": "value not available in source data"
+          }
+        },
+        "goal_progress_net": {
+          "end": {
+            "progress_pct": "value not available in source data"
+          }
+        }
+      }
+    },
+    {
+      "period": {
+        "label": "2026-02-07",
+        "start_date": "2026-02-07",
+        "end_date": "2026-02-07"
+      },
+      "end_date": "2026-02-07",
+      "holdings": [],
+      "return_attribution_1m": "value not available in source data",
+      "return_attribution_3m": "value not available in source data",
+      "return_attribution_6m": "value not available in source data",
+      "return_attribution_12m": "value not available in source data",
+      "period_summary": {
+        "totals": {
+          "end": {
+            "total_market_value": 58702.1,
+            "cost_basis": 58812.96,
+            "net_liquidation_value": 40870.08,
+            "unrealized_pct": -0.188,
+            "unrealized_pnl": -110.86,
+            "margin_loan_balance": 17832.02,
+            "margin_to_portfolio_pct": 30.377
+          }
+        },
+        "performance": {
+          "period": {
+            "pnl_dollar_period": 0,
+            "pnl_pct_period": 0
+          },
+          "twr_1m_pct": 0.458,
+          "twr_3m_pct": 6.483,
+          "twr_6m_pct": "value not available in source data",
+          "twr_12m_pct": 12.862
+        },
+        "risk": {
+          "end": {
+            "vol_30d_pct": "risk metric not available in source data",
+            "vol_90d_pct": "risk metric not available in source data",
+            "sharpe_1y": 0.688,
+            "sortino_1y": 0.897,
+            "sortino_6m": 2.523,
+            "sortino_3m": 3.268,
+            "sortino_1m": 0.68,
+            "calmar_1y": "risk metric not available in source data",
+            "max_drawdown_1y_pct": "risk metric not available in source data",
+            "var_90_1d_pct": "risk metric not available in source data",
+            "var_95_1d_pct": "risk metric not available in source data",
+            "cvar_90_1d_pct": "risk metric not available in source data",
+            "omega_ratio_1y": "risk metric not available in source data",
+            "ulcer_index_1y": "risk metric not available in source data",
+            "income_stability_score": "risk metric not available in source data",
+            "beta_portfolio": "portfolio beta requires benchmark price history",
+            "portfolio_risk_quality": "good"
+          }
+        },
+        "income": {
+          "end": {
+            "projected_monthly_income": 726.23,
+            "forward_12m_total": "value not available in source data",
+            "portfolio_current_yield_pct": "value not available in source data",
+            "portfolio_yield_on_cost_pct": "value not available in source data"
+          }
+        },
+        "margin": {
+          "annual_interest_expense": "margin data not available for this date",
+          "margin_call_buffer_pct": "margin data not available for this date"
+        },
+        "goal_progress": {
+          "end": {
+            "progress_pct": "value not available in source data",
+            "months_to_goal": "value not available in source data",
+            "current_projected_monthly": "value not available in source data"
+          }
+        },
+        "goal_progress_net": {
+          "end": {
+            "progress_pct": "value not available in source data"
+          }
+        }
+      }
+    },
+    {
+      "period": {
+        "label": "2026-02-08",
+        "start_date": "2026-02-08",
+        "end_date": "2026-02-08"
+      },
+      "end_date": "2026-02-08",
+      "holdings": [],
+      "return_attribution_1m": "value not available in source data",
+      "return_attribution_3m": "value not available in source data",
+      "return_attribution_6m": "value not available in source data",
+      "return_attribution_12m": "value not available in source data",
+      "period_summary": {
+        "totals": {
+          "end": {
+            "total_market_value": 58702.1,
+            "cost_basis": 58812.96,
+            "net_liquidation_value": 40870.08,
+            "unrealized_pct": -0.188,
+            "unrealized_pnl": -110.86,
+            "margin_loan_balance": 17832.02,
+            "margin_to_portfolio_pct": 30.377
+          }
+        },
+        "performance": {
+          "period": {
+            "pnl_dollar_period": 0,
+            "pnl_pct_period": 0
+          },
+          "twr_1m_pct": 0.458,
+          "twr_3m_pct": 6.483,
+          "twr_6m_pct": "value not available in source data",
+          "twr_12m_pct": 12.862
+        },
+        "risk": {
+          "end": {
+            "vol_30d_pct": "risk metric not available in source data",
+            "vol_90d_pct": "risk metric not available in source data",
+            "sharpe_1y": 0.688,
+            "sortino_1y": 0.897,
+            "sortino_6m": 2.523,
+            "sortino_3m": 3.268,
+            "sortino_1m": 0.68,
+            "calmar_1y": "risk metric not available in source data",
+            "max_drawdown_1y_pct": "risk metric not available in source data",
+            "var_90_1d_pct": "risk metric not available in source data",
+            "var_95_1d_pct": "risk metric not available in source data",
+            "cvar_90_1d_pct": "risk metric not available in source data",
+            "omega_ratio_1y": "risk metric not available in source data",
+            "ulcer_index_1y": "risk metric not available in source data",
+            "income_stability_score": "risk metric not available in source data",
+            "beta_portfolio": "portfolio beta requires benchmark price history",
+            "portfolio_risk_quality": "good"
+          }
+        },
+        "income": {
+          "end": {
+            "projected_monthly_income": 726.23,
+            "forward_12m_total": "value not available in source data",
+            "portfolio_current_yield_pct": "value not available in source data",
+            "portfolio_yield_on_cost_pct": "value not available in source data"
+          }
+        },
+        "margin": {
+          "annual_interest_expense": "margin data not available for this date",
+          "margin_call_buffer_pct": "margin data not available for this date"
+        },
+        "goal_progress": {
+          "end": {
+            "progress_pct": "value not available in source data",
+            "months_to_goal": "value not available in source data",
+            "current_projected_monthly": "value not available in source data"
+          }
+        },
+        "goal_progress_net": {
+          "end": {
+            "progress_pct": "value not available in source data"
+          }
+        }
+      }
+    }
+  ],
+  "summary": {
+    "derived_pct": 100,
+    "pulled_pct": 0
+  }
+}
