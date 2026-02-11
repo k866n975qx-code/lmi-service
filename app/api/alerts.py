@@ -301,6 +301,15 @@ def _risk_text(snap: dict) -> str:
     cvar_1d = tail.get("cvar_95_1d_pct") if isinstance(tail, dict) else None
     if cvar_1d is None:
         cvar_1d = risk.get("cvar_95_1d_pct") or risk.get("cvar_90_1d_pct")
+
+    # Add calculation method indicator if not using realized data
+    calc_method = stability.get("calculation_method") if isinstance(stability, dict) else None
+    stability_label = "Income Stability"
+    if calc_method == "projected":
+        stability_label = "Income Stability (projected)"
+    elif calc_method == "blended":
+        stability_label = "Income Stability (blended)"
+
     return (
         "<b>Risk</b>\n"
         f"30d Vol: {_fmt_pct(risk.get('vol_30d_pct'),2)}\n"
@@ -309,7 +318,7 @@ def _risk_text(snap: dict) -> str:
         f"Sortino: {_fmt_ratio(risk.get('sortino_1y'),2)}\n"
         f"Sortino/Sharpe: {_fmt_ratio(risk.get('sortino_sharpe_ratio'),2)}\n"
         f"Max DD: {_fmt_pct(risk.get('max_drawdown_1y_pct'),2)}\n"
-        f"Income Stability: {_fmt_ratio(stability_score,2)}\n"
+        f"{stability_label}: {_fmt_ratio(stability_score,2)}\n"
         f"CVaR 1d: {_fmt_pct(cvar_1d,1)}"
     )
 
@@ -781,21 +790,24 @@ def _position_text(snap: dict, symbol: str) -> str:
 
     lines = [f"<b>📊 {symbol_upper} Position Details</b>\n"]
 
+    # Flatten V5 structure to access nested fields
+    ultimate = _holding_ultimate(holding)
+
     # Core position info
-    shares = holding.get("shares") or holding.get("quantity") or 0
+    shares = ultimate.get("shares") or ultimate.get("quantity") or 0
     lines.append("<b>Position:</b>")
     lines.append(f"  Shares: {shares:,.2f}")
-    lines.append(f"  Price: {_fmt_money(holding.get('last_price'))}")
-    lines.append(f"  Value: {_fmt_money(holding.get('market_value'))}")
-    lines.append(f"  Weight: {_fmt_pct(holding.get('weight_pct'))}")
+    lines.append(f"  Price: {_fmt_money(ultimate.get('last_price'))}")
+    lines.append(f"  Value: {_fmt_money(ultimate.get('market_value'))}")
+    lines.append(f"  Weight: {_fmt_pct(ultimate.get('weight_pct'))}")
     lines.append("")
 
     # Cost basis if available
-    cost_basis = holding.get("cost_basis")
+    cost_basis = ultimate.get("cost_basis")
     if cost_basis:
-        avg_cost = holding.get("avg_cost") or holding.get("avg_cost_per_share")
-        gain = holding.get("unrealized_pnl") or holding.get("unrealized_gain")
-        gain_pct = holding.get("unrealized_pct") or holding.get("unrealized_gain_pct")
+        avg_cost = ultimate.get("avg_cost") or ultimate.get("avg_cost_per_share")
+        gain = ultimate.get("unrealized_pnl") or ultimate.get("unrealized_gain")
+        gain_pct = ultimate.get("unrealized_pct") or ultimate.get("unrealized_gain_pct")
         lines.append("<b>Cost Basis:</b>")
         lines.append(f"  Avg Cost: {_fmt_money(avg_cost)}")
         lines.append(f"  Cost Basis: {_fmt_money(cost_basis)}")
@@ -805,9 +817,9 @@ def _position_text(snap: dict, symbol: str) -> str:
         lines.append("")
 
     # Dividend info
-    div_yield = holding.get("current_yield_pct") or holding.get("dividend_yield_pct")
-    annual_div = holding.get("forward_12m_dividend") or holding.get("annual_dividend")
-    monthly_div = holding.get("projected_monthly_dividend")
+    div_yield = ultimate.get("current_yield_pct") or ultimate.get("dividend_yield_pct")
+    annual_div = ultimate.get("forward_12m_dividend") or ultimate.get("annual_dividend")
+    monthly_div = ultimate.get("projected_monthly_dividend")
     if div_yield or annual_div:
         lines.append("<b>Dividends:</b>")
         if div_yield:
@@ -820,8 +832,7 @@ def _position_text(snap: dict, symbol: str) -> str:
             lines.append(f"  Monthly: {_fmt_money(annual_div / 12)}")
         lines.append("")
 
-    # Risk metrics from ultimate if available
-    ultimate = _holding_ultimate(holding)
+    # Risk metrics if available
     if ultimate.get("sortino_1y") or ultimate.get("vol_30d_pct"):
         lines.append("<b>Risk:</b>")
         if ultimate.get("vol_30d_pct"):
@@ -1220,12 +1231,12 @@ def _rebalance_text(snap: dict) -> str:
         weight = h.get("weight_pct", 0)
         u = _holding_ultimate(h)
         sortino = u.get("sortino_1y")
-        yield_pct = h.get("current_yield_pct", 0)
+        yield_pct = h.get("income", {}).get("current_yield_pct", 0)
 
         if isinstance(weight, (int, float)) and weight > 10:
             over_weight.append((sym, weight))
         if isinstance(sortino, (int, float)) and sortino < 0.5:
-            low_sortino.append((sym, sortino, yield_pct or 0, weight or 0))
+            low_sortino.append((sym, sortino, yield_pct, weight or 0))
         if (isinstance(yield_pct, (int, float)) and yield_pct > 3.0
                 and isinstance(sortino, (int, float)) and sortino > 1.0):
             high_yield_good_risk.append((sym, yield_pct, sortino))
@@ -1259,10 +1270,16 @@ def _rebalance_text(snap: dict) -> str:
         lines.append("")
 
     score = stability.get("stability_score")
+    calc_method = stability.get("calculation_method")
     sortino_port = risk.get("sortino_1y")
     lines.append("<b>Portfolio Metrics:</b>")
     if isinstance(score, (int, float)):
-        lines.append(f"• Income Stability: {score:.2f}")
+        stability_label = "Income Stability"
+        if calc_method == "projected":
+            stability_label = "Income Stability (projected)"
+        elif calc_method == "blended":
+            stability_label = "Income Stability (blended)"
+        lines.append(f"• {stability_label}: {score:.2f}")
     if isinstance(sortino_port, (int, float)):
         lines.append(f"• Portfolio Sortino: {sortino_port:.2f}")
 

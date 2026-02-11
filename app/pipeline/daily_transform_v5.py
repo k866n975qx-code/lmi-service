@@ -81,7 +81,7 @@ def transform_to_v5(daily: dict) -> dict:
             "sharpe_1y", "sortino_1y", "sortino_6m", "sortino_3m", "sortino_1m",
             "sortino_sharpe_ratio", "sortino_sharpe_divergence",
             "calmar_1y", "omega_ratio_1y", "ulcer_index_1y", "ulcer_index_category",
-            "pain_adjusted_return",
+            "pain_adjusted_return", "information_ratio_1y", "tracking_error_1y_pct",
         ]),
         "drawdown": {
             "max_drawdown_1y_pct": risk.get("max_drawdown_1y_pct"),

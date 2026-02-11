@@ -1153,7 +1153,8 @@ def build_daily_report_html(conn: sqlite3.Connection):
     prev_7d_date, prev_7d_snap = _snapshot_on_or_before(conn, as_of_dt - timedelta(days=7))
     _prev_date, prev_snap = _previous_daily(conn, as_of)
     nlv = totals.get("net_liquidation_value")
-    prev_nlv = (prev_7d_snap or {}).get("totals", {}).get("net_liquidation_value") if prev_7d_snap else None
+    # Use _totals() helper for V5 snapshot compatibility (handles portfolio.totals path)
+    prev_nlv = _totals(prev_7d_snap).get("net_liquidation_value") if prev_7d_snap else None
     week_delta = None
     week_delta_pct = None
     if isinstance(nlv, (int, float)) and isinstance(prev_nlv, (int, float)) and prev_nlv:
@@ -1188,14 +1189,19 @@ def build_daily_report_html(conn: sqlite3.Connection):
 
     if "income_update" in enabled:
         mtd_realized = _realized_mtd_total(dividends)
-        proj_vs = (dividends.get("projected_vs_received") or {})
+        # Get projected_vs_received from dividends section (not stripped by _dividends helper)
+        div_section = snap.get("dividends") or {}
+        proj_vs = div_section.get("projected_vs_received") or {}
         event_projected = proj_vs.get("projected")
         parts.append("")
         parts.append("<b>💰 INCOME UPDATE</b>")
-        parts.append(f"• MTD: {_fmt_money(mtd_realized)}")
+        # Format: MTD: $0.00 / $635.58 projected
+        parts.append(f"• MTD: {_fmt_money(mtd_realized)} / {_fmt_money(event_projected)} projected")
         if isinstance(event_projected, (int, float)) and event_projected > 0 and isinstance(mtd_realized, (int, float)):
             pct = mtd_realized / event_projected * 100
             parts.append(f"• MTD % of projection: {pct:.1f}%")
+        else:
+            parts.append(f"• MTD % of projection: 0.0%")
         parts.append(f"• Last 30d: {_fmt_money((dividends.get('windows') or {}).get('30d', {}).get('total_dividends'))}")
 
     if "next_7_days" in enabled:
@@ -1208,6 +1214,7 @@ def build_daily_report_html(conn: sqlite3.Connection):
             for dt, sym, amt in next_7d:
                 if isinstance(amt, (int, float)):
                     total += float(amt)
+                # Format: • 2026-02-13: TRIN ~$147.71
                 parts.append(f"• {dt.isoformat()}: {sym} ~{_fmt_money(amt)}")
             parts.append(f"Total expected: {_fmt_money(total)}")
 
@@ -1274,14 +1281,26 @@ def build_daily_report_html(conn: sqlite3.Connection):
             if isinstance(sortino, (int, float)) and isinstance(prev_7d_sortino, (int, float)):
                 trend_delta = sortino - prev_7d_sortino
                 parts.append(f"7-Day Trend: {prev_7d_sortino:.2f} → {sortino:.2f} ({trend_delta:+.2f})")
+            
+            # Helper to get rating label
+            def _sortino_rating(val: float) -> str:
+                if val >= 1.3:
+                    return "excellent"
+                elif val >= 1.0:
+                    return "good"
+                elif val >= 0.5:
+                    return "fair"
+                elif val >= 0:
+                    return "poor"
+                else:
+                    return "bad"
+            
             top = sortino_rows[:3]
             if top:
                 parts.append("Top performers (Sortino):")
                 for h, val in top:
-                    h_ult = _holding_ultimate(h)
-                    category = h.get("risk_quality_category") or h_ult.get("risk_quality_category")
-                    label = f" ({category})" if category else ""
-                    parts.append(f"• {h.get('symbol')}: {val:.2f}{label}")
+                    rating = _sortino_rating(val)
+                    parts.append(f"• {h.get('symbol')}: {val:.2f} ({rating})")
             low = [item for item in sortino_rows[::-1] if item[1] < PORTFOLIO_SORTINO_MIN]
             if not low:
                 low = sortino_rows[-3:][::-1]
@@ -1325,7 +1344,10 @@ def build_daily_report_html(conn: sqlite3.Connection):
         tier_emoji = {1: "🐌", 2: "🚶", 3: "🏃", 4: "🚀", 5: "🌟", 6: "⚡"}
         tier_num = likely_tier.get("tier", 0)
         if tier_num:
-            parts.append(f"• Strategy: {tier_emoji.get(tier_num, '')} Tier {tier_num} - {likely_tier.get('name', '—')} ({likely_tier.get('confidence', '—')})")
+            # Short confidence: high/medium/low instead of full text
+            confidence = likely_tier.get("confidence", "—")
+            conf_short = confidence.split()[0].lower() if confidence else "—"
+            parts.append(f"• Strategy: {tier_emoji.get(tier_num, '')} Tier {tier_num} - {likely_tier.get('name', '—')} ({conf_short})")
 
         pace_cat = current_pace.get("pace_category", "unknown")
         months_ahead = current_pace.get("months_ahead_behind", 0.0)
@@ -1341,40 +1363,54 @@ def build_daily_report_html(conn: sqlite3.Connection):
             pace_text = f"{pace_emoji_map.get(pace_cat, '')} {pace_label_map.get(pace_cat, pace_cat)}"
         parts.append(f"• Pace: {pace_text} | ETA: {revised_date}")
 
-        # Top time windows
-        for wkey, wlabel in [("ytd", "YTD"), ("30d", "30d")]:
-            w = windows.get(wkey, {})
-            if w:
-                w_pace = w.get("pace", {})
-                surplus = w_pace.get("amount_surplus", 0.0)
-                needed = w_pace.get("amount_needed", 0.0)
-                if surplus > 0:
-                    parts.append(f"• {wlabel}: Ahead by {_fmt_money(surplus)}")
-                elif needed > 0:
-                    parts.append(f"• {wlabel}: Need {_fmt_money(needed)} to align")
+        # YTD and 30d window summaries
+        ytd_window = windows.get("ytd", {})
+        window_30d = windows.get("30d", {})
+        
+        if ytd_window:
+            ytd_pace = ytd_window.get("pace", {})
+            ytd_surplus = ytd_pace.get("amount_surplus", 0.0)
+            ytd_needed = ytd_pace.get("amount_needed", 0.0)
+            if ytd_surplus > 0:
+                parts.append(f"• YTD: Ahead by {_fmt_money(ytd_surplus)}")
+            elif ytd_needed > 0:
+                parts.append(f"• YTD: Behind by {_fmt_money(ytd_needed)}")
+        
+        if window_30d:
+            w30_pace = window_30d.get("pace", {})
+            w30_surplus = w30_pace.get("amount_surplus", 0.0)
+            w30_needed = w30_pace.get("amount_needed", 0.0)
+            if w30_surplus > 0:
+                parts.append(f"• 30d: Ahead by {_fmt_money(w30_surplus)}")
+            elif w30_needed > 0:
+                parts.append(f"• 30d: Behind by {_fmt_money(w30_needed)}")
 
-        # Key drivers
+        # Key drivers - always show if available
         mv_impact = factors.get("market_value_impact", 0.0)
         income_impact = factors.get("income_growth_impact", 0.0)
-        if abs(mv_impact) > 100 or abs(income_impact) > 100:
-            driver_parts = []
-            if abs(mv_impact) > 100:
-                driver_parts.append(f"MV {_fmt_money(mv_impact)}")
-            if abs(income_impact) > 100:
-                driver_parts.append(f"Income {_fmt_money(income_impact)}")
+        driver_parts = []
+        if mv_impact != 0:
+            driver_parts.append(f"MV {_fmt_money(mv_impact)}")
+        if income_impact != 0:
+            driver_parts.append(f"Income {_fmt_money(income_impact)}")
+        if driver_parts:
             parts.append(f"• Drivers: {' | '.join(driver_parts)}")
 
-        # Compact tier overview
-        achievable = [t for t in tiers if t.get("months_to_goal") is not None]
-        if achievable:
-            tier_parts = []
-            for t in achievable[:3]:
-                tn = t.get("tier", 0)
-                months = t.get("months_to_goal", 0)
-                y, m = divmod(months, 12)
-                time_str = f"{y}y{m}m" if y > 0 else f"{m}m"
-                tier_parts.append(f"{tier_emoji.get(tn, '')}T{tn}:{time_str}")
-            parts.append(f"• Tiers: {' | '.join(tier_parts)}")
+        # Compact tier overview - show all 6 tiers
+        tier_parts = []
+        for tn in range(1, 7):
+            t = next((tier for tier in tiers if tier.get("tier") == tn), None)
+            if t:
+                months = t.get("months_to_goal")
+                if months is not None:
+                    y, m = divmod(months, 12)
+                    time_str = f"{y}y{m}m" if y > 0 else f"{m}m"
+                else:
+                    time_str = "N/A"
+            else:
+                time_str = "N/A"
+            tier_parts.append(f"{tier_emoji.get(tn, '')}T{tn}:{time_str}")
+        parts.append(f"• Tiers: {' | '.join(tier_parts)}")
 
     if "macro" in enabled:
         parts.append("")
@@ -1531,7 +1567,10 @@ def build_evening_recap_html(conn: sqlite3.Connection):
 
     # Income MTD
     mtd_realized = _realized_mtd_total(dividends)
-    event_projected = (dividends.get("projected_vs_received") or {}).get("projected")
+    # Get projected_vs_received from snapshot directly (not stripped by _dividends helper)
+    div_section = snap.get("dividends") or {}
+    proj_vs = div_section.get("projected_vs_received") or {}
+    event_projected = proj_vs.get("projected")
     parts.append("")
     parts.append("<b>Income MTD</b>")
     parts.append(f"• {_fmt_money(mtd_realized)} / {_fmt_money(event_projected)} projected")

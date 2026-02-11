@@ -1418,16 +1418,116 @@ def _income_volatility_30d_pct(div_tx: list[dict], as_of_date: date) -> float | 
     return round((stdev / mean) * 100.0, 3)
 
 
+def _projected_monthly_income_stream(holdings: list[dict], as_of_date: date) -> list[float]:
+    """
+    Generate 12-month projected income stream based on holdings' expected dividends and payment frequencies.
+    This simulates the monthly variability caused by different payment schedules.
+    """
+    # Initialize 12 months with 0
+    monthly_income = [0.0] * 12
+
+    for holding in holdings:
+        income_data = holding.get("income") or {}
+        analytics = holding.get("analytics") or {}
+        dist = analytics.get("distribution") or {}
+
+        projected_monthly = income_data.get("projected_monthly_dividend")
+        if not projected_monthly or projected_monthly <= 0:
+            continue
+
+        # Get payment frequency
+        frequency = dist.get("frequency_estimate") or dist.get("payment_frequency") or "unknown"
+
+        # Distribute dividends based on frequency
+        if frequency == "monthly":
+            # Monthly payers: distribute evenly
+            for i in range(12):
+                monthly_income[i] += projected_monthly
+        elif frequency == "quarterly":
+            # Quarterly payers: pay in 4 months (typically Jan, Apr, Jul, Oct or similar)
+            # Use as_of_date month to estimate payment months
+            quarterly_amount = projected_monthly * 3
+            start_month = as_of_date.month % 3  # Offset to align with likely payment schedule
+            for i in range(start_month, 12, 3):
+                monthly_income[i] += quarterly_amount
+        elif frequency == "semi-annual":
+            # Semi-annual: pay twice a year
+            semi_annual_amount = projected_monthly * 6
+            monthly_income[0] += semi_annual_amount  # Assume Jan and Jul
+            monthly_income[6] += semi_annual_amount
+        elif frequency == "annual":
+            # Annual: pay once a year
+            annual_amount = projected_monthly * 12
+            monthly_income[11] += annual_amount  # Assume December
+        else:
+            # Unknown frequency: distribute as quarterly (conservative estimate)
+            quarterly_amount = projected_monthly * 3
+            for i in range(0, 12, 3):
+                monthly_income[i] += quarterly_amount
+
+    return monthly_income
+
+
 def _income_stability_metrics(
     div_tx: list[dict],
     as_of_date: date,
     window_months: int = 12,
     start_date: date | None = None,
+    holdings: list[dict] | None = None,
 ) -> dict:
+    """
+    Calculate income stability metrics with hybrid approach:
+    - Use projected dividends when insufficient realized data (< 6 months)
+    - Blend projected and realized when partial data exists (6-11 months)
+    - Use realized data only when sufficient history exists (≥ 12 months)
+    """
     if start_date and start_date <= as_of_date:
         window_months = max(1, min(window_months, _months_between(start_date, as_of_date)))
+
     totals_12 = _monthly_income_totals(div_tx, as_of_date, window_months)
-    if not totals_12:
+
+    # Count months with actual dividend data
+    realized_months = sum(1 for val in totals_12 if val > 0)
+
+    # Determine calculation method and get the monthly totals to use
+    calculation_method = "realized"
+
+    if realized_months < 6:
+        # Insufficient data: use projected if available
+        if holdings:
+            totals_12 = _projected_monthly_income_stream(holdings, as_of_date)
+            calculation_method = "projected"
+        else:
+            # No holdings data available, return zeros
+            return {
+                "stability_score": 0.0,
+                "coefficient_of_variation": None,
+                "income_trend_6m": None,
+                "income_growth_rate_6m_pct": None,
+                "income_growth_rate_12m_pct": None,
+                "income_volatility_30d_pct": None,
+                "consecutive_months_positive": 0,
+                "income_drawdown_max_pct": None,
+                "dividend_cut_count_12m": 0,
+                "missed_payment_count_12m": 0,
+                "calculation_method": "insufficient_data",
+            }
+    elif realized_months < 12:
+        # Partial data: blend projected and realized
+        if holdings:
+            projected_12 = _projected_monthly_income_stream(holdings, as_of_date)
+            # Weight: favor realized data more as we have more months
+            realized_weight = realized_months / 12.0
+            projected_weight = 1.0 - realized_weight
+
+            # Blend the two streams
+            totals_12 = [
+                (realized_weight * r) + (projected_weight * p)
+                for r, p in zip(totals_12, projected_12)
+            ]
+            calculation_method = "blended"
+
+    if not totals_12 or all(val == 0 for val in totals_12):
         return {
             "stability_score": 0.0,
             "coefficient_of_variation": None,
@@ -1439,6 +1539,7 @@ def _income_stability_metrics(
             "income_drawdown_max_pct": None,
             "dividend_cut_count_12m": 0,
             "missed_payment_count_12m": 0,
+            "calculation_method": calculation_method,
         }
 
     mean_12 = statistics.mean(totals_12)
@@ -1491,6 +1592,7 @@ def _income_stability_metrics(
         "income_drawdown_max_pct": _round_pct(drawdown_max * 100 if drawdown_max is not None else None),
         "dividend_cut_count_12m": cuts,
         "missed_payment_count_12m": missed,
+        "calculation_method": calculation_method,
     }
 
 
@@ -1499,12 +1601,14 @@ def _income_stability_score(
     as_of_date: date,
     window_months: int = 6,
     start_date: date | None = None,
+    holdings: list[dict] | None = None,
 ) -> float:
     metrics = _income_stability_metrics(
         div_tx,
         as_of_date,
         window_months=max(window_months, 6),
         start_date=start_date,
+        holdings=holdings,
     )
     return float(metrics.get("stability_score") or 0.0)
 
@@ -3571,6 +3675,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         as_of_date_local,
         window_months=12,
         start_date=portfolio_start,
+        holdings=holdings_out,
     )
     per_ticker_cut_count = 0
     per_ticker_missed_count = 0

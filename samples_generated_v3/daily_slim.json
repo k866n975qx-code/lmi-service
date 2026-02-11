@@ -1,18 +1,18 @@
 {
   "timestamps": {
-    "portfolio_data_as_of_local": "2026-02-10",
-    "portfolio_data_as_of_utc": "2026-02-10T13:00:02+00:00",
-    "price_data_as_of_utc": "2026-02-10T13:00:02+00:00"
+    "portfolio_data_as_of_local": "2026-02-11",
+    "portfolio_data_as_of_utc": "2026-02-12T07:59:59+00:00",
+    "price_data_as_of_utc": "2026-02-11T08:18:33+00:00"
   },
   "portfolio": {
     "totals": {
-      "market_value": 58730.33,
+      "market_value": 58611.76,
       "cost_basis": 58819.66,
-      "net_liquidation_value": 40898.31,
-      "unrealized_pnl": -89.33,
-      "unrealized_pct": -0.152,
+      "net_liquidation_value": 40779.74,
+      "unrealized_pnl": -207.91,
+      "unrealized_pct": -0.353,
       "margin_loan_balance": 17832.02,
-      "margin_to_portfolio_pct": 30.363,
+      "margin_to_portfolio_pct": 30.424,
       "holdings_count": 7,
       "positions_profitable": 2,
       "positions_losing": 5
@@ -20,7 +20,7 @@
     "income": {
       "projected_monthly_income": 726.23,
       "forward_12m_total": 8714.81,
-      "portfolio_current_yield_pct": 14.839,
+      "portfolio_current_yield_pct": 14.869,
       "portfolio_yield_on_cost_pct": 14.816,
       "income_growth": {
         "mom_pct": -100,
@@ -32,50 +32,52 @@
       }
     },
     "performance": {
-      "twr_1m_pct": -0.078,
-      "twr_3m_pct": 5.569,
-      "twr_6m_pct": 9.857,
-      "twr_12m_pct": 13.829,
+      "twr_1m_pct": -0.397,
+      "twr_3m_pct": 4.742,
+      "twr_6m_pct": 8.512,
+      "twr_12m_pct": 13.466,
       "vs_benchmark": {
         "symbol": "^GSPC",
-        "benchmark_twr_1y_pct": 15.58,
-        "excess_1y_pct": -1.751,
+        "benchmark_twr_1y_pct": 15.198,
+        "excess_1y_pct": -1.732,
         "corr_1y": 0.931
       }
     },
     "risk": {
       "volatility": {
-        "vol_30d_pct": 15.003,
-        "vol_90d_pct": 12.245
+        "vol_30d_pct": 14.681,
+        "vol_90d_pct": 12.248
       },
       "ratios": {
-        "sharpe_1y": 0.732,
-        "sortino_1y": 0.95,
-        "sortino_6m": 2.394,
-        "sortino_3m": 2.829,
-        "sortino_1m": 0.015,
-        "sortino_sharpe_ratio": 1.298,
-        "sortino_sharpe_divergence": 0.219,
-        "calmar_1y": 0.681,
-        "omega_ratio_1y": 1.154,
-        "ulcer_index_1y": 5.436,
-        "pain_adjusted_return": 2.544
+        "sharpe_1y": 0.715,
+        "sortino_1y": 0.929,
+        "sortino_6m": 2.106,
+        "sortino_3m": 2.465,
+        "sortino_1m": -0.398,
+        "sortino_sharpe_ratio": 1.299,
+        "sortino_sharpe_divergence": 0.215,
+        "calmar_1y": 0.663,
+        "omega_ratio_1y": 1.151,
+        "ulcer_index_1y": 5.429,
+        "pain_adjusted_return": 2.48,
+        "information_ratio_1y": "risk metric not available in source data",
+        "tracking_error_1y_pct": "risk metric not available in source data"
       },
       "drawdown": {
         "max_drawdown_1y_pct": -20.307,
         "drawdown_duration_1y_days": 117,
         "currently_in_drawdown": true,
-        "current_drawdown_depth_pct": -3.203,
-        "current_drawdown_duration_days": 13,
+        "current_drawdown_depth_pct": -3.398,
+        "current_drawdown_duration_days": 14,
         "peak_value": 60673.45,
         "peak_date": "2026-01-28"
       },
       "var": {
-        "var_90_1d_pct": -1.296,
-        "var_95_1d_pct": -1.975,
-        "var_99_1d_pct": -3.307,
-        "var_95_1w_pct": -4.417,
-        "var_95_1m_pct": -9.052,
+        "var_90_1d_pct": -1.294,
+        "var_95_1d_pct": -1.971,
+        "var_99_1d_pct": -3.297,
+        "var_95_1w_pct": -4.408,
+        "var_95_1m_pct": -9.034,
         "cvar_90_1d_pct": -2.315,
         "cvar_95_1d_pct": -3.071,
         "cvar_99_1d_pct": -5.043,
@@ -84,7 +86,7 @@
       },
       "tail_risk": {
         "tail_risk_category": "moderate",
-        "cvar_to_income_ratio": 11.379
+        "cvar_to_income_ratio": 11.356
       },
       "beta_portfolio": 1.035,
       "portfolio_risk_quality": "good",
@@ -92,8 +94,8 @@
     },
     "allocation": {
       "concentration": {
-        "top3_weight_pct": 64.838,
-        "top5_weight_pct": 94.142,
+        "top3_weight_pct": 64.661,
+        "top5_weight_pct": 94.194,
         "herfindahl_index": 0.186,
         "category": "moderate"
       }
@@ -101,31 +103,35 @@
     "attribution": {
       "12m": {
         "window": {
-          "contribution_pct": 14.362,
+          "contribution_pct": 14.001,
           "weight_avg_pct": 100,
-          "return_pct": 14.362
-        }
+          "return_pct": 14.001
+        },
+        "total_return_pct": 14.001
       },
       "1m": {
         "window": {
-          "contribution_pct": 0.563,
+          "contribution_pct": 0.245,
           "weight_avg_pct": 100,
-          "return_pct": 0.563
-        }
+          "return_pct": 0.245
+        },
+        "total_return_pct": 0.245
       },
       "3m": {
         "window": {
-          "contribution_pct": 6.175,
+          "contribution_pct": 6.072,
           "weight_avg_pct": 100,
-          "return_pct": 6.175
-        }
+          "return_pct": 6.072
+        },
+        "total_return_pct": 6.072
       },
       "6m": {
         "window": {
-          "contribution_pct": 9.997,
+          "contribution_pct": 9.955,
           "weight_avg_pct": 100,
-          "return_pct": 9.997
-        }
+          "return_pct": 9.955
+        },
+        "total_return_pct": 9.955
       }
     }
   },
@@ -139,17 +145,17 @@
         "avg_cost_per_share": 15.5
       },
       "valuation": {
-        "last_price": 16.14,
-        "market_value": 14024.17,
-        "unrealized_pnl": 558.47,
-        "unrealized_pct": 4.147,
-        "portfolio_weight_pct": 23.879
+        "last_price": 15.92,
+        "market_value": 13833.01,
+        "unrealized_pnl": 367.31,
+        "unrealized_pct": 2.728,
+        "portfolio_weight_pct": 23.601
       },
       "income": {
         "forward_12m_dividend": 1920.29,
         "projected_monthly_dividend": 160.02,
         "projected_annual_dividend": 1920.29,
-        "current_yield_pct": 13.693,
+        "current_yield_pct": 13.882,
         "yield_on_cost_pct": 14.261,
         "dividends_30d": 234.1,
         "dividends_qtd": 234.1,
@@ -157,8 +163,8 @@
       },
       "analytics": {
         "distribution": {
-          "trailing_12m_yield_pct": 13.693,
-          "forward_yield_pct": 13.693,
+          "trailing_12m_yield_pct": 13.882,
+          "forward_yield_pct": 13.882,
           "distribution_frequency": "monthly",
           "next_ex_date_est": "2026-02-13",
           "last_ex_date": "2026-01-15",
@@ -166,27 +172,27 @@
           "forward_12m_div_per_share": 2.21
         },
         "risk": {
-          "vol_30d_pct": 23.162,
-          "vol_90d_pct": 19.599,
+          "vol_30d_pct": 22.626,
+          "vol_90d_pct": 19.44,
           "beta_3y": 0.611,
           "max_drawdown_1y_pct": -15.577,
           "drawdown_duration_1y_days": 109,
-          "downside_dev_1y_pct": 16.406,
-          "sortino_1y": 1.14,
-          "sortino_6m": 1.551,
-          "sortino_3m": 6.24,
-          "sortino_1m": 3.821,
-          "sharpe_1y": 0.823,
-          "calmar_1y": 1.118,
-          "risk_quality_score": 1.385,
+          "downside_dev_1y_pct": 16.386,
+          "sortino_1y": 1.13,
+          "sortino_6m": 1.303,
+          "sortino_3m": 5.479,
+          "sortino_1m": 3.407,
+          "sharpe_1y": 0.816,
+          "calmar_1y": 1.108,
+          "risk_quality_score": 1.384,
           "risk_quality_category": "excellent",
           "volatility_profile": "upside_biased"
         },
         "performance": {
-          "twr_1m_pct": 3.304,
-          "twr_3m_pct": 14.851,
-          "twr_6m_pct": 10.067,
-          "twr_12m_pct": 17.408,
+          "twr_1m_pct": 3.176,
+          "twr_3m_pct": 13.019,
+          "twr_6m_pct": 8.226,
+          "twr_12m_pct": 17.262,
           "corr_1y": 0.501
         }
       },
@@ -205,17 +211,17 @@
         "avg_cost_per_share": 54.04
       },
       "valuation": {
-        "last_price": 53.24,
-        "market_value": 12466.78,
-        "unrealized_pnl": -187.96,
-        "unrealized_pct": -1.485,
-        "portfolio_weight_pct": 21.227
+        "last_price": 53.28,
+        "market_value": 12477.32,
+        "unrealized_pnl": -177.42,
+        "unrealized_pct": -1.402,
+        "portfolio_weight_pct": 21.288
       },
       "income": {
         "forward_12m_dividend": 1745.83,
         "projected_monthly_dividend": 145.49,
         "projected_annual_dividend": 1745.83,
-        "current_yield_pct": 14.004,
+        "current_yield_pct": 13.992,
         "yield_on_cost_pct": 13.796,
         "dividends_30d": 0,
         "dividends_qtd": 0,
@@ -223,8 +229,8 @@
       },
       "analytics": {
         "distribution": {
-          "trailing_12m_yield_pct": 14.004,
-          "forward_yield_pct": 14.004,
+          "trailing_12m_yield_pct": 13.992,
+          "forward_yield_pct": 13.992,
           "distribution_frequency": "monthly",
           "next_ex_date_est": "2026-02-18",
           "last_ex_date": "2026-01-21",
@@ -232,27 +238,27 @@
           "forward_12m_div_per_share": 7.46
         },
         "risk": {
-          "vol_30d_pct": 14.875,
-          "vol_90d_pct": 14.216,
+          "vol_30d_pct": 14.559,
+          "vol_90d_pct": 14.231,
           "beta_3y": 1.055,
           "max_drawdown_1y_pct": -19.998,
           "drawdown_duration_1y_days": 85,
-          "downside_dev_1y_pct": 16.208,
-          "sortino_1y": 1.055,
-          "sortino_6m": 1.335,
-          "sortino_3m": 0.229,
-          "sortino_1m": -1.25,
-          "sharpe_1y": 0.846,
-          "calmar_1y": 0.81,
-          "risk_quality_score": 1.246,
+          "downside_dev_1y_pct": 16.147,
+          "sortino_1y": 1.031,
+          "sortino_6m": 1.253,
+          "sortino_3m": 0.161,
+          "sortino_1m": -1.696,
+          "sharpe_1y": 0.826,
+          "calmar_1y": 0.788,
+          "risk_quality_score": 1.249,
           "risk_quality_category": "excellent",
           "volatility_profile": "upside_biased"
         },
         "performance": {
-          "twr_1m_pct": -1.017,
-          "twr_3m_pct": 0.335,
-          "twr_6m_pct": 6.547,
-          "twr_12m_pct": 16.201,
+          "twr_1m_pct": -1.388,
+          "twr_3m_pct": 0.16,
+          "twr_6m_pct": 6.05,
+          "twr_12m_pct": 15.767,
           "corr_1y": 0.973
         }
       },
@@ -275,7 +281,7 @@
         "market_value": 11588.74,
         "unrealized_pnl": -222.95,
         "unrealized_pct": -1.888,
-        "portfolio_weight_pct": 19.732
+        "portfolio_weight_pct": 19.772
       },
       "income": {
         "forward_12m_dividend": 2344.47,
@@ -298,27 +304,27 @@
           "forward_12m_div_per_share": 3.51
         },
         "risk": {
-          "vol_30d_pct": 23.046,
-          "vol_90d_pct": 17.982,
+          "vol_30d_pct": 22.621,
+          "vol_90d_pct": 18.054,
           "beta_3y": 1.924,
           "max_drawdown_1y_pct": -33.502,
-          "drawdown_duration_1y_days": 244,
-          "downside_dev_1y_pct": 28.318,
-          "sortino_1y": 0.29,
-          "sortino_6m": 1.626,
-          "sortino_3m": 1.182,
-          "sortino_1m": -0.409,
-          "sharpe_1y": 0.207,
-          "calmar_1y": 0.014,
-          "risk_quality_score": 1.406,
+          "drawdown_duration_1y_days": 245,
+          "downside_dev_1y_pct": 28.222,
+          "sortino_1y": 0.264,
+          "sortino_6m": 1.382,
+          "sortino_3m": 0.986,
+          "sortino_1m": -0.973,
+          "sharpe_1y": 0.187,
+          "calmar_1y": -0.008,
+          "risk_quality_score": 1.408,
           "risk_quality_category": "acceptable",
           "volatility_profile": "upside_biased"
         },
         "performance": {
-          "twr_1m_pct": -0.742,
-          "twr_3m_pct": 3.544,
-          "twr_6m_pct": 11.317,
-          "twr_12m_pct": 0.483,
+          "twr_1m_pct": -1.48,
+          "twr_3m_pct": 2.832,
+          "twr_6m_pct": 9.295,
+          "twr_12m_pct": -0.264,
           "corr_1y": 0.9
         }
       },
@@ -337,17 +343,17 @@
         "avg_cost_per_share": 52.92
       },
       "valuation": {
-        "last_price": 52.83,
-        "market_value": 8698.2,
-        "unrealized_pnl": -14.93,
-        "unrealized_pct": -0.171,
-        "portfolio_weight_pct": 14.81
+        "last_price": 52.87,
+        "market_value": 8704.78,
+        "unrealized_pnl": -8.34,
+        "unrealized_pct": -0.096,
+        "portfolio_weight_pct": 14.852
       },
       "income": {
         "forward_12m_dividend": 1014.38,
         "projected_monthly_dividend": 84.53,
         "projected_annual_dividend": 1014.38,
-        "current_yield_pct": 11.662,
+        "current_yield_pct": 11.653,
         "yield_on_cost_pct": 11.642,
         "dividends_30d": 68.24,
         "dividends_qtd": 68.24,
@@ -355,8 +361,8 @@
       },
       "analytics": {
         "distribution": {
-          "trailing_12m_yield_pct": 11.662,
-          "forward_yield_pct": 11.662,
+          "trailing_12m_yield_pct": 11.653,
+          "forward_yield_pct": 11.653,
           "distribution_frequency": "monthly",
           "next_ex_date_est": "2026-02-18",
           "last_ex_date": "2026-01-21",
@@ -364,27 +370,27 @@
           "forward_12m_div_per_share": 6.16
         },
         "risk": {
-          "vol_30d_pct": 10.772,
-          "vol_90d_pct": 9.964,
+          "vol_30d_pct": 10.538,
+          "vol_90d_pct": 9.971,
           "beta_3y": 0.876,
           "max_drawdown_1y_pct": -16.475,
           "drawdown_duration_1y_days": 86,
-          "downside_dev_1y_pct": 14.15,
-          "sortino_1y": 1.146,
-          "sortino_6m": 2.398,
-          "sortino_3m": 1.812,
-          "sortino_1m": 0.935,
-          "sharpe_1y": 0.986,
-          "calmar_1y": 0.969,
-          "risk_quality_score": 1.162,
+          "downside_dev_1y_pct": 14.1,
+          "sortino_1y": 1.132,
+          "sortino_6m": 2.292,
+          "sortino_3m": 1.608,
+          "sortino_1m": 0.62,
+          "sharpe_1y": 0.973,
+          "calmar_1y": 0.956,
+          "risk_quality_score": 1.164,
           "risk_quality_category": "good",
           "volatility_profile": "upside_biased"
         },
         "performance": {
-          "twr_1m_pct": 0.533,
-          "twr_3m_pct": 3.184,
-          "twr_6m_pct": 8.84,
-          "twr_12m_pct": 15.967,
+          "twr_1m_pct": 0.343,
+          "twr_3m_pct": 2.775,
+          "twr_6m_pct": 8.362,
+          "twr_12m_pct": 15.748,
           "corr_1y": 0.992
         }
       },
@@ -403,17 +409,17 @@
         "avg_cost_per_share": 23.09
       },
       "valuation": {
-        "last_price": 22.63,
-        "market_value": 8512.39,
-        "unrealized_pnl": -173.82,
-        "unrealized_pct": -2.001,
-        "portfolio_weight_pct": 14.494
+        "last_price": 22.88,
+        "market_value": 8604.55,
+        "unrealized_pnl": -81.66,
+        "unrealized_pct": -0.94,
+        "portfolio_weight_pct": 14.681
       },
       "income": {
         "forward_12m_dividend": 1053.23,
         "projected_monthly_dividend": 87.77,
         "projected_annual_dividend": 1053.23,
-        "current_yield_pct": 12.373,
+        "current_yield_pct": 12.24,
         "yield_on_cost_pct": 12.125,
         "dividends_30d": 46.89,
         "dividends_qtd": 46.89,
@@ -421,8 +427,8 @@
       },
       "analytics": {
         "distribution": {
-          "trailing_12m_yield_pct": 12.373,
-          "forward_yield_pct": 12.373,
+          "trailing_12m_yield_pct": 12.24,
+          "forward_yield_pct": 12.24,
           "distribution_frequency": "quarterly",
           "next_ex_date_est": "2026-03-30",
           "last_ex_date": "2025-12-31",
@@ -430,26 +436,26 @@
           "forward_12m_div_per_share": 2.8
         },
         "risk": {
-          "vol_30d_pct": 24.906,
-          "vol_90d_pct": 19.642,
-          "beta_3y": 0.689,
+          "vol_30d_pct": 24.31,
+          "vol_90d_pct": 19.474,
+          "beta_3y": 0.688,
           "max_drawdown_1y_pct": -18.458,
           "drawdown_duration_1y_days": 99,
           "downside_dev_1y_pct": 17.487,
-          "sortino_1y": 1.479,
-          "sortino_6m": 2.835,
-          "sortino_3m": 2.327,
-          "sortino_1m": -1.712,
-          "sharpe_1y": 1.182,
+          "sortino_1y": 1.473,
+          "sortino_6m": 2.621,
+          "sortino_3m": 1.913,
+          "sortino_1m": -1.63,
+          "sharpe_1y": 1.18,
           "calmar_1y": 1.425,
-          "risk_quality_score": 1.251,
+          "risk_quality_score": 1.249,
           "risk_quality_category": "excellent",
           "volatility_profile": "upside_biased"
         },
         "performance": {
           "twr_1m_pct": -2.876,
-          "twr_3m_pct": 7.555,
-          "twr_6m_pct": 17.22,
+          "twr_3m_pct": 6.088,
+          "twr_6m_pct": 15.759,
           "twr_12m_pct": 26.3,
           "corr_1y": 0.586
         }
@@ -469,17 +475,17 @@
         "avg_cost_per_share": 50.35
       },
       "valuation": {
-        "last_price": 51.1,
-        "market_value": 2881.61,
-        "unrealized_pnl": 42.48,
-        "unrealized_pct": 1.496,
-        "portfolio_weight_pct": 4.907
+        "last_price": 50.71,
+        "market_value": 2859.62,
+        "unrealized_pnl": 20.49,
+        "unrealized_pct": 0.722,
+        "portfolio_weight_pct": 4.879
       },
       "income": {
         "forward_12m_dividend": 385.77,
         "projected_monthly_dividend": 32.15,
         "projected_annual_dividend": 385.77,
-        "current_yield_pct": 13.387,
+        "current_yield_pct": 13.49,
         "yield_on_cost_pct": 13.588,
         "dividends_30d": 0,
         "dividends_qtd": 0,
@@ -487,8 +493,8 @@
       },
       "analytics": {
         "distribution": {
-          "trailing_12m_yield_pct": 13.387,
-          "forward_yield_pct": 13.387,
+          "trailing_12m_yield_pct": 13.49,
+          "forward_yield_pct": 13.49,
           "distribution_frequency": "monthly",
           "next_ex_date_est": "2026-02-25",
           "last_ex_date": "2026-01-21",
@@ -496,27 +502,27 @@
           "forward_12m_div_per_share": 6.84
         },
         "risk": {
-          "vol_30d_pct": 13.778,
-          "vol_90d_pct": 14.99,
+          "vol_30d_pct": 13.474,
+          "vol_90d_pct": 15.001,
           "beta_3y": 0.93,
           "max_drawdown_1y_pct": -20.569,
           "drawdown_duration_1y_days": 106,
-          "downside_dev_1y_pct": 13.943,
-          "sortino_1y": 1.386,
-          "sortino_6m": 3.862,
-          "sortino_3m": 3.874,
-          "sortino_1m": 4.416,
-          "sharpe_1y": 1.01,
-          "calmar_1y": 0.925,
+          "downside_dev_1y_pct": 13.919,
+          "sortino_1y": 1.373,
+          "sortino_6m": 3.514,
+          "sortino_3m": 3.767,
+          "sortino_1m": 4.001,
+          "sharpe_1y": 1.001,
+          "calmar_1y": 0.917,
           "risk_quality_score": 1.372,
           "risk_quality_category": "excellent",
           "volatility_profile": "upside_biased"
         },
         "performance": {
-          "twr_1m_pct": 2.352,
-          "twr_3m_pct": 8.81,
-          "twr_6m_pct": 17.101,
-          "twr_12m_pct": 19.03,
+          "twr_1m_pct": 2.212,
+          "twr_3m_pct": 8.505,
+          "twr_6m_pct": 15.368,
+          "twr_12m_pct": 18.867,
           "corr_1y": 0.905
         }
       },
@@ -535,17 +541,17 @@
         "avg_cost_per_share": 40.17
       },
       "valuation": {
-        "last_price": 34.56,
-        "market_value": 558.44,
-        "unrealized_pnl": -90.62,
-        "unrealized_pct": -13.962,
-        "portfolio_weight_pct": 0.951
+        "last_price": 33.65,
+        "market_value": 543.74,
+        "unrealized_pnl": -105.32,
+        "unrealized_pct": -16.227,
+        "portfolio_weight_pct": 0.928
       },
       "income": {
         "forward_12m_dividend": 250.85,
         "projected_monthly_dividend": 20.9,
         "projected_annual_dividend": 250.85,
-        "current_yield_pct": 44.919,
+        "current_yield_pct": 46.134,
         "yield_on_cost_pct": 38.648,
         "dividends_30d": 0,
         "dividends_qtd": 0,
@@ -553,8 +559,8 @@
       },
       "analytics": {
         "distribution": {
-          "trailing_12m_yield_pct": 44.919,
-          "forward_yield_pct": 44.919,
+          "trailing_12m_yield_pct": 46.134,
+          "forward_yield_pct": 46.134,
           "distribution_frequency": "monthly",
           "next_ex_date_est": "2026-02-18",
           "last_ex_date": "2026-01-21",
@@ -562,28 +568,28 @@
           "forward_12m_div_per_share": 15.52
         },
         "risk": {
-          "vol_30d_pct": 70.123,
-          "vol_90d_pct": 52.022,
-          "beta_3y": 0.949,
+          "vol_30d_pct": 68.729,
+          "vol_90d_pct": 52.071,
+          "beta_3y": 0.952,
           "max_drawdown_1y_pct": -44.976,
-          "drawdown_duration_1y_days": 86,
-          "downside_dev_1y_pct": 29.55,
-          "sortino_1y": -0.548,
-          "sortino_6m": -2.611,
-          "sortino_3m": -3.498,
-          "sortino_1m": -4.423,
-          "sharpe_1y": -0.401,
-          "calmar_1y": -0.48,
-          "risk_quality_score": 1.367,
+          "drawdown_duration_1y_days": 87,
+          "downside_dev_1y_pct": 29.46,
+          "sortino_1y": -0.645,
+          "sortino_6m": -2.952,
+          "sortino_3m": -3.528,
+          "sortino_1m": -5.038,
+          "sharpe_1y": -0.47,
+          "calmar_1y": -0.53,
+          "risk_quality_score": 1.372,
           "risk_quality_category": "acceptable",
           "volatility_profile": "downside_biased"
         },
         "performance": {
-          "twr_1m_pct": -19.548,
-          "twr_3m_pct": -30.277,
-          "twr_6m_pct": -36.719,
-          "twr_12m_pct": -21.604,
-          "corr_1y": 0.437
+          "twr_1m_pct": -21.854,
+          "twr_3m_pct": -30.482,
+          "twr_6m_pct": -39.83,
+          "twr_12m_pct": -23.851,
+          "corr_1y": 0.438
         }
       },
       "reliability": {
@@ -596,11 +602,11 @@
   "goals": {
     "baseline": {
       "target_monthly_income": 4000,
-      "required_portfolio_value": 323480.62,
+      "required_portfolio_value": 322827.52,
       "progress_pct": 18.156,
-      "months_to_goal": 72,
+      "months_to_goal": 71,
       "current_projected_monthly": 726.23,
-      "estimated_goal_date": "2032-02-10"
+      "estimated_goal_date": "2032-01-11"
     },
     "net_of_interest": {
       "progress_pct": 16.614,
@@ -609,126 +615,127 @@
     },
     "tiers": [
       {
-        "as_of_date_local": "2026-02-10",
+        "as_of_date_local": "2026-02-11",
         "tier": 1,
         "name": "Modest Appreciation",
-        "description": "9.9% appreciation only (no contributions, no DRIP)",
+        "description": "8.5% appreciation only (no contributions, no DRIP)",
         "target_monthly": 4000,
-        "required_portfolio_value": 323480.62,
-        "final_portfolio_value": 324636.03,
+        "required_portfolio_value": 322827.52,
+        "final_portfolio_value": 324233.02,
         "progress_pct": 18.156,
-        "months_to_goal": 209,
-        "estimated_goal_date": "2043-07-10",
+        "months_to_goal": 242,
+        "estimated_goal_date": "2046-04-11",
         "confidence": "low",
         "assumption_monthly_contribution": 0,
         "assumption_drip_enabled": 0,
-        "assumption_annual_appreciation_pct": 9.857,
+        "assumption_annual_appreciation_pct": 8.512,
         "assumption_ltv_maintained": 0,
         "assumption_target_ltv_pct": 30
       },
       {
-        "as_of_date_local": "2026-02-10",
+        "as_of_date_local": "2026-02-11",
         "tier": 2,
         "name": "Conservative Build",
-        "description": "$3000.0/mo contributions, 9.9% appreciation (no DRIP)",
+        "description": "$3000.0/mo contributions, 8.5% appreciation (no DRIP)",
         "target_monthly": 4000,
-        "required_portfolio_value": 323480.62,
-        "final_portfolio_value": 327382.06,
+        "required_portfolio_value": 322827.52,
+        "final_portfolio_value": 323445.55,
         "progress_pct": 18.156,
-        "months_to_goal": 60,
-        "estimated_goal_date": "2031-02-10",
+        "months_to_goal": 62,
+        "estimated_goal_date": "2031-04-11",
         "confidence": "low",
         "assumption_monthly_contribution": 3000,
         "assumption_drip_enabled": 0,
-        "assumption_annual_appreciation_pct": 9.857,
+        "assumption_annual_appreciation_pct": 8.512,
         "assumption_ltv_maintained": 0,
         "assumption_target_ltv_pct": 30
       },
       {
-        "as_of_date_local": "2026-02-10",
+        "as_of_date_local": "2026-02-11",
         "tier": 3,
         "name": "DRIP Build",
-        "description": "DRIP + $3000.0/mo + 9.9% appreciation",
+        "description": "DRIP + $3000.0/mo + 8.5% appreciation",
         "target_monthly": 4000,
-        "required_portfolio_value": 323480.62,
-        "final_portfolio_value": 326652.96,
+        "required_portfolio_value": 322827.52,
+        "final_portfolio_value": 324979.68,
         "progress_pct": 18.156,
-        "months_to_goal": 41,
-        "estimated_goal_date": "2029-07-10",
+        "months_to_goal": 42,
+        "estimated_goal_date": "2029-08-11",
         "confidence": "low",
         "assumption_monthly_contribution": 3000,
         "assumption_drip_enabled": 1,
-        "assumption_annual_appreciation_pct": 9.857,
+        "assumption_annual_appreciation_pct": 8.512,
         "assumption_ltv_maintained": 0,
         "assumption_target_ltv_pct": 30
       },
       {
-        "as_of_date_local": "2026-02-10",
+        "as_of_date_local": "2026-02-11",
         "tier": 4,
         "name": "Leveraged Growth",
-        "description": "DRIP + $3000.0/mo + 9.9% + 30.0% LTV",
+        "description": "DRIP + $3000.0/mo + 8.5% + 30.0% LTV",
         "target_monthly": 4000,
-        "required_portfolio_value": 323480.62,
-        "final_portfolio_value": 331657.54,
+        "required_portfolio_value": 322827.52,
+        "final_portfolio_value": 333024.61,
         "progress_pct": 18.156,
-        "months_to_goal": 30,
-        "estimated_goal_date": "2028-08-10",
+        "months_to_goal": 31,
+        "estimated_goal_date": "2028-09-11",
         "confidence": "low",
         "assumption_monthly_contribution": 3000,
         "assumption_drip_enabled": 1,
-        "assumption_annual_appreciation_pct": 9.857,
+        "assumption_annual_appreciation_pct": 8.512,
         "assumption_ltv_maintained": 1,
         "assumption_target_ltv_pct": 30
       },
       {
-        "as_of_date_local": "2026-02-10",
+        "as_of_date_local": "2026-02-11",
         "tier": 5,
         "name": "Optimized Growth",
-        "description": "DRIP + $3000.0/mo + 11.8% + 30.0% LTV",
+        "description": "DRIP + $3000.0/mo + 11.0% + 30.0% LTV",
         "target_monthly": 4000,
-        "required_portfolio_value": 323480.62,
-        "final_portfolio_value": 334660.36,
+        "required_portfolio_value": 322827.52,
+        "final_portfolio_value": 327427.09,
         "progress_pct": 18.156,
         "months_to_goal": 29,
-        "estimated_goal_date": "2028-07-10",
+        "estimated_goal_date": "2028-07-11",
         "confidence": "high",
         "assumption_monthly_contribution": 3000,
         "assumption_drip_enabled": 1,
-        "assumption_annual_appreciation_pct": 11.843,
+        "assumption_annual_appreciation_pct": 10.989,
         "assumption_ltv_maintained": 1,
         "assumption_target_ltv_pct": 30
       },
       {
-        "as_of_date_local": "2026-02-10",
+        "as_of_date_local": "2026-02-11",
         "tier": 6,
         "name": "Maximum Growth",
-        "description": "DRIP + $3000.0/mo + 13.8% + 30.0% LTV",
+        "description": "DRIP + $3000.0/mo + 13.5% + 30.0% LTV",
         "target_monthly": 4000,
-        "required_portfolio_value": 323480.62,
-        "final_portfolio_value": 336483.64,
+        "required_portfolio_value": 322827.52,
+        "final_portfolio_value": 333350.76,
         "progress_pct": 18.156,
         "months_to_goal": 28,
-        "estimated_goal_date": "2028-06-10",
+        "estimated_goal_date": "2028-06-11",
         "confidence": "low",
         "assumption_monthly_contribution": 3000,
         "assumption_drip_enabled": 1,
-        "assumption_annual_appreciation_pct": 13.829,
+        "assumption_annual_appreciation_pct": 13.466,
         "assumption_ltv_maintained": 1,
         "assumption_target_ltv_pct": 30
       }
     ],
     "current_state": {
-      "portfolio_value": 58730.33,
+      "portfolio_value": 58611.76,
       "projected_monthly_income": 726.23,
-      "portfolio_yield_pct": 14.839
+      "portfolio_yield_pct": 14.869,
+      "target_monthly": 4000
     },
     "pace": {
       "current_pace": {
-        "months_ahead_behind": 9.48,
+        "months_ahead_behind": 9.56,
         "pace_category": "ahead",
         "on_track": true,
-        "revised_goal_date": "2027-09-10",
-        "pct_of_tier_pace": 331.086
+        "revised_goal_date": "2027-09-11",
+        "pct_of_tier_pace": 330.899
       },
       "likely_tier": {
         "tier": 5,
@@ -740,224 +747,224 @@
         "mtd": {
           "window_name": "MTD",
           "start_date": "2026-02-01",
-          "end_date": "2026-02-10",
-          "days_in_window": 9,
-          "months_elapsed": 0.3,
+          "end_date": "2026-02-11",
+          "days_in_window": 10,
+          "months_elapsed": 0.33,
           "expected": {
             "portfolio_value": 58541.6,
             "monthly_income": 709.09,
             "margin_balance": 17786.93
           },
           "actual": {
-            "portfolio_value": 58730.33,
+            "portfolio_value": 58611.76,
             "monthly_income": 726.23,
             "margin_balance": 17832.02
           },
           "delta": {
-            "portfolio_value": 188.73,
-            "portfolio_value_pct": 0.322,
+            "portfolio_value": 70.16,
+            "portfolio_value_pct": 0.12,
             "monthly_income": 17.14,
             "monthly_income_pct": 2.418
           },
           "pace": {
             "months_ahead_behind": 0,
-            "pct_of_tier_pace": 100.322,
+            "pct_of_tier_pace": 100.12,
             "on_track": true,
             "amount_needed": 0,
-            "amount_surplus": 188.73
+            "amount_surplus": 70.16
           }
         },
         "qtd": {
           "window_name": "QTD",
           "start_date": "2026-01-01",
-          "end_date": "2026-02-10",
-          "days_in_window": 40,
-          "months_elapsed": 1.33,
+          "end_date": "2026-02-11",
+          "days_in_window": 41,
+          "months_elapsed": 1.37,
           "expected": {
-            "portfolio_value": 19319.03,
-            "monthly_income": 211.03,
+            "portfolio_value": 19307.53,
+            "monthly_income": 210.9,
             "margin_balance": 7180.49
           },
           "actual": {
-            "portfolio_value": 58730.33,
+            "portfolio_value": 58611.76,
             "monthly_income": 726.23,
             "margin_balance": 17832.02
           },
           "delta": {
-            "portfolio_value": 39411.3,
-            "portfolio_value_pct": 204.002,
-            "monthly_income": 515.2,
-            "monthly_income_pct": 244.139
+            "portfolio_value": 39304.23,
+            "portfolio_value_pct": 203.569,
+            "monthly_income": 515.33,
+            "monthly_income_pct": 244.344
           },
           "pace": {
-            "months_ahead_behind": 15.76,
-            "pct_of_tier_pace": 304.002,
+            "months_ahead_behind": 16.17,
+            "pct_of_tier_pace": 303.569,
             "on_track": true,
             "amount_needed": 0,
-            "amount_surplus": 39411.3
+            "amount_surplus": 39304.23
           }
         },
         "ytd": {
           "window_name": "YTD",
           "start_date": "2026-01-01",
-          "end_date": "2026-02-10",
-          "days_in_window": 40,
-          "months_elapsed": 1.33,
+          "end_date": "2026-02-11",
+          "days_in_window": 41,
+          "months_elapsed": 1.37,
           "expected": {
-            "portfolio_value": 19319.03,
-            "monthly_income": 211.03,
+            "portfolio_value": 19307.53,
+            "monthly_income": 210.9,
             "margin_balance": 7180.49
           },
           "actual": {
-            "portfolio_value": 58730.33,
+            "portfolio_value": 58611.76,
             "monthly_income": 726.23,
             "margin_balance": 17832.02
           },
           "delta": {
-            "portfolio_value": 39411.3,
-            "portfolio_value_pct": 204.002,
-            "monthly_income": 515.2,
-            "monthly_income_pct": 244.139
+            "portfolio_value": 39304.23,
+            "portfolio_value_pct": 203.569,
+            "monthly_income": 515.33,
+            "monthly_income_pct": 244.344
           },
           "pace": {
-            "months_ahead_behind": 15.76,
-            "pct_of_tier_pace": 304.002,
+            "months_ahead_behind": 16.17,
+            "pct_of_tier_pace": 303.569,
             "on_track": true,
             "amount_needed": 0,
-            "amount_surplus": 39411.3
+            "amount_surplus": 39304.23
           }
         },
         "30d": {
           "window_name": "30D",
-          "start_date": "2026-01-11",
-          "end_date": "2026-02-10",
+          "start_date": "2026-01-12",
+          "end_date": "2026-02-11",
           "days_in_window": 30,
           "months_elapsed": 1,
           "expected": {
-            "portfolio_value": 56929.27,
-            "monthly_income": 623.14,
-            "margin_balance": 17078.78
+            "portfolio_value": 57078.24,
+            "monthly_income": 623.1,
+            "margin_balance": 17123.47
           },
           "actual": {
-            "portfolio_value": 58730.33,
+            "portfolio_value": 58611.76,
             "monthly_income": 726.23,
             "margin_balance": 17832.02
           },
           "delta": {
-            "portfolio_value": 1801.06,
-            "portfolio_value_pct": 3.164,
-            "monthly_income": 103.09,
-            "monthly_income_pct": 16.544
+            "portfolio_value": 1533.51,
+            "portfolio_value_pct": 2.687,
+            "monthly_income": 103.13,
+            "monthly_income_pct": 16.55
           },
           "pace": {
-            "months_ahead_behind": 0.15,
-            "pct_of_tier_pace": 103.164,
+            "months_ahead_behind": 0.16,
+            "pct_of_tier_pace": 102.687,
             "on_track": true,
             "amount_needed": 0,
-            "amount_surplus": 1801.06
+            "amount_surplus": 1533.51
           }
         },
         "60d": {
           "window_name": "60D",
-          "start_date": "2025-12-12",
-          "end_date": "2026-02-10",
+          "start_date": "2025-12-13",
+          "end_date": "2026-02-11",
           "days_in_window": 60,
           "months_elapsed": 2,
           "expected": {
-            "portfolio_value": 26358.6,
-            "monthly_income": 266.73,
-            "margin_balance": 7907.58
+            "portfolio_value": 26320.96,
+            "monthly_income": 266.35,
+            "margin_balance": 7896.29
           },
           "actual": {
-            "portfolio_value": 58730.33,
+            "portfolio_value": 58611.76,
             "monthly_income": 726.23,
             "margin_balance": 17832.02
           },
           "delta": {
-            "portfolio_value": 32371.73,
-            "portfolio_value_pct": 122.813,
-            "monthly_income": 459.5,
-            "monthly_income_pct": 172.275
+            "portfolio_value": 32290.8,
+            "portfolio_value_pct": 122.681,
+            "monthly_income": 459.88,
+            "monthly_income_pct": 172.664
           },
           "pace": {
-            "months_ahead_behind": 5.59,
-            "pct_of_tier_pace": 222.813,
+            "months_ahead_behind": 5.6,
+            "pct_of_tier_pace": 222.681,
             "on_track": true,
             "amount_needed": 0,
-            "amount_surplus": 32371.73
+            "amount_surplus": 32290.8
           }
         },
         "90d": {
           "window_name": "90D",
-          "start_date": "2025-11-12",
-          "end_date": "2026-02-10",
+          "start_date": "2025-11-13",
+          "end_date": "2026-02-11",
           "days_in_window": 90,
           "months_elapsed": 3,
           "expected": {
-            "portfolio_value": 17864.16,
-            "monthly_income": 157.06,
-            "margin_balance": 5359.25
+            "portfolio_value": 17768.28,
+            "monthly_income": 157.6,
+            "margin_balance": 5330.48
           },
           "actual": {
-            "portfolio_value": 58730.33,
+            "portfolio_value": 58611.76,
             "monthly_income": 726.23,
             "margin_balance": 17832.02
           },
           "delta": {
-            "portfolio_value": 40866.18,
-            "portfolio_value_pct": 228.761,
-            "monthly_income": 569.17,
-            "monthly_income_pct": 362.403
+            "portfolio_value": 40843.48,
+            "portfolio_value_pct": 229.867,
+            "monthly_income": 568.63,
+            "monthly_income_pct": 360.792
           },
           "pace": {
-            "months_ahead_behind": 9.7,
-            "pct_of_tier_pace": 328.761,
+            "months_ahead_behind": 9.73,
+            "pct_of_tier_pace": 329.867,
             "on_track": true,
             "amount_needed": 0,
-            "amount_surplus": 40866.18
+            "amount_surplus": 40843.48
           }
         },
         "since_inception": {
           "window_name": "SINCE_INCEPTION",
           "start_date": "2025-10-31",
-          "end_date": "2026-02-10",
-          "days_in_window": 102,
-          "months_elapsed": 3.4,
+          "end_date": "2026-02-11",
+          "days_in_window": 103,
+          "months_elapsed": 3.43,
           "expected": {
-            "portfolio_value": 17738.68,
-            "monthly_income": 115.86,
-            "margin_balance": 5321.6
+            "portfolio_value": 17712.9,
+            "monthly_income": 115.69,
+            "margin_balance": 5313.87
           },
           "actual": {
-            "portfolio_value": 58730.33,
+            "portfolio_value": 58611.76,
             "monthly_income": 726.23,
             "margin_balance": 17832.02
           },
           "delta": {
-            "portfolio_value": 40991.65,
-            "portfolio_value_pct": 231.086,
-            "monthly_income": 610.37,
-            "monthly_income_pct": 526.8
+            "portfolio_value": 40898.85,
+            "portfolio_value_pct": 230.899,
+            "monthly_income": 610.54,
+            "monthly_income_pct": 527.712
           },
           "pace": {
-            "months_ahead_behind": 9.48,
-            "pct_of_tier_pace": 331.086,
+            "months_ahead_behind": 9.56,
+            "pct_of_tier_pace": 330.899,
             "on_track": true,
             "amount_needed": 0,
-            "amount_surplus": 40991.65
+            "amount_surplus": 40898.85
           }
         }
       },
       "baseline_projection": {
         "tier_number": 5,
         "tier_name": "Optimized Growth",
-        "original_goal_date": "2028-07-10",
+        "original_goal_date": "2028-07-11",
         "original_months_to_goal": 29,
-        "required_portfolio_value": 323480.62,
+        "required_portfolio_value": 322827.52,
         "assumptions": {
           "monthly_contribution": 3000,
           "drip_enabled": true,
-          "annual_appreciation_pct": 11.843,
+          "annual_appreciation_pct": 10.989,
           "ltv_maintained": true,
           "target_ltv_pct": 30
         }
@@ -973,9 +980,9 @@
     },
     "stress": {
       "margin_call_risk": {
-        "buffer_to_margin_call_pct": -56.625,
-        "dollar_decline_to_call": 33256.02,
-        "days_at_current_volatility": 30,
+        "buffer_to_margin_call_pct": -56.537,
+        "dollar_decline_to_call": 33137.44,
+        "days_at_current_volatility": 31,
         "buffer_status": "safe"
       },
       "rate_shock_scenarios": {
@@ -1005,18 +1012,18 @@
         {
           "mode": "conservative",
           "action": "repay",
-          "amount": 6085.95,
-          "ltv_now_pct": 30.363,
-          "ltv_stress_pct": 50.604,
+          "amount": 6109.67,
+          "ltv_now_pct": 30.424,
+          "ltv_stress_pct": 50.707,
           "monthly_interest_now": 61.67,
           "income_interest_coverage_now": 11.776,
           "monthly_interest_future": 83.96,
           "income_interest_coverage_future": 8.65,
           "after_action": {
-            "new_loan_balance": 11746.07,
+            "new_loan_balance": 11722.35,
             "ltv_after_action_pct": 20,
-            "monthly_interest_now": 40.62,
-            "income_interest_coverage_now": 17.878
+            "monthly_interest_now": 40.54,
+            "income_interest_coverage_now": 17.914
           },
           "constraints": {
             "max_margin_pct": 20,
@@ -1027,18 +1034,18 @@
         {
           "mode": "balanced",
           "action": "repay",
-          "amount": 3149.44,
-          "ltv_now_pct": 30.363,
-          "ltv_stress_pct": 43.375,
+          "amount": 3179.08,
+          "ltv_now_pct": 30.424,
+          "ltv_stress_pct": 43.463,
           "monthly_interest_now": 61.67,
           "income_interest_coverage_now": 11.776,
           "monthly_interest_future": 83.96,
           "income_interest_coverage_future": 8.65,
           "after_action": {
-            "new_loan_balance": 14682.58,
+            "new_loan_balance": 14652.94,
             "ltv_after_action_pct": 25,
-            "monthly_interest_now": 50.78,
-            "income_interest_coverage_now": 14.302
+            "monthly_interest_now": 50.67,
+            "income_interest_coverage_now": 14.331
           },
           "constraints": {
             "max_margin_pct": 25,
@@ -1049,18 +1056,18 @@
         {
           "mode": "aggressive",
           "action": "repay",
-          "amount": 212.92,
-          "ltv_now_pct": 30.363,
-          "ltv_stress_pct": 37.953,
+          "amount": 248.49,
+          "ltv_now_pct": 30.424,
+          "ltv_stress_pct": 38.03,
           "monthly_interest_now": 61.67,
           "income_interest_coverage_now": 11.776,
           "monthly_interest_future": 83.96,
           "income_interest_coverage_future": 8.65,
           "after_action": {
-            "new_loan_balance": 17619.1,
+            "new_loan_balance": 17583.53,
             "ltv_after_action_pct": 30,
-            "monthly_interest_now": 60.93,
-            "income_interest_coverage_now": 11.919
+            "monthly_interest_now": 60.81,
+            "income_interest_coverage_now": 11.943
           },
           "constraints": {
             "max_margin_pct": 30,
@@ -1076,12 +1083,12 @@
       }
     },
     "history_90d": {
-      "ltv_avg": 29.057,
+      "ltv_avg": 28.921,
       "ltv_max": 46.55,
       "ltv_min": 15.455,
-      "ltv_std": 10.501,
+      "ltv_std": 10.405,
       "ltv_trend": "rising",
-      "interest_expense_avg": 28.86,
+      "interest_expense_avg": 29.47,
       "interest_expense_trend": "stable"
     }
   },
@@ -1274,15 +1281,15 @@
   },
   "macro": {
     "snapshot": {
-      "vix": 17.36,
+      "vix": 17.79,
       "ten_year_yield": 4.22,
       "two_year_yield": 3.48,
-      "hy_spread_bps": 284,
+      "hy_spread_bps": 286,
       "yield_spread_10y_2y": 0.74,
-      "macro_stress_score": -0.6,
+      "macro_stress_score": -0.569,
       "cpi_yoy": 3.03
     },
-    "as_of_date": "2026-02-09"
+    "as_of_date": "2026-02-10"
   },
   "meta": {
     "schema_version": "5.0",
@@ -1294,8 +1301,8 @@
       "missing_paths": []
     },
     "health_status": "health status not computed for this snapshot",
-    "snapshot_created_at": "2026-02-10T23:31:51.899362+00:00"
+    "snapshot_created_at": "2026-02-11T16:18:35.776144+00:00"
   },
-  "as_of_date_local": "2026-02-10",
-  "created_at_utc": "2026-02-10T23:31:51.899362+00:00"
+  "as_of_date_local": "2026-02-11",
+  "created_at_utc": "2026-02-11T16:18:35.776144+00:00"
 }

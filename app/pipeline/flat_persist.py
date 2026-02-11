@@ -839,7 +839,7 @@ def _write_period_flat(conn: sqlite3.Connection, snapshot: dict, run_id: str) ->
                 annual_interest_expense, margin_call_buffer_pct,
                 goal_progress_pct, goal_months_to_goal, goal_projected_monthly, goal_net_progress_pct
             ) VALUES (?,?,?,?, ?,?, ?,?,?,?,?, ?,?, ?,?,?, ?,?,?,?,?, ?,?,?,?
-                ,?,?,?, ?,?,?,?, ?,?,?, ?,?,?,?, ?,?, ?,?,?,?)""",
+                ,?,?,?, ?,?,?,?, ?,?,?, ?,?,?,?, ?,?, ?,?,?,?,?)""",
             (
                 period_type, period_start, period_end, label,
                 iv.get("start_date") or "",
@@ -897,7 +897,7 @@ def _write_period_flat(conn: sqlite3.Connection, snapshot: dict, run_id: str) ->
                     weight_pct, market_value, pnl_pct, pnl_dollar,
                     projected_monthly_dividend, current_yield_pct,
                     sharpe_1y, sortino_1y, risk_quality_category
-                ) VALUES (?,?,?,?,?, ?,?,?,?, ?,?, ?,?,?,?)""",
+                ) VALUES (?,?,?,?,?, ?,?,?,?, ?,?, ?,?,?)""",
                 (
                     period_type, period_start, period_end, label, sym,
                     h.get("weight_pct"),
