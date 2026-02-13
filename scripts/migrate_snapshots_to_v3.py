@@ -312,6 +312,8 @@ def save_snapshot(conn: sqlite3.Connection, as_of_date: str, snapshot: dict):
         return True
     except Exception as e:
         print(f"    ERROR saving: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 

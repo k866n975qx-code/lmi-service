@@ -16,6 +16,12 @@ _ALLOWED_TX_TYPES = {
     "reinvest",
     "reinvestment",
     "dividend",
+    "interest",
+    "contribution",
+    "withdrawal",
+    "margin_borrow",
+    "margin_repay",
+    "fee",
 }
 
 
@@ -75,25 +81,78 @@ def _infer_tx_type(tx: dict, meta: dict | None):
             str(tx.get("payee") or ""),
         ]
     ).lower()
+    
+    # Get Plaid investment transaction type and subtype
     meta_type = None
+    plaid_subtype = None
     if meta:
         for key in ("investment_transaction_type", "type", "subtype"):
             val = meta.get(key)
             if val:
-                meta_type = str(val).lower()
-                if meta_type != "cash":
+                if key == "subtype":
+                    plaid_subtype = str(val).lower()
+                else:
+                    meta_type = str(val).lower()
+                # For buy/sell/dividend, return immediately
+                if meta_type in ("buy", "sell", "dividend", "reinvest", "reinvestment", "redemption"):
                     return meta_type
+                # For transfer/cash, don't return yet - need to check text for better classification
                 break
+    
+    # Check for dividend explicitly
+    if "dividend" in text:
+        return "dividend"
+    
+    # Check for interest (but exclude margin interest)
+    if "interest" in text:
+        if "margin" in text:
+            # This is margin interest expense (repayment to loan account)
+            return "margin_repay"
+        if "securities lending" in text:
+            return "interest"
+        # Generic interest - could be margin or securities lending
+        # If it's positive, likely margin repayment; if negative, likely securities lending
+        amount = tx.get("amount")
+        try:
+            amount_float = float(amount) if amount is not None else 0.0
+            if amount_float > 0:
+                return "margin_repay"
+            else:
+                return "interest"
+        except (ValueError, TypeError):
+            return "interest"
+    
+    # Check for fee
+    if "fee" in text:
+        return "fee"
+    
+    # Check for transfers (could be contribution or withdrawal)
+    if "transfer" in text:
+        # For investment account, check amount sign
+        # Negative amounts are money coming IN (contribution from checking)
+        # Positive amounts are money going OUT (withdrawal to checking)
+        amount = tx.get("amount")
+        try:
+            amount_float = float(amount) if amount is not None else 0.0
+            if amount_float < 0:
+                # Money coming into investment account = contribution
+                return "contribution"
+            else:
+                # Money going out of investment account = withdrawal
+                return "withdrawal"
+        except (ValueError, TypeError):
+            pass
+    
+    # Fallback to Plaid transaction type
+    if meta_type:
+        return meta_type
+    
+    # Check tx-level type/subtype
     for key in ("subtype", "type"):
         val = tx.get(key)
         if val:
             return str(val).lower()
-    if "dividend" in text:
-        return "dividend"
-    if "interest" in text:
-        return "interest"
-    if "fee" in text:
-        return "fee"
+    
     return "cash" if meta_type == "cash" else "unknown"
 
 

@@ -155,8 +155,12 @@ def _write_daily_flat(conn: sqlite3.Connection, daily: dict, run_id: str) -> Non
         or daily.get("prices_as_of_utc")
         or daily.get("prices_as_of")
     )
+    # Type safety: only sum numeric dividend amounts (can be 'N/A' string from bad data)
     div_upcoming_total = sum(
-        (e.get("amount_est") or e.get("estimated_amount") or 0) for e in events
+        (e.get("amount_est") if isinstance(e.get("amount_est"), (int, float))
+         else e.get("estimated_amount") if isinstance(e.get("estimated_amount"), (int, float))
+         else 0)
+        for e in events
     )
     margin_history = ms.get("historical_trends_90d") or ms.get("history_90d")
 
@@ -448,7 +452,7 @@ def _write_daily_flat(conn: sqlite3.Connection, daily: dict, run_id: str) -> Non
                 use_ult.get("twr_12m_pct"),
                 use_ult.get("corr_1y"),
                 flat.get("consistency_score"),
-                flat.get("trend_6m"),
+                flat.get("trend_6m") or flat.get("dividend_trend_6m"),
                 flat.get("missed_payments_12m"),
             ),
         )
@@ -624,6 +628,7 @@ def _write_period_flat(conn: sqlite3.Connection, snapshot: dict, run_id: str) ->
     r_s = (ps.get("risk") or {}).get("start") or {}
     r_e = (ps.get("risk") or {}).get("end") or {}
     r_d = (ps.get("risk") or {}).get("delta") or {}
+    risk_stats_dict = (ps.get("risk") or {}).get("stats") or {}
 
     # Goals
     gp_s = (ps.get("goal_progress") or {}).get("start") or {}
@@ -634,6 +639,26 @@ def _write_period_flat(conn: sqlite3.Connection, snapshot: dict, run_id: str) ->
     gpn_d = (ps.get("goal_progress_net") or {}).get("delta") or {}
     goal_pace = ps.get("goal_pace") or {}
     pace_cur = goal_pace.get("current_pace") or {}
+    pace_category_vals = goal_pace.get("pace_category") or {}
+    pace_months_vals = goal_pace.get("months_ahead_behind") or {}
+    pace_tier_vals = goal_pace.get("tier_pace_pct") or {}
+
+    pace_category_start = pace_category_vals.get("start")
+    pace_category_end = pace_category_vals.get("end")
+    if pace_category_start is None:
+        pace_category_start = pace_cur.get("pace_category")
+    if pace_category_end is None:
+        pace_category_end = pace_cur.get("pace_category")
+
+    pace_months_start = pace_months_vals.get("start")
+    pace_months_end = pace_months_vals.get("end")
+    pace_months_delta = pace_months_vals.get("delta")
+    if pace_months_start is None:
+        pace_months_start = pace_cur.get("months_ahead_behind")
+    if pace_months_end is None:
+        pace_months_end = pace_cur.get("months_ahead_behind")
+    if pace_months_delta is None and isinstance(pace_months_start, (int, float)) and isinstance(pace_months_end, (int, float)):
+        pace_months_delta = round(pace_months_end - pace_months_start, 2)
 
     # Composition
     comp_s = (ps.get("composition") or {}).get("start") or {}
@@ -646,6 +671,38 @@ def _write_period_flat(conn: sqlite3.Connection, snapshot: dict, run_id: str) ->
     mac_a = (ps.get("macro") or {}).get("avg") or {}
     mac_d = (ps.get("macro") or {}).get("delta") or {}
 
+    # Period stats (new)
+    period_stats = ps.get("period_stats") or {}
+    mv_stats_dict = period_stats.get("market_value") or {}
+    nlv_stats_dict = period_stats.get("net_liquidation_value") or {}
+    income_stats_dict = period_stats.get("projected_monthly_income") or {}
+    yield_stats_dict = period_stats.get("yield_pct") or {}
+    ltv_stats_dict = period_stats.get("margin_to_portfolio_pct") or {}
+    margin_balance_stats_dict = period_stats.get("margin_balance") or {}
+    var_95_1d_avg = period_stats.get("var_95_1d_avg")
+    var_90_1d_avg = period_stats.get("var_90_1d_avg")
+    var_99_1d_avg = period_stats.get("var_99_1d_avg")
+    var_95_1w_avg = period_stats.get("var_95_1w_avg")
+    var_95_1m_avg = period_stats.get("var_95_1m_avg")
+    cvar_95_1d_avg = period_stats.get("cvar_95_1d_avg")
+    cvar_90_1d_avg = period_stats.get("cvar_90_1d_avg")
+    cvar_99_1d_avg = period_stats.get("cvar_99_1d_avg")
+    cvar_95_1w_avg = period_stats.get("cvar_95_1w_avg")
+    cvar_95_1m_avg = period_stats.get("cvar_95_1m_avg")
+    margin_interest_dict = period_stats.get("margin_interest") or {}
+
+    # Period drawdown (new)
+    period_dd = ps.get("period_drawdown") or {}
+
+    # Var breach (new)
+    var_breach = ps.get("var_breach") or {}
+
+    # Margin safety (new)
+    margin_safety = ps.get("margin_safety") or {}
+
+    # Macro period stats (new)
+    macro_period_stats = ps.get("macro_period_stats") or {}
+
     now_utc = datetime.now(timezone.utc).isoformat()
 
     # Delete existing row + children before insert (idempotent upsert)
@@ -655,6 +712,13 @@ def _write_period_flat(conn: sqlite3.Connection, snapshot: dict, run_id: str) ->
         "period_interval_attribution",
         "period_intervals",
         "period_holding_changes",
+        "period_macro_stats",
+        "period_activity",
+        "period_contributions",
+        "period_withdrawals",
+        "period_dividend_events",
+        "period_trades",
+        "period_margin_detail",
     ):
         cur.execute(
             f"DELETE FROM {tbl} WHERE period_type=? AND period_start_date=? AND period_end_date=?",
@@ -665,72 +729,8 @@ def _write_period_flat(conn: sqlite3.Connection, snapshot: dict, run_id: str) ->
         (period_type, period_start, period_end, is_rolling),
     )
 
-    cur.execute(
-        """
-        INSERT INTO period_summary (
-            period_type, period_start_date, period_end_date, period_label, is_rolling, snapshot_mode,
-            expected_days, observed_days, coverage_pct, is_complete,
-            mv_start, mv_end, mv_delta,
-            nlv_start, nlv_end, nlv_delta,
-            cost_basis_start, cost_basis_end, cost_basis_delta,
-            unrealized_pct_start, unrealized_pct_end, unrealized_pct_delta,
-            unrealized_pnl_start, unrealized_pnl_end, unrealized_pnl_delta,
-            margin_balance_start, margin_balance_end, margin_balance_delta,
-            ltv_pct_start, ltv_pct_end, ltv_pct_delta,
-            twr_period_pct, pnl_dollar_period, pnl_pct_period,
-            twr_1m_start, twr_1m_end, twr_1m_delta,
-            twr_3m_start, twr_3m_end, twr_3m_delta,
-            twr_6m_start, twr_6m_end, twr_6m_delta,
-            twr_12m_start, twr_12m_end, twr_12m_delta,
-            monthly_income_start, monthly_income_end, monthly_income_delta,
-            forward_12m_start, forward_12m_end, forward_12m_delta,
-            yield_start, yield_end, yield_delta,
-            yield_on_cost_start, yield_on_cost_end, yield_on_cost_delta,
-            dividends_received_period,
-            vol_30d_start, vol_30d_end, vol_30d_delta,
-            vol_90d_start, vol_90d_end, vol_90d_delta,
-            sharpe_1y_start, sharpe_1y_end, sharpe_1y_delta,
-            sortino_1y_start, sortino_1y_end, sortino_1y_delta,
-            sortino_6m_start, sortino_6m_end, sortino_6m_delta,
-            sortino_3m_start, sortino_3m_end, sortino_3m_delta,
-            sortino_1m_start, sortino_1m_end, sortino_1m_delta,
-            calmar_1y_start, calmar_1y_end, calmar_1y_delta,
-            max_dd_1y_start, max_dd_1y_end, max_dd_1y_delta,
-            portfolio_risk_quality_start, portfolio_risk_quality_end,
-            goal_progress_pct_start, goal_progress_pct_end, goal_progress_pct_delta,
-            goal_monthly_start, goal_monthly_end, goal_monthly_delta,
-            goal_months_to_goal_start, goal_months_to_goal_end, goal_months_to_goal_delta,
-            goal_net_progress_pct_start, goal_net_progress_pct_end, goal_net_progress_pct_delta,
-            goal_net_monthly_start, goal_net_monthly_end, goal_net_monthly_delta,
-            goal_pace_category_start, goal_pace_category_end,
-            goal_pace_months_start, goal_pace_months_end, goal_pace_months_delta,
-            holding_count_start, holding_count_end, holding_count_delta,
-            concentration_top5_start, concentration_top5_end, concentration_top5_delta,
-            macro_10y_start, macro_10y_end, macro_10y_avg, macro_10y_delta,
-            macro_2y_start, macro_2y_end, macro_2y_avg, macro_2y_delta,
-            macro_vix_start, macro_vix_end, macro_vix_avg, macro_vix_delta,
-            macro_cpi_start, macro_cpi_end, macro_cpi_avg, macro_cpi_delta,
-            benchmark_symbol, benchmark_period_return_pct,
-            benchmark_twr_1y_start, benchmark_twr_1y_end, benchmark_twr_1y_delta,
-            built_from_run_id, created_at_utc
-        ) VALUES (
-            ?,?,?,?,?,?,
-            ?,?,?,?,
-            ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?,
-            ?,?,?,
-            ?,?,?, ?,?,?, ?,?,?, ?,?,?,
-            ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,
-            ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,
-            ?,?,?, ?,?,?, ?,?,?,
-            ?,?,?, ?,?,?,
-            ?,?, ?,?,?,
-            ?,?,?, ?,?,?,
-            ?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,
-            ?,?, ?,?,?,
-            ?,?
-        )
-        """,
-        (
+    # Build tuple first for debugging
+    values_tuple = (
             period_type, period_start, period_end, period.get("label"), is_rolling, mode,
             period.get("expected_days"), period.get("observed_days"), period.get("coverage_pct"),
             1 if period.get("is_complete") else 0,
@@ -741,7 +741,11 @@ def _write_period_flat(conn: sqlite3.Connection, snapshot: dict, run_id: str) ->
             t_s.get("unrealized_pct"), t_e.get("unrealized_pct"), t_d.get("unrealized_pct"),
             t_s.get("unrealized_pnl"), t_e.get("unrealized_pnl"), t_d.get("unrealized_pnl"),
             t_s.get("margin_loan_balance"), t_e.get("margin_loan_balance"), t_d.get("margin_loan_balance"),
+            margin_balance_stats_dict.get("avg"), margin_balance_stats_dict.get("min"), margin_balance_stats_dict.get("max"),
+            margin_balance_stats_dict.get("std"), margin_balance_stats_dict.get("min_date"), margin_balance_stats_dict.get("max_date"),
             t_s.get("margin_to_portfolio_pct"), t_e.get("margin_to_portfolio_pct"), t_d.get("margin_to_portfolio_pct"),
+            ltv_stats_dict.get("avg"), ltv_stats_dict.get("min"), ltv_stats_dict.get("max"),
+            ltv_stats_dict.get("std"), ltv_stats_dict.get("min_date"), ltv_stats_dict.get("max_date"),
             # Performance
             perf_period.get("twr_period_pct"), perf_period.get("pnl_dollar_period"), perf_period.get("pnl_pct_period"),
             twr_w.get("twr_1m_pct_start"), twr_w.get("twr_1m_pct_end"), twr_w.get("twr_1m_pct_delta"),
@@ -753,7 +757,36 @@ def _write_period_flat(conn: sqlite3.Connection, snapshot: dict, run_id: str) ->
             i_s.get("forward_12m_total"), i_e.get("forward_12m_total"), i_d.get("forward_12m_total"),
             i_s.get("portfolio_current_yield_pct"), i_e.get("portfolio_current_yield_pct"), i_d.get("portfolio_current_yield_pct"),
             i_s.get("portfolio_yield_on_cost_pct"), i_e.get("portfolio_yield_on_cost_pct"), i_d.get("portfolio_yield_on_cost_pct"),
-            None,  # dividends_received_period: not in period_summary dict yet
+            ps.get("income", {}).get("dividends_received_period"),  # dividends_received_period
+            # Period stats: market value
+            mv_stats_dict.get("avg"), mv_stats_dict.get("min"), mv_stats_dict.get("max"), mv_stats_dict.get("std"),
+            mv_stats_dict.get("min_date"), mv_stats_dict.get("max_date"),
+            # Period stats: net liquidation value
+            nlv_stats_dict.get("avg"), nlv_stats_dict.get("min"), nlv_stats_dict.get("max"), nlv_stats_dict.get("std"),
+            nlv_stats_dict.get("min_date"), nlv_stats_dict.get("max_date"),
+            # Period stats: income
+            income_stats_dict.get("avg"), income_stats_dict.get("min"), income_stats_dict.get("max"), income_stats_dict.get("std"),
+            # Period stats: yield
+            yield_stats_dict.get("avg"), yield_stats_dict.get("min"), yield_stats_dict.get("max"), yield_stats_dict.get("std"),
+            # Period stats: margin to portfolio
+            ltv_stats_dict.get("avg"), ltv_stats_dict.get("min"), ltv_stats_dict.get("max"), ltv_stats_dict.get("std"),
+            # Period stats: VaR
+            var_95_1d_avg, var_90_1d_avg, var_99_1d_avg, var_95_1w_avg, var_95_1m_avg,
+            cvar_95_1d_avg, cvar_90_1d_avg, cvar_99_1d_avg, cvar_95_1w_avg, cvar_95_1m_avg,
+            # Period drawdown
+            period_dd.get("period_max_drawdown_pct"), period_dd.get("period_max_drawdown_date"),
+            period_dd.get("period_recovery_date"), period_dd.get("period_days_in_drawdown"),
+            period_dd.get("period_drawdown_count"),
+            # Var breach
+            var_breach.get("days_exceeding_var_95"),
+            var_breach.get("worst_day_return_pct"), var_breach.get("worst_day_date"),
+            var_breach.get("best_day_return_pct"), var_breach.get("best_day_date"),
+            # Margin safety metrics
+            margin_safety.get("min_buffer_to_call_pct"), margin_safety.get("min_buffer_date"),
+            margin_safety.get("days_below_50pct_buffer"), margin_safety.get("days_below_40pct_buffer"),
+            margin_safety.get("margin_call_events"),
+            # Margin interest
+            margin_interest_dict.get("start_apr_pct"), margin_interest_dict.get("end_apr_pct"), margin_interest_dict.get("avg_apr_pct"),
             # Risk
             r_s.get("vol_30d_pct"), r_e.get("vol_30d_pct"), r_d.get("vol_30d_pct"),
             r_s.get("vol_90d_pct"), r_e.get("vol_90d_pct"), r_d.get("vol_90d_pct"),
@@ -771,12 +804,15 @@ def _write_period_flat(conn: sqlite3.Connection, snapshot: dict, run_id: str) ->
             gp_s.get("months_to_goal"), gp_e.get("months_to_goal"), gp_d.get("months_to_goal"),
             gpn_s.get("progress_pct"), gpn_e.get("progress_pct"), gpn_d.get("progress_pct"),
             gpn_s.get("current_projected_monthly_net"), gpn_e.get("current_projected_monthly_net"), gpn_d.get("current_projected_monthly_net"),
-            # Goal pace: only end-of-period pace is meaningful
-            pace_cur.get("pace_category"), pace_cur.get("pace_category"),
-            pace_cur.get("months_ahead_behind"), pace_cur.get("months_ahead_behind"), None,
+            # Goal pace
+            pace_category_start, pace_category_end,
+            pace_months_start, pace_months_end, pace_months_delta,
+            pace_tier_vals.get("start"), pace_tier_vals.get("end"), pace_tier_vals.get("delta"),
             # Composition
             comp_s.get("holding_count"), comp_e.get("holding_count"), comp_d.get("holding_count"),
+            comp_s.get("concentration_top3_pct"), comp_e.get("concentration_top3_pct"), comp_d.get("concentration_top3_pct"),
             comp_s.get("concentration_top5_pct"), comp_e.get("concentration_top5_pct"), comp_d.get("concentration_top5_pct"),
+            comp_s.get("concentration_herfindahl"), comp_e.get("concentration_herfindahl"), comp_d.get("concentration_herfindahl"),
             # Macro
             mac_s.get("ten_year_yield"), mac_e.get("ten_year_yield"), mac_a.get("ten_year_yield"), mac_d.get("ten_year_yield"),
             mac_s.get("two_year_yield"), mac_e.get("two_year_yield"), mac_a.get("two_year_yield"), mac_d.get("two_year_yield"),
@@ -787,17 +823,137 @@ def _write_period_flat(conn: sqlite3.Connection, snapshot: dict, run_id: str) ->
             bench.get("twr_1y_pct_start"), bench.get("twr_1y_pct_end"), bench.get("twr_1y_pct_delta"),
             # Meta
             run_id, now_utc,
+    )
+
+    cur.execute(
+            """
+            INSERT INTO period_summary (
+                period_type, period_start_date, period_end_date, period_label, is_rolling, snapshot_mode,
+                expected_days, observed_days, coverage_pct, is_complete,
+                mv_start, mv_end, mv_delta,
+                nlv_start, nlv_end, nlv_delta,
+                cost_basis_start, cost_basis_end, cost_basis_delta,
+                unrealized_pct_start, unrealized_pct_end, unrealized_pct_delta,
+                unrealized_pnl_start, unrealized_pnl_end, unrealized_pnl_delta,
+                margin_balance_start, margin_balance_end, margin_balance_delta,
+                margin_balance_avg, margin_balance_min, margin_balance_max, margin_balance_std, margin_balance_min_date, margin_balance_max_date,
+                ltv_pct_start, ltv_pct_end, ltv_pct_delta,
+                ltv_pct_avg, ltv_pct_min, ltv_pct_max, ltv_pct_std, ltv_pct_min_date, ltv_pct_max_date,
+                twr_period_pct, pnl_dollar_period, pnl_pct_period,
+                twr_1m_start, twr_1m_end, twr_1m_delta,
+                twr_3m_start, twr_3m_end, twr_3m_delta,
+                twr_6m_start, twr_6m_end, twr_6m_delta,
+                twr_12m_start, twr_12m_end, twr_12m_delta,
+                monthly_income_start, monthly_income_end, monthly_income_delta,
+                forward_12m_start, forward_12m_end, forward_12m_delta,
+                yield_start, yield_end, yield_delta,
+                yield_on_cost_start, yield_on_cost_end, yield_on_cost_delta,
+                dividends_received_period,
+                mv_avg, mv_min, mv_max, mv_std, mv_min_date, mv_max_date,
+                nlv_avg, nlv_min, nlv_max, nlv_std, nlv_min_date, nlv_max_date,
+                projected_monthly_avg, projected_monthly_min, projected_monthly_max, projected_monthly_std,
+                yield_pct_avg, yield_pct_min, yield_pct_max, yield_pct_std,
+                margin_to_portfolio_pct_avg, margin_to_portfolio_pct_min, margin_to_portfolio_pct_max, margin_to_portfolio_pct_std,
+                var_95_1d_avg, var_90_1d_avg, var_99_1d_avg, var_95_1w_avg, var_95_1m_avg,
+                cvar_95_1d_avg, cvar_90_1d_avg, cvar_99_1d_avg, cvar_95_1w_avg, cvar_95_1m_avg,
+                period_max_drawdown_pct, period_max_drawdown_date, period_recovery_date, period_days_in_drawdown, period_drawdown_count,
+                days_exceeding_var_95, worst_day_return_pct, worst_day_date, best_day_return_pct, best_day_date,
+                margin_min_buffer_to_call_pct, margin_min_buffer_date, margin_days_below_50pct_buffer, margin_days_below_40pct_buffer, margin_call_events,
+                margin_apr_start, margin_apr_end, margin_apr_avg,
+                vol_30d_start, vol_30d_end, vol_30d_delta,
+                vol_90d_start, vol_90d_end, vol_90d_delta,
+                sharpe_1y_start, sharpe_1y_end, sharpe_1y_delta,
+                sortino_1y_start, sortino_1y_end, sortino_1y_delta,
+                sortino_6m_start, sortino_6m_end, sortino_6m_delta,
+                sortino_3m_start, sortino_3m_end, sortino_3m_delta,
+                sortino_1m_start, sortino_1m_end, sortino_1m_delta,
+                calmar_1y_start, calmar_1y_end, calmar_1y_delta,
+                max_dd_1y_start, max_dd_1y_end, max_dd_1y_delta,
+                portfolio_risk_quality_start, portfolio_risk_quality_end,
+                goal_progress_pct_start, goal_progress_pct_end, goal_progress_pct_delta,
+                goal_monthly_start, goal_monthly_end, goal_monthly_delta,
+                goal_months_to_goal_start, goal_months_to_goal_end, goal_months_to_goal_delta,
+                goal_net_progress_pct_start, goal_net_progress_pct_end, goal_net_progress_pct_delta,
+                goal_net_monthly_start, goal_net_monthly_end, goal_net_monthly_delta,
+                goal_pace_category_start, goal_pace_category_end,
+                goal_pace_months_start, goal_pace_months_end, goal_pace_months_delta,
+                goal_pace_tier_pace_pct_start, goal_pace_tier_pace_pct_end, goal_pace_tier_pace_pct_delta,
+                holding_count_start, holding_count_end, holding_count_delta,
+                concentration_top3_start, concentration_top3_end, concentration_top3_delta,
+                concentration_top5_start, concentration_top5_end, concentration_top5_delta,
+                concentration_herfindahl_start, concentration_herfindahl_end, concentration_herfindahl_delta,
+                macro_10y_start, macro_10y_end, macro_10y_avg, macro_10y_delta,
+                macro_2y_start, macro_2y_end, macro_2y_avg, macro_2y_delta,
+                macro_vix_start, macro_vix_end, macro_vix_avg, macro_vix_delta,
+                macro_cpi_start, macro_cpi_end, macro_cpi_avg, macro_cpi_delta,
+                benchmark_symbol, benchmark_period_return_pct,
+                benchmark_twr_1y_start, benchmark_twr_1y_end, benchmark_twr_1y_delta,
+                built_from_run_id, created_at_utc
+            ) VALUES (
+                ?,?,?,?,?,?,?,?,?,?,
+                ?,?,?,?,?,?,?,?,?,?,
+                ?,?,?,?,?,?,?,?,?,?,
+                ?,?,?,?,?,?,?,?,?,?,
+                ?,?,?,?,?,?,?,?,?,?,
+                ?,?,?,?,?,?,?,?,?,?,
+                ?,?,?,?,?,?,?,?,?,?,
+                ?,?,?,?,?,?,?,?,?,?,
+                ?,?,?,?,?,?,?,?,?,?,
+                ?,?,?,?,?,?,?,?,?,?,
+                ?,?,?,?,?,?,?,?,?,?,
+                ?,?,?,?,?,?,?,?,?,?,
+                ?,?,?,?,?,?,?,?,?,?,
+                ?,?,?,?,?,?,?,?,?,?,
+                ?,?,?,?,?,?,?,?,?,?,
+                ?,?,?,?,?,?,?,?,?,?,
+                ?,?,?,?,?,?,?,?,?,?,
+                ?,?,?,?,?,?,?,?,?,?,
+                ?,?,?,?,?,?,?,?,?,?,
+                ?,?,?,?,?,?,?,?,?,?,
+                ?,?,?,?,?,?,?,?,?,?
+            )
+            """,
+            values_tuple,
+    )
+
+    # Persist risk period averages that are stored in period_summary but not part of
+    # the flat insert column list to keep backward-compatible SQL manageable.
+    cur.execute(
+        """UPDATE period_summary
+           SET vol_30d_avg=?, vol_90d_avg=?, sharpe_1y_avg=?, sortino_1y_avg=?, calmar_1y_avg=?
+           WHERE period_type=? AND period_start_date=? AND period_end_date=? AND is_rolling=?""",
+        (
+            (risk_stats_dict.get("vol_30d_pct") or {}).get("avg"),
+            (risk_stats_dict.get("vol_90d_pct") or {}).get("avg"),
+            (risk_stats_dict.get("sharpe_1y") or {}).get("avg"),
+            (risk_stats_dict.get("sortino_1y") or {}).get("avg"),
+            (risk_stats_dict.get("calmar_1y") or {}).get("avg"),
+            period_type,
+            period_start,
+            period_end,
+            is_rolling,
         ),
     )
 
     # Child: period_risk_stats (min/avg/max)
-    risk_stats = (ps.get("risk") or {}).get("stats") or {}
+    risk_stats = risk_stats_dict
     for metric, vals in risk_stats.items():
         if isinstance(vals, dict):
             cur.execute(
                 """INSERT INTO period_risk_stats (period_type, period_start_date, period_end_date, metric, avg_val, min_val, max_val)
                    VALUES (?,?,?,?,?,?,?)""",
                 (period_type, period_start, period_end, metric, vals.get("avg"), vals.get("min"), vals.get("max")),
+            )
+
+    # Child: period_macro_stats (avg/min/max/std with dates)
+    for metric, vals in macro_period_stats.items():
+        if isinstance(vals, dict):
+            cur.execute(
+                """INSERT INTO period_macro_stats (period_type, period_start_date, period_end_date, metric, avg_val, min_val, max_val, std_val, min_date, max_date)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (period_type, period_start, period_end, metric,
+                 vals.get("avg"), vals.get("min"), vals.get("max"), vals.get("std"),
+                 vals.get("min_date"), vals.get("max_date")),
             )
 
     # Child: period_intervals — intervals are flat dicts with interval_label, start_date,
@@ -954,15 +1110,207 @@ def _write_period_flat(conn: sqlite3.Connection, snapshot: dict, run_id: str) ->
             cur.execute(
                 """INSERT OR REPLACE INTO period_holding_changes (
                     period_type, period_start_date, period_end_date, symbol, change_type,
-                    weight_start_pct, weight_end_pct, weight_delta_pct,
-                    pnl_pct_period, pnl_dollar_period
-                ) VALUES (?,?,?,?,?, ?,?,?, ?,?)""",
+                    weight_start_pct, weight_end_pct, weight_delta_pct, avg_weight_pct,
+                    pnl_pct_period, pnl_dollar_period, contribution_to_portfolio_pct,
+                    start_twr_12m_pct, end_twr_12m_pct,
+                    start_shares, end_shares, shares_delta, shares_delta_pct,
+                    start_market_value, end_market_value, market_value_delta, market_value_delta_pct,
+                    dividends_received, dividend_events_count,
+                    start_yield_pct, end_yield_pct,
+                    start_projected_monthly, end_projected_monthly,
+                    avg_vol_30d_pct, period_max_drawdown_pct,
+                    worst_day_pct, worst_day_date, best_day_pct, best_day_date
+                ) VALUES (?,?,?,?,?, ?,?,?,?, ?,?,?, ?,?, ?,?,?,?, ?,?,?,?, ?,?, ?,?, ?,?, ?,?, ?,?,?,?)""",
                 (
                     period_type, period_start, period_end, sym, change_type,
                     h.get("weight_start_pct") or h.get("weight_pct_start"),
                     h.get("weight_end_pct") or h.get("weight_pct_end"),
                     h.get("weight_delta_pct") or h.get("weight_pct_delta"),
+                    h.get("avg_weight_pct"),
                     h.get("pnl_pct_period") or h.get("pnl_pct"),
                     h.get("pnl_dollar_period") or h.get("pnl_dollar"),
+                    h.get("contribution_to_portfolio_pct"),
+                    h.get("start_twr_12m_pct"),
+                    h.get("end_twr_12m_pct"),
+                    h.get("start_shares"),
+                    h.get("end_shares"),
+                    h.get("shares_delta"),
+                    h.get("shares_delta_pct"),
+                    h.get("start_market_value"),
+                    h.get("end_market_value"),
+                    h.get("market_value_delta"),
+                    h.get("market_value_delta_pct"),
+                    h.get("dividends_received"),
+                    h.get("dividend_events_count"),
+                    h.get("start_yield_pct"),
+                    h.get("end_yield_pct"),
+                    h.get("start_projected_monthly"),
+                    h.get("end_projected_monthly"),
+                    h.get("avg_vol_30d_pct"),
+                    h.get("period_max_drawdown_pct"),
+                    h.get("worst_day_pct"),
+                    h.get("worst_day_date"),
+                    h.get("best_day_pct"),
+                    h.get("best_day_date"),
                 ),
             )
+
+    # Child: Activity tables
+    activity = ps.get("activity") or {}
+
+    # Delete existing activity data for this period first
+    for tbl in ("period_activity", "period_contributions", "period_withdrawals",
+                "period_dividend_events", "period_trades", "period_margin_detail", "period_position_lists"):
+        cur.execute(
+            f"DELETE FROM {tbl} WHERE period_type=? AND period_start_date=? AND period_end_date=?",
+            (period_type, period_start, period_end),
+        )
+
+    # period_activity - Main activity summary
+    contributions = activity.get("contributions") or {}
+    withdrawals = activity.get("withdrawals") or {}
+    dividends = activity.get("dividends") or {}
+    interest = activity.get("interest") or {}
+    trades = activity.get("trades") or {}
+    margin = activity.get("margin") or {}
+    positions = activity.get("positions") or {}
+
+    cur.execute(
+        """INSERT INTO period_activity (
+            period_type, period_start_date, period_end_date,
+            contributions_total, contributions_count,
+            withdrawals_total, withdrawals_count,
+            dividends_total_received, dividends_count,
+            interest_total_paid, interest_avg_daily_balance, interest_avg_rate_pct, interest_annualized,
+            trades_total_count, trades_buy_count, trades_sell_count,
+            margin_borrowed, margin_repaid, margin_net_change,
+            positions_added_count, positions_removed_count, positions_increased_count, positions_decreased_count
+        ) VALUES (?,?,?, ?,?, ?,?, ?,?, ?,?,?,?, ?,?,?, ?,?,?, ?,?,?,?)""",
+        (
+            period_type, period_start, period_end,
+            contributions.get("total"), contributions.get("count"),
+            withdrawals.get("total"), withdrawals.get("count"),
+            dividends.get("total_received"), dividends.get("count"),
+            interest.get("total_paid"), interest.get("avg_daily_balance"), interest.get("avg_rate_pct"), interest.get("annualized"),
+            trades.get("total_count"), trades.get("buy_count"), trades.get("sell_count"),
+            margin.get("borrowed"), margin.get("repaid"), margin.get("net_change"),
+            len(positions.get("added") or []),
+            len(positions.get("removed") or []),
+            len(positions.get("symbols_increased") or []),
+            len(positions.get("symbols_decreased") or []),
+        ),
+    )
+
+    # period_position_lists - Store position symbols in normalized table
+    for symbol in positions.get("added") or []:
+        cur.execute(
+            """INSERT INTO period_position_lists (
+                period_type, period_start_date, period_end_date, list_type, symbol
+            ) VALUES (?,?,?,?,?)""",
+            (period_type, period_start, period_end, "added", symbol),
+        )
+    for symbol in positions.get("removed") or []:
+        cur.execute(
+            """INSERT INTO period_position_lists (
+                period_type, period_start_date, period_end_date, list_type, symbol
+            ) VALUES (?,?,?,?,?)""",
+            (period_type, period_start, period_end, "removed", symbol),
+        )
+    for symbol in positions.get("symbols_increased") or []:
+        cur.execute(
+            """INSERT INTO period_position_lists (
+                period_type, period_start_date, period_end_date, list_type, symbol
+            ) VALUES (?,?,?,?,?)""",
+            (period_type, period_start, period_end, "increased", symbol),
+        )
+    for symbol in positions.get("symbols_decreased") or []:
+        cur.execute(
+            """INSERT INTO period_position_lists (
+                period_type, period_start_date, period_end_date, list_type, symbol
+            ) VALUES (?,?,?,?,?)""",
+            (period_type, period_start, period_end, "decreased", symbol),
+        )
+
+    # period_contributions - Aggregate by date and account
+    contrib_agg = {}
+    for contrib in contributions.get("details") or []:
+        key = (contrib.get("date"), contrib.get("account_id"))
+        if key not in contrib_agg:
+            contrib_agg[key] = 0
+        contrib_agg[key] += contrib.get("amount") or 0
+
+    for (date, account_id), total_amount in contrib_agg.items():
+        cur.execute(
+            """INSERT INTO period_contributions (
+                period_type, period_start_date, period_end_date,
+                contribution_date, amount, account_id
+            ) VALUES (?,?,?,?,?,?)""",
+            (period_type, period_start, period_end, date, total_amount, account_id),
+        )
+
+    # period_withdrawals - Aggregate by date and account
+    withdrawal_agg = {}
+    for withdrawal in withdrawals.get("details") or []:
+        key = (withdrawal.get("date"), withdrawal.get("account_id"))
+        if key not in withdrawal_agg:
+            withdrawal_agg[key] = 0
+        withdrawal_agg[key] += withdrawal.get("amount") or 0
+
+    for (date, account_id), total_amount in withdrawal_agg.items():
+        cur.execute(
+            """INSERT INTO period_withdrawals (
+                period_type, period_start_date, period_end_date,
+                withdrawal_date, amount, account_id
+            ) VALUES (?,?,?,?,?,?)""",
+            (period_type, period_start, period_end, date, total_amount, account_id),
+        )
+
+    # period_dividend_events - Dividend events
+    for div_event in dividends.get("events") or []:
+        if not div_event.get("symbol"):
+            continue
+        cur.execute(
+            """INSERT INTO period_dividend_events (
+                period_type, period_start_date, period_end_date,
+                symbol, ex_date, pay_date, amount
+            ) VALUES (?,?,?, ?,?,?,?)""",
+            (
+                period_type, period_start, period_end,
+                div_event.get("symbol"),
+                div_event.get("ex_date"),
+                div_event.get("pay_date"),
+                div_event.get("amount"),
+            ),
+        )
+
+    # period_trades - Trades by symbol
+    for symbol, trade_counts in (trades.get("by_symbol") or {}).items():
+        if not symbol:
+            continue
+        cur.execute(
+            """INSERT INTO period_trades (
+                period_type, period_start_date, period_end_date,
+                symbol, buy_count, sell_count
+            ) VALUES (?,?,?, ?,?,?)""",
+            (
+                period_type, period_start, period_end,
+                symbol,
+                trade_counts.get("buy_count") or 0,
+                trade_counts.get("sell_count") or 0,
+            ),
+        )
+
+    # period_margin_detail - Margin activity
+    if margin.get("borrowed") is not None or margin.get("repaid") is not None:
+        cur.execute(
+            """INSERT INTO period_margin_detail (
+                period_type, period_start_date, period_end_date,
+                borrowed, repaid, net_change
+            ) VALUES (?,?,?, ?,?,?)""",
+            (
+                period_type, period_start, period_end,
+                margin.get("borrowed"),
+                margin.get("repaid"),
+                margin.get("net_change"),
+            ),
+        )

@@ -19,8 +19,15 @@ from .snapshots import (
     _build_goal_progress,
     _build_goal_progress_net,
     _detect_likely_tier,
+    _dividend_reliability_metrics,
     _dividend_window,
+    _frequency_from_ex_dates,
+    _frequency_from_recent_ex_dates,
+    _build_pay_history,
+    _build_position_index,
+    _load_first_acquired_dates,
     _load_dividend_transactions,
+    _load_provider_dividends,
     _month_start,
     _quarter_start,
     _year_start,
@@ -129,14 +136,112 @@ def _enrich_holding_dividends_from_db(
             continue
         events = by_sym.get(sym, [])
         if inc.get("dividends_30d") is None:
-            tot = round(sum(e["amount"] for e in events if e["date"] >= cut_30d), 2)
+            tot = round(sum(e["amount"] for e in events if e["date"] >= cut_30d and isinstance(e.get("amount"), (int, float))), 2)
             inc["dividends_30d"] = tot if tot != 0 else 0.0
         if inc.get("dividends_qtd") is None:
-            tot = round(sum(e["amount"] for e in events if e["date"] >= cut_qtd), 2)
+            tot = round(sum(e["amount"] for e in events if e["date"] >= cut_qtd and isinstance(e.get("amount"), (int, float))), 2)
             inc["dividends_qtd"] = tot if tot != 0 else 0.0
         if inc.get("dividends_ytd") is None:
-            tot = round(sum(e["amount"] for e in events if e["date"] >= cut_ytd), 2)
+            tot = round(sum(e["amount"] for e in events if e["date"] >= cut_ytd and isinstance(e.get("amount"), (int, float))), 2)
             inc["dividends_ytd"] = tot if tot != 0 else 0.0
+
+
+def _enrich_holding_reliability_from_db(
+    conn: sqlite3.Connection,
+    as_of_str: str,
+    holdings_list: list[dict],
+) -> None:
+    """Backfill holdings[].reliability from source dividend history when flat values are stale."""
+    as_of_dt = _parse_date(as_of_str)
+    if not as_of_dt or not holdings_list:
+        return
+
+    symbols_to_fill: set[str] = set()
+    for h in holdings_list:
+        sym = h.get("symbol")
+        if not sym:
+            continue
+        rel = h.get("reliability") if isinstance(h.get("reliability"), dict) else {}
+        score = rel.get("consistency_score")
+        trend = rel.get("trend_6m")
+        if trend is None or not isinstance(score, (int, float)) or score <= 0:
+            symbols_to_fill.add(str(sym).upper())
+    if not symbols_to_fill:
+        return
+
+    div_tx = _load_dividend_transactions(conn)
+    provider_divs = _load_provider_dividends(conn)
+    if not provider_divs:
+        return
+    pay_history = _build_pay_history(div_tx)
+    first_acquired = _load_first_acquired_dates(conn)
+    position_index = _build_position_index(conn, symbols_to_fill)
+
+    for h in holdings_list:
+        sym_raw = h.get("symbol")
+        if not sym_raw:
+            continue
+        sym = str(sym_raw).upper()
+        if sym not in symbols_to_fill:
+            continue
+        provider_events = provider_divs.get(sym, [])
+        ex_dates = sorted(
+            ev.get("ex_date")
+            for ev in provider_events
+            if ev.get("ex_date") and ev.get("ex_date") <= as_of_dt
+        )
+        expected_frequency = (
+            _frequency_from_recent_ex_dates(ex_dates, recent=6)
+            or _frequency_from_ex_dates(ex_dates)
+        )
+        try:
+            rel = _dividend_reliability_metrics(
+                sym,
+                div_tx,
+                provider_divs,
+                pay_history,
+                expected_frequency,
+                as_of_dt,
+                first_acquired.get(sym),
+                position_index,
+            )
+        except Exception:
+            continue
+
+        rel_out = h.get("reliability")
+        if not isinstance(rel_out, dict):
+            rel_out = {}
+            h["reliability"] = rel_out
+        rel_out["consistency_score"] = rel.get("consistency_score")
+        rel_out["trend_6m"] = rel.get("trend_6m") or rel.get("dividend_trend_6m")
+        rel_out["missed_payments_12m"] = rel.get("missed_payments_12m")
+
+
+def _daily_reliability_score_guide() -> dict:
+    return {
+        "version": "1.0",
+        "consistency_score": {
+            "range": [0.0, 1.0],
+            "method": (
+                "Weighted blend of payout-amount stability, payment hit-rate, "
+                "and payment-timing consistency, with adjustments for 6m trend and dividend cuts."
+            ),
+            "bands": [
+                {"label": "excellent", "min": 0.85, "max": 1.0, "meaning": "very stable payouts and reliable payment behavior"},
+                {"label": "good", "min": 0.7, "max": 0.849, "meaning": "mostly stable with minor fluctuation"},
+                {"label": "watch", "min": 0.5, "max": 0.699, "meaning": "noticeable variability or weaker payment reliability"},
+                {"label": "weak", "min": 0.0, "max": 0.499, "meaning": "high fluctuation, missed payments, or repeated cuts"},
+            ],
+        },
+        "trend_6m": {
+            "values": ["growing", "stable", "declining", "insufficient_history"],
+            "notes": "Calculated from trailing 6-month per-share dividend event trend.",
+        },
+        "missed_payments_12m": {
+            "definition": "Expected provider payments due in last 12 months that were not observed as received.",
+            "better_is": "lower",
+        },
+    }
 
 
 def _derive_pace_nulls(pace: dict, r: dict, conn: sqlite3.Connection) -> None:
@@ -221,6 +326,7 @@ def assemble_daily_snapshot(conn: sqlite3.Connection, as_of_date: str | None = N
         "price_data_as_of_utc": prices_utc,
     }
     holdings_list = [_row_to_holding_legacy(h) for h in holdings_rows]
+    _enrich_holding_reliability_from_db(conn, as_of, holdings_list)
     # Use assembled holdings count so validation (totals.holdings_count == len(holdings)) passes
     holdings_count = len(holdings_list)
     portfolio = {
@@ -545,6 +651,7 @@ def assemble_daily_snapshot(conn: sqlite3.Connection, as_of_date: str | None = N
         "as_of_date_local": as_of,
         "created_at_utc": r.get("created_at_utc"),
     }
+    out["reliability_score_guide"] = _daily_reliability_score_guide()
     if slim:
         out = slim_snapshot(out)
     return out
@@ -582,7 +689,8 @@ def _attribution_by_window(attr_rows: list) -> dict:
             out[w] = {}
         if "window" not in out[w]:
             per_sym = [r for s, r in out[w].items() if s != "window" and isinstance(r, dict)]
-            contrib_sum = sum((r.get("contribution_pct") or 0) for r in per_sym) if per_sym else None
+            # Type safety: only sum numeric contribution_pct values
+            contrib_sum = sum((r.get("contribution_pct") or 0) for r in per_sym if isinstance(r.get("contribution_pct"), (int, float))) if per_sym else None
             out[w]["window"] = {
                 "contribution_pct": contrib_sum,
                 "weight_avg_pct": 100.0 if contrib_sum is not None else None,
@@ -1104,6 +1212,161 @@ def assemble_period_snapshot(
     except sqlite3.OperationalError:
         pass
 
+    # ── Activity section (NEW) ───────────────────────────────────────────
+    activity_block = None
+    try:
+        activity_row = conn.execute(
+            """SELECT * FROM period_activity
+               WHERE period_type=? AND period_start_date=? AND period_end_date=?""",
+            (period_type, period_start_date, period_end_date),
+        ).fetchone()
+
+        if activity_row:
+            activity_row = dict(activity_row)
+
+            # Contributions
+            contribution_rows = conn.execute(
+                """SELECT contribution_date, amount FROM period_contributions
+                   WHERE period_type=? AND period_start_date=? AND period_end_date=?
+                   ORDER BY contribution_date""",
+                (period_type, period_start_date, period_end_date),
+            ).fetchall()
+
+            # Withdrawals
+            withdrawal_rows = conn.execute(
+                """SELECT withdrawal_date, amount FROM period_withdrawals
+                   WHERE period_type=? AND period_start_date=? AND period_end_date=?
+                   ORDER BY withdrawal_date""",
+                (period_type, period_start_date, period_end_date),
+            ).fetchall()
+
+            # Dividends
+            dividend_rows = conn.execute(
+                """SELECT symbol, ex_date, pay_date, amount FROM period_dividend_events
+                   WHERE period_type=? AND period_start_date=? AND period_end_date=?
+                   ORDER BY pay_date""",
+                (period_type, period_start_date, period_end_date),
+            ).fetchall()
+
+            # Trades
+            trade_rows = conn.execute(
+                """SELECT symbol, buy_count, sell_count FROM period_trades
+                   WHERE period_type=? AND period_start_date=? AND period_end_date=?""",
+                (period_type, period_start_date, period_end_date),
+            ).fetchall()
+
+            # Position lists
+            position_rows = conn.execute(
+                """SELECT list_type, symbol FROM period_position_lists
+                   WHERE period_type=? AND period_start_date=? AND period_end_date=?""",
+                (period_type, period_start_date, period_end_date),
+            ).fetchall()
+
+            # Build by_symbol dicts
+            dividends_by_symbol = {}
+            for row in dividend_rows:
+                symbol = row[0]
+                amount = row[3]
+                dividends_by_symbol[symbol] = dividends_by_symbol.get(symbol, 0) + amount
+
+            trades_by_symbol = {}
+            for row in trade_rows:
+                symbol = row[0]
+                trades_by_symbol[symbol] = {
+                    "buy_count": row[1] or 0,
+                    "sell_count": row[2] or 0
+                }
+
+            positions_added = []
+            positions_removed = []
+            positions_increased = []
+            positions_decreased = []
+            for list_type, symbol in position_rows:
+                if not symbol:
+                    continue
+                if list_type == "added":
+                    positions_added.append(symbol)
+                elif list_type == "removed":
+                    positions_removed.append(symbol)
+                elif list_type == "increased":
+                    positions_increased.append(symbol)
+                elif list_type == "decreased":
+                    positions_decreased.append(symbol)
+
+            activity_block = {
+                "contributions": {
+                    "total": activity_row.get("contributions_total") or 0,
+                    "count": activity_row.get("contributions_count") or 0,
+                    "dates": [row[0] for row in contribution_rows]
+                },
+                "withdrawals": {
+                    "total": activity_row.get("withdrawals_total") or 0,
+                    "count": activity_row.get("withdrawals_count") or 0,
+                    "dates": [row[0] for row in withdrawal_rows]
+                },
+                "dividends": {
+                    "total_received": activity_row.get("dividends_total_received") or 0,
+                    "count": activity_row.get("dividends_count") or 0,
+                    "by_symbol": dividends_by_symbol,
+                    "events": [
+                        {
+                            "symbol": row[0],
+                            "ex_date": row[1],
+                            "pay_date": row[2],
+                            "amount": row[3]
+                        }
+                        for row in dividend_rows
+                    ]
+                },
+                "interest": {
+                    "total_paid": activity_row.get("interest_total_paid") or 0,
+                    "avg_daily_balance": activity_row.get("interest_avg_daily_balance") or 0,
+                    "avg_rate_pct": activity_row.get("interest_avg_rate_pct") or 0,
+                    "annualized": activity_row.get("interest_annualized") or 0
+                },
+                "trades": {
+                    "total_count": activity_row.get("trades_total_count") or 0,
+                    "buy_count": activity_row.get("trades_buy_count") or 0,
+                    "sell_count": activity_row.get("trades_sell_count") or 0,
+                    "by_symbol": trades_by_symbol
+                },
+                "positions": {
+                    "added": sorted(positions_added),
+                    "removed": sorted(positions_removed),
+                    "symbols_increased": sorted(positions_increased),
+                    "symbols_decreased": sorted(positions_decreased)
+                },
+                "margin": {
+                    "borrowed": activity_row.get("margin_borrowed") or 0,
+                    "repaid": activity_row.get("margin_repaid") or 0,
+                    "net_change": activity_row.get("margin_net_change") or 0
+                }
+            }
+    except sqlite3.OperationalError:
+        pass
+
+    # ── Macro period stats (NEW) ─────────────────────────────────────────
+    macro_period_stats = {}
+    try:
+        macro_stat_rows = conn.execute(
+            """SELECT metric, avg_val, min_val, max_val, std_val, min_date, max_date FROM period_macro_stats
+               WHERE period_type=? AND period_start_date=? AND period_end_date=?""",
+            (period_type, period_start_date, period_end_date),
+        ).fetchall()
+
+        for row in macro_stat_rows:
+            metric = row[0]
+            macro_period_stats[metric] = {
+                "avg": row[1],
+                "min": row[2],
+                "max": row[3],
+                "std": row[4],
+                "min_date": row[5],
+                "max_date": row[6]
+            }
+    except sqlite3.OperationalError:
+        pass
+
     # ── Assemble (matches build_period_snapshot shape) ───────────────────
     return {
         "summary_id": f"{snapshot_type}_{period_end_date}",
@@ -1231,16 +1494,944 @@ def assemble_period_snapshot(
                 "end": {"ten_year_yield": r.get("macro_10y_end"), "two_year_yield": r.get("macro_2y_end"), "vix": r.get("macro_vix_end"), "cpi_yoy": r.get("macro_cpi_end")},
                 "avg": {"ten_year_yield": r.get("macro_10y_avg"), "two_year_yield": r.get("macro_2y_avg"), "vix": r.get("macro_vix_avg"), "cpi_yoy": r.get("macro_cpi_avg")},
                 "delta": {"ten_year_yield": r.get("macro_10y_delta"), "two_year_yield": r.get("macro_2y_delta"), "vix": r.get("macro_vix_delta"), "cpi_yoy": r.get("macro_cpi_delta")},
+                "period_stats": macro_period_stats if macro_period_stats else None,
+            },
+            "period_stats": {
+                "market_value": {
+                    "avg": r.get("mv_avg"),
+                    "min": r.get("mv_min"),
+                    "max": r.get("mv_max"),
+                    "std": r.get("mv_std"),
+                    "min_date": r.get("mv_min_date"),
+                    "max_date": r.get("mv_max_date"),
+                },
+                "net_liquidation_value": {
+                    "avg": r.get("nlv_avg"),
+                    "min": r.get("nlv_min"),
+                    "max": r.get("nlv_max"),
+                    "std": r.get("nlv_std"),
+                    "min_date": r.get("nlv_min_date"),
+                    "max_date": r.get("nlv_max_date"),
+                },
+                "margin_to_portfolio_pct": {
+                    "avg": r.get("margin_to_portfolio_pct_avg"),
+                    "min": r.get("margin_to_portfolio_pct_min"),
+                    "max": r.get("margin_to_portfolio_pct_max"),
+                    "std": r.get("margin_to_portfolio_pct_std"),
+                },
+                "projected_monthly_income": {
+                    "avg": r.get("projected_monthly_avg"),
+                    "min": r.get("projected_monthly_min"),
+                    "max": r.get("projected_monthly_max"),
+                },
+                "yield_pct": {
+                    "avg": r.get("yield_pct_avg"),
+                    "min": r.get("yield_pct_min"),
+                    "max": r.get("yield_pct_max"),
+                },
+            },
+            "period_drawdown": {
+                "period_max_drawdown_pct": r.get("period_max_drawdown_pct"),
+                "period_max_drawdown_date": r.get("period_max_drawdown_date"),
+                "period_recovery_date": r.get("period_recovery_date"),
+                "period_days_in_drawdown": r.get("period_days_in_drawdown"),
+                "period_drawdown_count": r.get("period_drawdown_count"),
+            },
+            "period_var": {
+                "avg_var_95_1d_pct": r.get("avg_var_95_1d_pct"),
+                "days_exceeding_var_95": r.get("days_exceeding_var_95"),
+                "worst_day_return_pct": r.get("worst_day_return_pct"),
+                "worst_day_date": r.get("worst_day_date"),
+                "best_day_return_pct": r.get("best_day_return_pct"),
+                "best_day_date": r.get("best_day_date"),
+            },
+            "margin_safety": {
+                "min_buffer_to_call_pct": r.get("min_buffer_to_call_pct"),
+                "min_buffer_date": r.get("min_buffer_date"),
+                "days_below_50pct_buffer": r.get("days_below_50pct_buffer"),
+                "days_below_40pct_buffer": r.get("days_below_40pct_buffer"),
+                "margin_call_events": r.get("margin_call_events"),
             },
         },
+        "activity": activity_block,
         "portfolio_changes": portfolio_changes,
         "intervals": intervals,
         "summary": _period_coverage_summary(conn, period_start_date, period_end_date),
     }
 
 
-SIGNIFICANT_MISSING_PCT = 1.0
+def _to_float(val: Any) -> float | None:
+    if isinstance(val, bool):
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    return None
 
+
+def _avg(values: list[float], digits: int = 3) -> float | None:
+    if not values:
+        return None
+    return round(sum(values) / len(values), digits)
+
+
+def _pct_change(delta: Any, base: Any, digits: int = 3) -> float | None:
+    d = _to_float(delta)
+    b = _to_float(base)
+    if d is None or b is None or abs(b) < 1e-12:
+        return None
+    return round((d / b) * 100.0, digits)
+
+
+def _coalesce(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _series_stats(values: list[float], digits: int = 3) -> dict[str, float | None]:
+    if not values:
+        return {"avg": None, "min": None, "max": None, "std": None}
+    if len(values) == 1:
+        return {
+            "avg": round(values[0], digits),
+            "min": round(values[0], digits),
+            "max": round(values[0], digits),
+            "std": None,
+        }
+    mean_val = sum(values) / len(values)
+    variance = sum((v - mean_val) ** 2 for v in values) / len(values)
+    return {
+        "avg": round(mean_val, digits),
+        "min": round(min(values), digits),
+        "max": round(max(values), digits),
+        "std": round(math.sqrt(variance), digits),
+    }
+
+
+def _twr_window_stats(daily_rows: list[dict], key: str) -> dict[str, float | None]:
+    values = [_to_float(row.get(key)) for row in daily_rows]
+    values = [v for v in values if v is not None]
+    if not values:
+        return {"avg": None, "min": None, "max": None, "end": None}
+    stats = _series_stats(values, digits=3)
+    return {
+        "avg": stats["avg"],
+        "min": stats["min"],
+        "max": stats["max"],
+        "end": round(values[-1], 3),
+    }
+
+
+def _local_date_to_utc_iso(date_text: str | None) -> str | None:
+    dt = _parse_date(date_text)
+    if not dt:
+        return None
+    local_tz = ZoneInfo(settings.local_tz)
+    local_dt = datetime(dt.year, dt.month, dt.day, 0, 0, 0, tzinfo=local_tz)
+    return local_dt.astimezone(timezone.utc).isoformat()
+
+
+def _add_months(base_date: str | None, months: Any) -> str | None:
+    dt = _parse_date(base_date)
+    m = _to_float(months)
+    if not dt or m is None:
+        return None
+    total_months = dt.year * 12 + (dt.month - 1) + int(round(m))
+    year = total_months // 12
+    month = total_months % 12 + 1
+    # Keep day bounded to month length.
+    if month == 2:
+        leap = year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+        max_day = 29 if leap else 28
+    elif month in (4, 6, 9, 11):
+        max_day = 30
+    else:
+        max_day = 31
+    day = min(dt.day, max_day)
+    return date(year, month, day).isoformat()
+
+
+def _calendar_period(snapshot_type: str, start_dt: date) -> str:
+    if snapshot_type == "weekly":
+        iso = start_dt.isocalendar()
+        return f"{iso.year}-W{iso.week:02d}"
+    if snapshot_type == "monthly":
+        return f"{start_dt.year}-{start_dt.month:02d}"
+    if snapshot_type == "quarterly":
+        q = (start_dt.month - 1) // 3 + 1
+        return f"{start_dt.year}-Q{q}"
+    return f"{start_dt.year}"
+
+
+def assemble_period_snapshot_target(
+    conn: sqlite3.Connection,
+    period_type: str,
+    period_end_date: str,
+    period_start_date: str | None = None,
+    rolling: bool = False,
+) -> dict | None:
+    """Assemble period response in target schema shape from flat DB tables."""
+    conn.row_factory = sqlite3.Row
+
+    if not period_start_date:
+        start_row = conn.execute(
+            "SELECT period_start_date FROM period_summary WHERE period_type=? AND period_end_date=? AND is_rolling=? LIMIT 1",
+            (period_type, period_end_date, 1 if rolling else 0),
+        ).fetchone()
+        if not start_row:
+            return None
+        period_start_date = start_row["period_start_date"]
+
+    ps_row = conn.execute(
+        """SELECT * FROM period_summary
+           WHERE period_type=? AND period_start_date=? AND period_end_date=? AND is_rolling=?""",
+        (period_type, period_start_date, period_end_date, 1 if rolling else 0),
+    ).fetchone()
+    if not ps_row:
+        return None
+    r = dict(ps_row)
+
+    start_dt = _parse_date(period_start_date)
+    end_dt = _parse_date(period_end_date)
+    if not start_dt or not end_dt:
+        return None
+
+    _type_map = {"WEEK": "weekly", "MONTH": "monthly", "QUARTER": "quarterly", "YEAR": "yearly"}
+    snapshot_type = _type_map.get(period_type, period_type.lower())
+
+    daily_rows = [
+        dict(row)
+        for row in conn.execute(
+            """SELECT * FROM daily_portfolio
+               WHERE as_of_date_local BETWEEN ? AND ?
+               ORDER BY as_of_date_local""",
+            (period_start_date, period_end_date),
+        ).fetchall()
+    ]
+    observed_dates = [row.get("as_of_date_local") for row in daily_rows if row.get("as_of_date_local")]
+    observed_set = set(observed_dates)
+    start_daily = next((row for row in daily_rows if row.get("as_of_date_local") == period_start_date), None)
+    end_daily = next((row for row in reversed(daily_rows) if row.get("as_of_date_local") == period_end_date), None)
+    if not start_daily and daily_rows:
+        start_daily = daily_rows[0]
+    if not end_daily and daily_rows:
+        end_daily = daily_rows[-1]
+
+    pace_months_start_fallback = _to_float(start_daily.get("goal_pace_months_ahead_behind")) if start_daily else None
+    pace_months_end_fallback = _to_float(end_daily.get("goal_pace_months_ahead_behind")) if end_daily else None
+    pace_months_delta_fallback = (
+        round(pace_months_end_fallback - pace_months_start_fallback, 2)
+        if isinstance(pace_months_start_fallback, (int, float))
+        and isinstance(pace_months_end_fallback, (int, float))
+        else None
+    )
+    pace_tier_start_fallback = _to_float(start_daily.get("goal_pace_pct_of_tier")) if start_daily else None
+    pace_tier_end_fallback = _to_float(end_daily.get("goal_pace_pct_of_tier")) if end_daily else None
+
+    days_in_period = (end_dt - start_dt).days + 1
+    snapshots_expected = r.get("expected_days") or days_in_period
+    snapshots_count = r.get("observed_days") or len(daily_rows)
+    coverage_pct = r.get("coverage_pct")
+    if coverage_pct is None and snapshots_expected:
+        coverage_pct = round((snapshots_count / snapshots_expected) * 100.0, 3)
+
+    missing_dates = []
+    cur_day = start_dt
+    while cur_day <= end_dt:
+        day_text = cur_day.isoformat()
+        if day_text not in observed_set:
+            missing_dates.append(day_text)
+        cur_day += timedelta(days=1)
+
+    def _series_pairs(column: str) -> list[tuple[str, float]]:
+        pairs: list[tuple[str, float]] = []
+        for row in daily_rows:
+            day = row.get("as_of_date_local")
+            val = _to_float(row.get(column))
+            if day and val is not None:
+                pairs.append((day, val))
+        return pairs
+
+    def _series_stats_from_pairs(pairs: list[tuple[str, float]], digits: int = 3) -> dict[str, Any]:
+        values = [val for _, val in pairs]
+        if not values:
+            return {"avg": None, "min": None, "max": None, "std": None, "min_date": None, "max_date": None}
+        stats = _series_stats(values, digits=digits)
+        min_val = stats["min"]
+        max_val = stats["max"]
+        min_date = next((day for day, val in pairs if val == min_val), None)
+        max_date = next((day for day, val in pairs if val == max_val), None)
+        return {
+            "avg": stats["avg"],
+            "min": stats["min"],
+            "max": stats["max"],
+            "std": stats["std"],
+            "min_date": min_date,
+            "max_date": max_date,
+        }
+
+    nlv_pairs = _series_pairs("net_liquidation_value")
+    ltv_pairs = _series_pairs("ltv_pct")
+    margin_balance_pairs = _series_pairs("margin_loan_balance")
+    projected_monthly_pairs = _series_pairs("projected_monthly_income")
+    yield_pairs = _series_pairs("portfolio_yield_pct")
+    vol_30d_pairs = _series_pairs("vol_30d_pct")
+    vol_90d_pairs = _series_pairs("vol_90d_pct")
+    sharpe_pairs = _series_pairs("sharpe_1y")
+    sortino_pairs = _series_pairs("sortino_1y")
+    calmar_pairs = _series_pairs("calmar_1y")
+    buffer_pairs = _series_pairs("buffer_to_margin_call_pct")
+
+    nlv_fallback = _series_stats_from_pairs(nlv_pairs)
+    ltv_fallback = _series_stats_from_pairs(ltv_pairs)
+    margin_balance_fallback = _series_stats_from_pairs(margin_balance_pairs)
+    projected_monthly_fallback = _series_stats_from_pairs(projected_monthly_pairs)
+    yield_fallback = _series_stats_from_pairs(yield_pairs)
+    vol_30d_fallback = _series_stats_from_pairs(vol_30d_pairs)
+    vol_90d_fallback = _series_stats_from_pairs(vol_90d_pairs)
+    sharpe_fallback = _series_stats_from_pairs(sharpe_pairs)
+    sortino_fallback = _series_stats_from_pairs(sortino_pairs)
+    calmar_fallback = _series_stats_from_pairs(calmar_pairs)
+    buffer_fallback = _series_stats_from_pairs(buffer_pairs)
+    buffer_days_below_50 = sum(1 for _, val in buffer_pairs if val < 50) if buffer_pairs else None
+    buffer_days_below_40 = sum(1 for _, val in buffer_pairs if val < 40) if buffer_pairs else None
+    buffer_call_events = sum(1 for _, val in buffer_pairs if val < 0) if buffer_pairs else None
+
+    # Activity and child tables
+    activity_row = conn.execute(
+        """SELECT * FROM period_activity
+           WHERE period_type=? AND period_start_date=? AND period_end_date=?""",
+        (period_type, period_start_date, period_end_date),
+    ).fetchone()
+    activity = dict(activity_row) if activity_row else {}
+
+    contribution_rows = conn.execute(
+        """SELECT contribution_date, amount, account_id
+           FROM period_contributions
+           WHERE period_type=? AND period_start_date=? AND period_end_date=?
+           ORDER BY contribution_date""",
+        (period_type, period_start_date, period_end_date),
+    ).fetchall()
+    withdrawal_rows = conn.execute(
+        """SELECT withdrawal_date, amount, account_id
+           FROM period_withdrawals
+           WHERE period_type=? AND period_start_date=? AND period_end_date=?
+           ORDER BY withdrawal_date""",
+        (period_type, period_start_date, period_end_date),
+    ).fetchall()
+    dividend_rows = conn.execute(
+        """SELECT symbol, ex_date, pay_date, amount
+           FROM period_dividend_events
+           WHERE period_type=? AND period_start_date=? AND period_end_date=?
+           ORDER BY ex_date, symbol""",
+        (period_type, period_start_date, period_end_date),
+    ).fetchall()
+    trade_rows = conn.execute(
+        """SELECT symbol, buy_count, sell_count
+           FROM period_trades
+           WHERE period_type=? AND period_start_date=? AND period_end_date=?
+           ORDER BY symbol""",
+        (period_type, period_start_date, period_end_date),
+    ).fetchall()
+    position_rows = conn.execute(
+        """SELECT list_type, symbol
+           FROM period_position_lists
+           WHERE period_type=? AND period_start_date=? AND period_end_date=?
+           ORDER BY list_type, symbol""",
+        (period_type, period_start_date, period_end_date),
+    ).fetchall()
+    macro_stat_rows = conn.execute(
+        """SELECT metric, avg_val, min_val, max_val, std_val
+           FROM period_macro_stats
+           WHERE period_type=? AND period_start_date=? AND period_end_date=?""",
+        (period_type, period_start_date, period_end_date),
+    ).fetchall()
+
+    contribution_dates = sorted({row[0] for row in contribution_rows if row[0]})
+    withdrawal_dates = sorted({row[0] for row in withdrawal_rows if row[0]})
+
+    dividends_by_symbol: dict[str, float] = {}
+    dividend_count_by_symbol: dict[str, int] = {}
+    dividend_events = []
+    for sym, ex_date, pay_date, amount in dividend_rows:
+        if not sym:
+            continue
+        amt = _to_float(amount) or 0.0
+        dividends_by_symbol[sym] = round(dividends_by_symbol.get(sym, 0.0) + amt, 2)
+        dividend_count_by_symbol[sym] = dividend_count_by_symbol.get(sym, 0) + 1
+        dividend_events.append(
+            {
+                "symbol": sym,
+                "ex_date": ex_date,
+                "pay_date": pay_date,
+                "amount": amt,
+            }
+        )
+
+    trades_by_symbol: dict[str, dict[str, int]] = {}
+    for sym, buy_count, sell_count in trade_rows:
+        if not sym:
+            continue
+        trades_by_symbol[sym] = {
+            "buy_count": int(buy_count or 0),
+            "sell_count": int(sell_count or 0),
+        }
+
+    positions = {
+        "added": [],
+        "removed": [],
+        "symbols_increased": [],
+        "symbols_decreased": [],
+    }
+    for list_type, symbol in position_rows:
+        if not symbol:
+            continue
+        if list_type == "added":
+            positions["added"].append(symbol)
+        elif list_type == "removed":
+            positions["removed"].append(symbol)
+        elif list_type == "increased":
+            positions["symbols_increased"].append(symbol)
+        elif list_type == "decreased":
+            positions["symbols_decreased"].append(symbol)
+    for key in positions:
+        positions[key] = sorted(set(positions[key]))
+
+    macro_stats: dict[str, dict[str, float | None]] = {}
+    for metric, avg_val, min_val, max_val, std_val in macro_stat_rows:
+        macro_stats[metric] = {
+            "avg": _to_float(avg_val),
+            "min": _to_float(min_val),
+            "max": _to_float(max_val),
+            "std": _to_float(std_val),
+        }
+
+    # Holdings summary from daily holdings start/end plus period history.
+    start_holdings_date = start_daily.get("as_of_date_local") if start_daily else period_start_date
+    end_holdings_date = end_daily.get("as_of_date_local") if end_daily else period_end_date
+    start_holdings_rows = conn.execute(
+        "SELECT * FROM daily_holdings WHERE as_of_date_local=?",
+        (start_holdings_date,),
+    ).fetchall()
+    end_holdings_rows = conn.execute(
+        "SELECT * FROM daily_holdings WHERE as_of_date_local=?",
+        (end_holdings_date,),
+    ).fetchall()
+    start_holdings = {row["symbol"]: dict(row) for row in start_holdings_rows if row["symbol"]}
+    end_holdings = {row["symbol"]: dict(row) for row in end_holdings_rows if row["symbol"]}
+    symbols = sorted(set(start_holdings.keys()) | set(end_holdings.keys()))
+
+    holdings_history: dict[str, list[dict]] = {sym: [] for sym in symbols}
+    if symbols:
+        placeholders = ",".join("?" for _ in symbols)
+        rows = conn.execute(
+            f"""SELECT as_of_date_local, symbol, market_value, weight_pct, vol_30d_pct
+                FROM daily_holdings
+                WHERE as_of_date_local BETWEEN ? AND ?
+                  AND symbol IN ({placeholders})
+                ORDER BY symbol, as_of_date_local""",
+            (period_start_date, period_end_date, *symbols),
+        ).fetchall()
+        for row in rows:
+            row_dict = dict(row)
+            holdings_history.setdefault(row_dict["symbol"], []).append(row_dict)
+
+    mv_start = _to_float(r.get("mv_start"))
+    holdings_summary = []
+    for sym in symbols:
+        s = start_holdings.get(sym) or {}
+        e = end_holdings.get(sym) or {}
+        hist = holdings_history.get(sym) or []
+
+        start_mv = _to_float(s.get("market_value"))
+        end_mv = _to_float(e.get("market_value"))
+        mv_delta = None if start_mv is None or end_mv is None else round(end_mv - start_mv, 2)
+        start_shares = _to_float(s.get("shares"))
+        end_shares = _to_float(e.get("shares"))
+        shares_delta = None if start_shares is None or end_shares is None else round(end_shares - start_shares, 4)
+
+        weight_vals = [_to_float(row.get("weight_pct")) for row in hist]
+        weight_vals = [v for v in weight_vals if v is not None]
+        vol_vals = [_to_float(row.get("vol_30d_pct")) for row in hist]
+        vol_vals = [v for v in vol_vals if v is not None]
+
+        day_returns = []
+        for idx in range(1, len(hist)):
+            prev_mv = _to_float(hist[idx - 1].get("market_value"))
+            curr_mv = _to_float(hist[idx].get("market_value"))
+            if prev_mv is None or curr_mv is None or abs(prev_mv) < 1e-12:
+                continue
+            day_returns.append(
+                (
+                    round(((curr_mv - prev_mv) / prev_mv) * 100.0, 3),
+                    hist[idx].get("as_of_date_local"),
+                )
+            )
+
+        worst_day = min(day_returns, default=(None, None), key=lambda x: x[0] if x[0] is not None else float("inf"))
+        best_day = max(day_returns, default=(None, None), key=lambda x: x[0] if x[0] is not None else float("-inf"))
+
+        dividends_received = round(dividends_by_symbol.get(sym, 0.0), 2)
+        period_return_pct = None
+        if start_mv is not None and end_mv is not None and abs(start_mv) > 1e-12:
+            period_return_pct = round(((end_mv - start_mv + dividends_received) / start_mv) * 100.0, 3)
+
+        contribution_pct = None
+        if mv_start is not None and mv_delta is not None and abs(mv_start) > 1e-12:
+            contribution_pct = round((mv_delta / mv_start) * 100.0, 3)
+
+        holdings_summary.append(
+            {
+                "symbol": sym,
+                "values": {
+                    "start_shares": start_shares,
+                    "end_shares": end_shares,
+                    "shares_delta": shares_delta,
+                    "shares_delta_pct": _pct_change(shares_delta, start_shares, digits=3),
+                    "start_market_value": start_mv,
+                    "end_market_value": end_mv,
+                    "market_value_delta": mv_delta,
+                    "market_value_delta_pct": _pct_change(mv_delta, start_mv, digits=3),
+                    "start_weight_pct": _to_float(s.get("weight_pct")),
+                    "end_weight_pct": _to_float(e.get("weight_pct")),
+                    "avg_weight_pct": _avg(weight_vals, digits=3),
+                },
+                "performance": {
+                    "period_return_pct": period_return_pct,
+                    "contribution_to_portfolio_pct": contribution_pct,
+                    "start_twr_12m_pct": _to_float(s.get("twr_12m_pct")),
+                    "end_twr_12m_pct": _to_float(e.get("twr_12m_pct")),
+                },
+                "income": {
+                    "dividends_received": dividends_received,
+                    "dividend_events_count": int(dividend_count_by_symbol.get(sym, 0)),
+                    "start_yield_pct": _to_float(s.get("current_yield_pct")),
+                    "end_yield_pct": _to_float(e.get("current_yield_pct")),
+                    "start_projected_monthly": _to_float(s.get("projected_monthly_dividend")),
+                    "end_projected_monthly": _to_float(e.get("projected_monthly_dividend")),
+                },
+                "risk": {
+                    "avg_vol_30d_pct": _avg(vol_vals, digits=3),
+                    "period_max_drawdown_pct": _to_float(e.get("max_drawdown_1y_pct")),
+                    "worst_day_pct": worst_day[0],
+                    "worst_day_date": worst_day[1],
+                    "best_day_pct": best_day[0],
+                    "best_day_date": best_day[1],
+                },
+            }
+        )
+    holdings_summary.sort(key=lambda item: _to_float((item.get("values") or {}).get("end_market_value")) or 0.0, reverse=True)
+
+    twr_1m_stats = _twr_window_stats(daily_rows, "twr_1m_pct")
+    twr_3m_stats = _twr_window_stats(daily_rows, "twr_3m_pct")
+    twr_12m_stats = _twr_window_stats(daily_rows, "twr_12m_pct")
+
+    avg_top3 = _to_float(r.get("concentration_top3_avg"))
+    avg_top5 = _to_float(r.get("concentration_top5_avg"))
+    avg_herf = _to_float(r.get("concentration_herfindahl_avg"))
+    if daily_rows:
+        top3_values = [_to_float(row.get("top3_weight_pct")) for row in daily_rows]
+        top5_values = [_to_float(row.get("top5_weight_pct")) for row in daily_rows]
+        herf_values = [_to_float(row.get("herfindahl_index")) for row in daily_rows]
+        if avg_top3 is None:
+            avg_top3 = _avg([v for v in top3_values if v is not None], digits=3)
+        if avg_top5 is None:
+            avg_top5 = _avg([v for v in top5_values if v is not None], digits=3)
+        if avg_herf is None:
+            avg_herf = _avg([v for v in herf_values if v is not None], digits=3)
+
+    benchmark_corr = _to_float(r.get("benchmark_correlation_1y_avg"))
+    if benchmark_corr is None and daily_rows:
+        corr_vals = [_to_float(row.get("vs_benchmark_corr_1y")) for row in daily_rows]
+        benchmark_corr = _avg([v for v in corr_vals if v is not None], digits=3)
+
+    start_daily_excess = _to_float(start_daily.get("vs_benchmark_excess_1y_pct")) if start_daily else None
+    end_daily_excess = _to_float(end_daily.get("vs_benchmark_excess_1y_pct")) if end_daily else None
+
+    start_hy_spread = _to_float(start_daily.get("macro_hy_spread_bps")) if start_daily else None
+    end_hy_spread = _to_float(end_daily.get("macro_hy_spread_bps")) if end_daily else None
+    start_macro_stress = _to_float(start_daily.get("macro_stress_score")) if start_daily else None
+    end_macro_stress = _to_float(end_daily.get("macro_stress_score")) if end_daily else None
+
+    avg_rate_pct_fallback = _coalesce(_to_float(activity.get("interest_avg_rate_pct")), _to_float(r.get("margin_apr_avg")))
+    avg_daily_balance_fallback = _coalesce(
+        _to_float(activity.get("interest_avg_daily_balance")),
+        _to_float(r.get("margin_balance_avg")),
+        margin_balance_fallback.get("avg"),
+    )
+    annualized_interest_fallback = None
+    if avg_daily_balance_fallback is not None and avg_rate_pct_fallback is not None:
+        annualized_interest_fallback = round(avg_daily_balance_fallback * (avg_rate_pct_fallback / 100.0), 3)
+
+    margin_interest_total_paid = _to_float(activity.get("interest_total_paid"))
+    if margin_interest_total_paid is None and annualized_interest_fallback is not None and days_in_period > 0:
+        margin_interest_total_paid = round(annualized_interest_fallback * (days_in_period / 365.0), 3)
+    avg_daily_cost = None
+    if margin_interest_total_paid is not None and days_in_period > 0:
+        avg_daily_cost = round(margin_interest_total_paid / days_in_period, 3)
+
+    contributions_total = abs(_to_float(activity.get("contributions_total")) or 0.0)
+    withdrawals_total = abs(_to_float(activity.get("withdrawals_total")) or 0.0)
+
+    yield_start = _to_float(r.get("yield_start"))
+    yield_end = _to_float(r.get("yield_end"))
+    monthly_start = _to_float(r.get("monthly_income_start"))
+    monthly_end = _to_float(r.get("monthly_income_end"))
+    mv_delta = _to_float(r.get("mv_delta"))
+    cb_delta = _to_float(r.get("cost_basis_delta"))
+    nlv_delta = _to_float(r.get("nlv_delta"))
+    margin_delta = _to_float(r.get("margin_balance_delta"))
+
+    return {
+        "meta": {
+            "schema_version": "5.0",
+            "summary_type": "period",
+            "period": {
+                "type": snapshot_type,
+                "start_date_local": period_start_date,
+                "end_date_local": period_end_date,
+                "calendar_period": _calendar_period(snapshot_type, start_dt),
+                "days_in_period": days_in_period,
+                "snapshots_count": snapshots_count,
+                "snapshots_expected": snapshots_expected,
+                "coverage_pct": coverage_pct,
+                "missing_dates": missing_dates,
+            },
+            "created_at_utc": r.get("created_at_utc"),
+        },
+        "timestamps": {
+            "period_start_local": period_start_date,
+            "period_end_local": period_end_date,
+            "period_start_utc": _local_date_to_utc_iso(period_start_date),
+            "period_end_utc": _local_date_to_utc_iso(period_end_date),
+        },
+        "portfolio": {
+            "values": {
+                "start": {
+                    "market_value": _to_float(r.get("mv_start")),
+                    "cost_basis": _to_float(r.get("cost_basis_start")),
+                    "net_liquidation_value": _to_float(r.get("nlv_start")),
+                    "unrealized_pnl": _to_float(r.get("unrealized_pnl_start")),
+                    "unrealized_pct": _to_float(r.get("unrealized_pct_start")),
+                    "margin_loan_balance": _to_float(r.get("margin_balance_start")),
+                    "margin_to_portfolio_pct": _to_float(r.get("ltv_pct_start")),
+                    "holdings_count": r.get("holding_count_start"),
+                },
+                "end": {
+                    "market_value": _to_float(r.get("mv_end")),
+                    "cost_basis": _to_float(r.get("cost_basis_end")),
+                    "net_liquidation_value": _to_float(r.get("nlv_end")),
+                    "unrealized_pnl": _to_float(r.get("unrealized_pnl_end")),
+                    "unrealized_pct": _to_float(r.get("unrealized_pct_end")),
+                    "margin_loan_balance": _to_float(r.get("margin_balance_end")),
+                    "margin_to_portfolio_pct": _to_float(r.get("ltv_pct_end")),
+                    "holdings_count": r.get("holding_count_end"),
+                },
+                "delta": {
+                    "market_value": mv_delta,
+                    "market_value_pct": _pct_change(mv_delta, r.get("mv_start"), digits=3),
+                    "cost_basis": cb_delta,
+                    "cost_basis_pct": _pct_change(cb_delta, r.get("cost_basis_start"), digits=3),
+                    "net_liquidation_value": nlv_delta,
+                    "net_liquidation_value_pct": _pct_change(nlv_delta, r.get("nlv_start"), digits=3),
+                    "unrealized_pnl": _to_float(r.get("unrealized_pnl_delta")),
+                    "margin_loan_balance": margin_delta,
+                    "margin_loan_balance_pct": _pct_change(margin_delta, r.get("margin_balance_start"), digits=3),
+                },
+                "period_stats": {
+                    "market_value": {
+                        "avg": _to_float(r.get("mv_avg")),
+                        "min": _to_float(r.get("mv_min")),
+                        "max": _to_float(r.get("mv_max")),
+                        "std": _to_float(r.get("mv_std")),
+                        "min_date": r.get("mv_min_date"),
+                        "max_date": r.get("mv_max_date"),
+                    },
+                    "net_liquidation_value": {
+                        "avg": _coalesce(_to_float(r.get("nlv_avg")), nlv_fallback.get("avg")),
+                        "min": _coalesce(_to_float(r.get("nlv_min")), nlv_fallback.get("min")),
+                        "max": _coalesce(_to_float(r.get("nlv_max")), nlv_fallback.get("max")),
+                        "std": _coalesce(_to_float(r.get("nlv_std")), nlv_fallback.get("std")),
+                        "min_date": _coalesce(r.get("nlv_min_date"), nlv_fallback.get("min_date")),
+                        "max_date": _coalesce(r.get("nlv_max_date"), nlv_fallback.get("max_date")),
+                    },
+                    "margin_to_portfolio_pct": {
+                        "avg": _coalesce(_to_float(r.get("margin_to_portfolio_pct_avg")), ltv_fallback.get("avg")),
+                        "min": _coalesce(_to_float(r.get("margin_to_portfolio_pct_min")), ltv_fallback.get("min")),
+                        "max": _coalesce(_to_float(r.get("margin_to_portfolio_pct_max")), ltv_fallback.get("max")),
+                        "std": _coalesce(_to_float(r.get("margin_to_portfolio_pct_std")), ltv_fallback.get("std")),
+                    },
+                },
+            },
+            "income": {
+                "start_projected_monthly": monthly_start,
+                "end_projected_monthly": monthly_end,
+                "delta_projected_monthly": _to_float(r.get("monthly_income_delta")),
+                "delta_projected_monthly_pct": _pct_change(r.get("monthly_income_delta"), monthly_start, digits=3),
+                "start_yield_pct": yield_start,
+                "end_yield_pct": yield_end,
+                "delta_yield_pct": _to_float(r.get("yield_delta")),
+                "period_stats": {
+                    "projected_monthly": {
+                        "avg": _coalesce(_to_float(r.get("projected_monthly_avg")), projected_monthly_fallback.get("avg")),
+                        "min": _coalesce(_to_float(r.get("projected_monthly_min")), projected_monthly_fallback.get("min")),
+                        "max": _coalesce(_to_float(r.get("projected_monthly_max")), projected_monthly_fallback.get("max")),
+                        "std": _coalesce(_to_float(r.get("projected_monthly_std")), projected_monthly_fallback.get("std")),
+                    },
+                    "yield_pct": {
+                        "avg": _coalesce(_to_float(r.get("yield_pct_avg")), yield_fallback.get("avg")),
+                        "min": _coalesce(_to_float(r.get("yield_pct_min")), yield_fallback.get("min")),
+                        "max": _coalesce(_to_float(r.get("yield_pct_max")), yield_fallback.get("max")),
+                        "std": _coalesce(_to_float(r.get("yield_pct_std")), yield_fallback.get("std")),
+                    },
+                },
+            },
+            "performance": {
+                "period_return_pct": _to_float(r.get("pnl_pct_period")),
+                "twr_period_pct": _to_float(r.get("twr_period_pct")),
+                "period_stats": {
+                    "twr_1m_pct": twr_1m_stats,
+                    "twr_3m_pct": twr_3m_stats,
+                    "twr_12m_pct": twr_12m_stats,
+                },
+                "vs_benchmark": {
+                    "benchmark_symbol": r.get("benchmark_symbol"),
+                    "start_benchmark_twr_1y_pct": _to_float(r.get("benchmark_twr_1y_start")),
+                    "end_benchmark_twr_1y_pct": _to_float(r.get("benchmark_twr_1y_end")),
+                    "start_excess_1y_pct": start_daily_excess,
+                    "end_excess_1y_pct": end_daily_excess,
+                    "avg_correlation_1y": benchmark_corr,
+                },
+            },
+            "risk": {
+                "volatility": {
+                    "start_vol_30d_pct": _to_float(r.get("vol_30d_start")),
+                    "end_vol_30d_pct": _to_float(r.get("vol_30d_end")),
+                    "avg_vol_30d_pct": _coalesce(_to_float(r.get("vol_30d_avg")), vol_30d_fallback.get("avg")),
+                    "start_vol_90d_pct": _to_float(r.get("vol_90d_start")),
+                    "end_vol_90d_pct": _to_float(r.get("vol_90d_end")),
+                    "avg_vol_90d_pct": _coalesce(_to_float(r.get("vol_90d_avg")), vol_90d_fallback.get("avg")),
+                },
+                "ratios": {
+                    "start_sharpe_1y": _to_float(r.get("sharpe_1y_start")),
+                    "end_sharpe_1y": _to_float(r.get("sharpe_1y_end")),
+                    "avg_sharpe_1y": _coalesce(_to_float(r.get("sharpe_1y_avg")), sharpe_fallback.get("avg")),
+                    "start_sortino_1y": _to_float(r.get("sortino_1y_start")),
+                    "end_sortino_1y": _to_float(r.get("sortino_1y_end")),
+                    "avg_sortino_1y": _coalesce(_to_float(r.get("sortino_1y_avg")), sortino_fallback.get("avg")),
+                    "start_calmar_1y": _to_float(r.get("calmar_1y_start")),
+                    "end_calmar_1y": _to_float(r.get("calmar_1y_end")),
+                    "avg_calmar_1y": _coalesce(_to_float(r.get("calmar_1y_avg")), calmar_fallback.get("avg")),
+                },
+                "drawdown": {
+                    "period_max_drawdown_pct": _to_float(r.get("period_max_drawdown_pct")),
+                    "period_max_drawdown_date": r.get("period_max_drawdown_date"),
+                    "period_recovery_date": r.get("period_recovery_date"),
+                    "period_days_in_drawdown": r.get("period_days_in_drawdown"),
+                    "period_drawdown_count": r.get("period_drawdown_count"),
+                    "start_current_drawdown_pct": _to_float(start_daily.get("drawdown_depth_pct")) if start_daily else None,
+                    "end_current_drawdown_pct": _to_float(end_daily.get("drawdown_depth_pct")) if end_daily else None,
+                    "start_max_drawdown_1y_pct": _to_float(r.get("max_dd_1y_start")),
+                    "end_max_drawdown_1y_pct": _to_float(r.get("max_dd_1y_end")),
+                },
+                "var": {
+                    "start_var_95_1d_pct": _to_float(start_daily.get("var_95_1d_pct")) if start_daily else None,
+                    "end_var_95_1d_pct": _to_float(end_daily.get("var_95_1d_pct")) if end_daily else None,
+                    "avg_var_95_1d_pct": _to_float(r.get("var_95_1d_avg")),
+                    "start_cvar_95_1d_pct": _to_float(start_daily.get("cvar_95_1d_pct")) if start_daily else None,
+                    "end_cvar_95_1d_pct": _to_float(end_daily.get("cvar_95_1d_pct")) if end_daily else None,
+                    "avg_cvar_95_1d_pct": _to_float(r.get("cvar_95_1d_avg")),
+                    "days_exceeding_var_95": r.get("days_exceeding_var_95"),
+                    "worst_day_return_pct": _to_float(r.get("worst_day_return_pct")),
+                    "worst_day_date": r.get("worst_day_date"),
+                    "best_day_return_pct": _to_float(r.get("best_day_return_pct")),
+                    "best_day_date": r.get("best_day_date"),
+                },
+            },
+            "allocation": {
+                "start_concentration": {
+                    "top3_weight_pct": _to_float(r.get("concentration_top3_start")),
+                    "top5_weight_pct": _to_float(r.get("concentration_top5_start")),
+                    "herfindahl_index": _to_float(r.get("concentration_herfindahl_start")),
+                },
+                "end_concentration": {
+                    "top3_weight_pct": _to_float(r.get("concentration_top3_end")),
+                    "top5_weight_pct": _to_float(r.get("concentration_top5_end")),
+                    "herfindahl_index": _to_float(r.get("concentration_herfindahl_end")),
+                },
+                "avg_concentration": {
+                    "top3_weight_pct": avg_top3,
+                    "top5_weight_pct": avg_top5,
+                    "herfindahl_index": avg_herf,
+                },
+            },
+        },
+        "activity": {
+            "contributions": {
+                "total": contributions_total,
+                "count": int(activity.get("contributions_count") or 0),
+                "dates": contribution_dates,
+            },
+            "withdrawals": {
+                "total": withdrawals_total,
+                "count": int(activity.get("withdrawals_count") or 0),
+                "dates": withdrawal_dates,
+            },
+            "dividends": {
+                "total_received": _to_float(activity.get("dividends_total_received")) or 0.0,
+                "count": int(activity.get("dividends_count") or 0),
+                "by_symbol": dividends_by_symbol,
+                "events": dividend_events,
+            },
+            "interest": {
+                "total_paid": _to_float(activity.get("interest_total_paid")) or 0.0,
+                "avg_daily_balance": avg_daily_balance_fallback,
+                "avg_rate_pct": avg_rate_pct_fallback,
+                "annualized": _coalesce(_to_float(activity.get("interest_annualized")), annualized_interest_fallback),
+            },
+            "trades": {
+                "total_count": int(activity.get("trades_total_count") or 0),
+                "buy_count": int(activity.get("trades_buy_count") or 0),
+                "sell_count": int(activity.get("trades_sell_count") or 0),
+                "by_symbol": trades_by_symbol,
+            },
+            "positions": positions,
+            "margin": {
+                "borrowed": _to_float(activity.get("margin_borrowed")) or 0.0,
+                "repaid": _to_float(activity.get("margin_repaid")) or 0.0,
+                "net_change": _to_float(activity.get("margin_net_change")) or 0.0,
+            },
+        },
+        "holdings_summary": holdings_summary,
+        "goals": {
+            "start": {
+                "portfolio_value": _to_float(r.get("mv_start")),
+                "projected_monthly_income": monthly_start,
+                "progress_pct": _to_float(r.get("goal_progress_pct_start")),
+                "months_to_goal": _to_float(r.get("goal_months_to_goal_start")),
+                "estimated_goal_date": _add_months(period_start_date, r.get("goal_months_to_goal_start")),
+            },
+            "end": {
+                "portfolio_value": _to_float(r.get("mv_end")),
+                "projected_monthly_income": monthly_end,
+                "progress_pct": _to_float(r.get("goal_progress_pct_end")),
+                "months_to_goal": _to_float(r.get("goal_months_to_goal_end")),
+                "estimated_goal_date": _add_months(period_end_date, r.get("goal_months_to_goal_end")),
+            },
+            "delta": {
+                "portfolio_value": mv_delta,
+                "projected_monthly_income": _to_float(r.get("monthly_income_delta")),
+                "progress_pct": _to_float(r.get("goal_progress_pct_delta")),
+                "months_to_goal": _to_float(r.get("goal_months_to_goal_delta")),
+            },
+            "pace": {
+                "start_months_ahead_behind": _coalesce(
+                    pace_months_start_fallback,
+                    _to_float(r.get("goal_pace_months_start")),
+                ),
+                "end_months_ahead_behind": _coalesce(
+                    pace_months_end_fallback,
+                    _to_float(r.get("goal_pace_months_end")),
+                ),
+                "delta_months_ahead_behind": _coalesce(
+                    _to_float(r.get("goal_pace_months_delta")),
+                    pace_months_delta_fallback,
+                ),
+                "start_tier_pace_pct": _coalesce(
+                    pace_tier_start_fallback,
+                    _to_float(r.get("goal_pace_tier_pace_pct_start")),
+                ),
+                "end_tier_pace_pct": _coalesce(
+                    pace_tier_end_fallback,
+                    _to_float(r.get("goal_pace_tier_pace_pct_end")),
+                ),
+            },
+        },
+        "margin": {
+            "balance": {
+                "start": _to_float(r.get("margin_balance_start")),
+                "end": _to_float(r.get("margin_balance_end")),
+                "delta": margin_delta,
+                "delta_pct": _pct_change(margin_delta, r.get("margin_balance_start"), digits=3),
+                "avg": _coalesce(_to_float(r.get("margin_balance_avg")), margin_balance_fallback.get("avg")),
+                "min": _coalesce(_to_float(r.get("margin_balance_min")), margin_balance_fallback.get("min")),
+                "max": _coalesce(_to_float(r.get("margin_balance_max")), margin_balance_fallback.get("max")),
+                "std": _coalesce(_to_float(r.get("margin_balance_std")), margin_balance_fallback.get("std")),
+            },
+            "ltv": {
+                "start_pct": _to_float(r.get("ltv_pct_start")),
+                "end_pct": _to_float(r.get("ltv_pct_end")),
+                "avg_pct": _coalesce(_to_float(r.get("ltv_pct_avg")), ltv_fallback.get("avg")),
+                "min_pct": _coalesce(_to_float(r.get("ltv_pct_min")), ltv_fallback.get("min")),
+                "max_pct": _coalesce(_to_float(r.get("ltv_pct_max")), ltv_fallback.get("max")),
+                "std_pct": _coalesce(_to_float(r.get("ltv_pct_std")), ltv_fallback.get("std")),
+            },
+            "interest": {
+                "total_paid": margin_interest_total_paid,
+                "avg_daily_cost": avg_daily_cost,
+                "start_apr_pct": _coalesce(_to_float(r.get("margin_apr_start")), avg_rate_pct_fallback),
+                "end_apr_pct": _coalesce(_to_float(r.get("margin_apr_end")), avg_rate_pct_fallback),
+                "avg_apr_pct": _coalesce(_to_float(r.get("margin_apr_avg")), avg_rate_pct_fallback),
+            },
+            "safety": {
+                "min_buffer_to_call_pct": _coalesce(_to_float(r.get("margin_min_buffer_to_call_pct")), buffer_fallback.get("min")),
+                "min_buffer_date": _coalesce(r.get("margin_min_buffer_date"), buffer_fallback.get("min_date")),
+                "days_below_50pct_buffer": _coalesce(
+                    r.get("margin_days_below_50pct_buffer"),
+                    buffer_days_below_50,
+                ),
+                "days_below_40pct_buffer": _coalesce(
+                    r.get("margin_days_below_40pct_buffer"),
+                    buffer_days_below_40,
+                ),
+                "margin_call_events": _coalesce(
+                    r.get("margin_call_events"),
+                    buffer_call_events,
+                ),
+            },
+        },
+        "macro": {
+            "start": {
+                "vix": _to_float(r.get("macro_vix_start")),
+                "ten_year_yield": _to_float(r.get("macro_10y_start")),
+                "two_year_yield": _to_float(r.get("macro_2y_start")),
+                "hy_spread_bps": start_hy_spread,
+                "yield_spread_10y_2y": _to_float(start_daily.get("macro_yield_spread_10y_2y")) if start_daily else None,
+                "macro_stress_score": start_macro_stress,
+                "cpi_yoy": _to_float(r.get("macro_cpi_start")),
+            },
+            "end": {
+                "vix": _to_float(r.get("macro_vix_end")),
+                "ten_year_yield": _to_float(r.get("macro_10y_end")),
+                "two_year_yield": _to_float(r.get("macro_2y_end")),
+                "hy_spread_bps": end_hy_spread,
+                "yield_spread_10y_2y": _to_float(end_daily.get("macro_yield_spread_10y_2y")) if end_daily else None,
+                "macro_stress_score": end_macro_stress,
+                "cpi_yoy": _to_float(r.get("macro_cpi_end")),
+            },
+            "period_stats": {
+                "vix": macro_stats.get("vix")
+                or {
+                    "avg": _to_float(r.get("macro_vix_avg")),
+                    "min": None,
+                    "max": None,
+                    "std": None,
+                },
+                "ten_year_yield": macro_stats.get("ten_year_yield")
+                or {
+                    "avg": _to_float(r.get("macro_10y_avg")),
+                    "min": None,
+                    "max": None,
+                    "std": None,
+                },
+                "hy_spread_bps": macro_stats.get("hy_spread_bps")
+                or {"avg": _avg([v for v in [_to_float(start_hy_spread), _to_float(end_hy_spread)] if v is not None], digits=3), "min": None, "max": None, "std": None},
+                "macro_stress_score": macro_stats.get("macro_stress_score")
+                or {"avg": _avg([v for v in [_to_float(start_macro_stress), _to_float(end_macro_stress)] if v is not None], digits=3), "min": None, "max": None, "std": None},
+            },
+        },
+    }
 
 def slim_snapshot(snapshot: dict, missing_pct_threshold: float = SIGNIFICANT_MISSING_PCT) -> dict:
     if not isinstance(snapshot, dict):

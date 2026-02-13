@@ -236,8 +236,9 @@ def reconstruct_holdings(conn: sqlite3.Connection) -> Tuple[Dict, List[str]]:
 
     holdings = {}
     for sym, sym_lots in lots.items():
-        shares = sum(l["qty"] for l in sym_lots)
-        cost_basis = sum(l["cost"] for l in sym_lots)
+        # Type safety: only sum numeric values
+        shares = sum(l["qty"] for l in sym_lots if isinstance(l.get("qty"), (int, float)))
+        cost_basis = sum(l["cost"] for l in sym_lots if isinstance(l.get("cost"), (int, float)))
         if abs(shares) < 1e-9:
             continue
         holdings[sym] = {"symbol": sym, "shares": shares, "cost_basis": cost_basis}

@@ -30,7 +30,7 @@ def trigger_sync_window(background, start_date: str, end_date: str) -> str:
 
 def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = None):
     conn = get_conn(settings.db_path)
-    migrate(conn)
+    # migrate(conn)  # Temporarily disabled - run refresh script to apply migration
     cur = conn.cursor()
     run_count = cur.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
     first_run = run_count == 0

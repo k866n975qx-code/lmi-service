@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from collections import defaultdict
 
 import pandas as pd
+import numpy as np
 
 from ..config import settings
 from ..utils import to_local_date
@@ -23,6 +24,9 @@ from .diff_daily import (
     _coverage,
     _holdings_flat,
 )
+from ..services.ai_insights import _safe_get
+
+
 
 
 def _as_of(snap: dict | None) -> str | None:
@@ -115,6 +119,79 @@ def _coverage_summary(dailies):
     return {
         "derived_pct": _avg(derived),
         "pulled_pct": _avg(pulled),
+    }
+
+
+def _calc_period_stats(values_list: list, values_dict: dict) -> dict:
+    """Calculate avg, min, max, std with dates for a list of values."""
+    if not values_list:
+        return {"avg": None, "min": None, "max": None, "std": None, "min_date": None, "max_date": None}
+    avg = round(sum(values_list) / len(values_list), 2)
+    min_val = min(values_list)
+    max_val = max(values_list)
+    # Calculate sample standard deviation
+    std = round(np.std(values_list, ddof=1), 2) if len(values_list) > 1 else None
+    # Find dates for min/max (skip None values and non-numeric)
+    min_date = None
+    max_date = None
+    for dt, val in values_dict.items():
+        if isinstance(val, (int, float)):
+            if abs(val - min_val) < 0.01:
+                min_date = dt
+            if abs(val - max_val) < 0.01:
+                max_date = dt
+    return {
+        "avg": avg,
+        "min": min_val,
+        "max": max_val,
+        "std": std,
+        "min_date": min_date.isoformat() if min_date else None,
+        "max_date": max_date.isoformat() if max_date else None,
+    }
+
+
+def _safe_avg(values_list: list) -> float | None:
+    """Calculate average safely, returning None for empty list."""
+    return round(sum(values_list) / len(values_list), 2) if values_list else None
+
+
+def _calc_period_drawdown(series: pd.Series) -> dict:
+    """Calculate period-specific drawdown metrics from portfolio series."""
+    if series is None or series.empty or len(series) < 2:
+        return {}
+    
+    # Calculate running maximum
+    running_max = series.cummax()
+    # Calculate drawdown at each point
+    drawdown = (series - running_max) / running_max * 100
+    # Find max drawdown for period
+    max_dd = drawdown.min()
+    max_dd_date = drawdown.idxmin() if hasattr(drawdown.idxmin, "__call__") else None
+    
+    # Find recovery date (when portfolio exceeds previous peak after max drawdown)
+    recovery_date = None
+    if max_dd_date is not None:
+        peak_before_dd = running_max.loc[max_dd_date]
+        after_dd = series.loc[max_dd_date:]
+        recovered = after_dd[after_dd >= peak_before_dd * 0.99]  # Within 1% of peak
+        if not recovered.empty:
+            recovery_date = recovered.index[0]
+    
+    # Count drawdown episodes (transitions into drawdown state)
+    in_drawdown = drawdown < 0
+    drawdown_count = int((in_drawdown & ~in_drawdown.shift(fill_value=False)).sum())
+    
+    # Calculate days in max drawdown
+    days_in_drawdown = None
+    if max_dd_date is not None and recovery_date is not None:
+        days_in_drawdown = (recovery_date - max_dd_date).days
+    
+    return {
+        "period_max_drawdown_pct": round(float(max_dd), 2) if pd.notna(max_dd) else None,
+        "period_max_drawdown_date": max_dd_date.strftime("%Y-%m-%d") if max_dd_date is not None else None,
+        "period_recovery_date": recovery_date.strftime("%Y-%m-%d") if recovery_date is not None else None,
+        "period_days_in_drawdown": days_in_drawdown,
+        "period_drawdown_count": int(drawdown_count),
     }
 
 
@@ -303,7 +380,17 @@ def _benchmark_block(symbol: str, start: date, end: date):
     }
 
 
-def _portfolio_changes(start_holdings, end_holdings):
+def _portfolio_changes(start_holdings, end_holdings, dailies=None):
+    """Calculate portfolio changes including new enhanced metrics for period_holding_changes table.
+
+    Args:
+        start_holdings: Holdings at period start
+        end_holdings: Holdings at period end
+        dailies: List of daily snapshots for calculating period metrics (optional)
+
+    Returns:
+        Dict with holdings_added, holdings_removed, weight_increases, weight_decreases, top_gainers, top_losers
+    """
     start_map = {h.get("symbol"): h for h in start_holdings if h.get("symbol")}
     end_map = {h.get("symbol"): h for h in end_holdings if h.get("symbol")}
     symbols = set(start_map.keys()) | set(end_map.keys())
@@ -317,34 +404,155 @@ def _portfolio_changes(start_holdings, end_holdings):
     for sym in symbols:
         s = start_map.get(sym)
         e = end_map.get(sym)
+
+        # Base entry with all enhanced fields
+        entry = {"symbol": sym}
+
+        # Weight metrics
+        if s:
+            entry["weight_start_pct"] = s.get("weight_pct")
+        if e:
+            entry["weight_end_pct"] = e.get("weight_pct")
+        if s and e:
+            w_start = s.get("weight_pct")
+            w_end = e.get("weight_pct")
+            if isinstance(w_start, (int, float)) and isinstance(w_end, (int, float)):
+                entry["weight_delta_pct"] = round(w_end - w_start, 2)
+
+        # Calculate avg_weight_pct across period if dailies provided
+        if dailies:
+            weights = []
+            for d in dailies:
+                holdings = _holdings_flat(d) or []
+                h = next((h for h in holdings if h.get("symbol") == sym), None)
+                if h and isinstance(h.get("weight_pct"), (int, float)):
+                    weights.append(h["weight_pct"])
+            if weights:
+                entry["avg_weight_pct"] = round(sum(weights) / len(weights), 2)
+
+        # Share metrics
+        if s:
+            entry["start_shares"] = s.get("shares")
+        if e:
+            entry["end_shares"] = e.get("shares")
+        if s and e and s.get("shares") and e.get("shares"):
+            delta = e["shares"] - s["shares"]
+            entry["shares_delta"] = round(delta, 4)
+            if s["shares"]:
+                entry["shares_delta_pct"] = round((delta / s["shares"]) * 100, 2)
+
+        # Market value metrics
+        if s:
+            entry["start_market_value"] = s.get("market_value")
+        if e:
+            entry["end_market_value"] = e.get("market_value")
+        if s and e:
+            mv_start = s.get("market_value")
+            mv_end = e.get("market_value")
+            if isinstance(mv_start, (int, float)) and isinstance(mv_end, (int, float)):
+                delta = mv_end - mv_start
+                entry["market_value_delta"] = round(delta, 2)
+                if mv_start:
+                    entry["market_value_delta_pct"] = round((delta / mv_start) * 100, 2)
+                    pnl_pct = ((mv_end / mv_start) - 1.0) * 100
+                    entry["pnl_pct_period"] = round(pnl_pct, 2)
+                    entry["pnl_dollar_period"] = round(delta, 2)
+
+                    # Contribution to portfolio = avg_weight * period_return
+                    if entry.get("avg_weight_pct") is not None:
+                        contribution = (entry["avg_weight_pct"] / 100) * pnl_pct
+                        entry["contribution_to_portfolio_pct"] = round(contribution, 2)
+
+        # Performance metrics
+        if s:
+            entry["start_twr_12m_pct"] = _safe_get(s, "analytics", "performance", "twr_12m_pct")
+        if e:
+            entry["end_twr_12m_pct"] = _safe_get(e, "analytics", "performance", "twr_12m_pct")
+
+        # Income metrics
+        if s:
+            entry["start_yield_pct"] = _safe_get(s, "income", "current_yield_pct")
+            entry["start_projected_monthly"] = _safe_get(s, "income", "projected_monthly_dividend")
+        if e:
+            entry["end_yield_pct"] = _safe_get(e, "income", "current_yield_pct")
+            entry["end_projected_monthly"] = _safe_get(e, "income", "projected_monthly_dividend")
+
+        # Risk metrics from dailies
+        if dailies:
+            # Calculate avg volatility
+            vols = []
+            for d in dailies:
+                holdings = _holdings_flat(d) or []
+                h = next((h for h in holdings if h.get("symbol") == sym), None)
+                if h:
+                    vol = _safe_get(h, "analytics", "risk", "vol_30d_pct")
+                    if isinstance(vol, (int, float)):
+                        vols.append(vol)
+            if vols:
+                entry["avg_vol_30d_pct"] = round(sum(vols) / len(vols), 2)
+
+            # Calculate period drawdown and best/worst days
+            symbol_values = []
+            for d in dailies:
+                holdings = _holdings_flat(d) or []
+                h = next((h for h in holdings if h.get("symbol") == sym), None)
+                if h and isinstance(h.get("market_value"), (int, float)):
+                    symbol_values.append((h["market_value"], _as_of(d)))
+
+            if len(symbol_values) > 1:
+                # Drawdown
+                peak = symbol_values[0][0]
+                max_dd = 0
+                for val, _ in symbol_values:
+                    if val > peak:
+                        peak = val
+                    dd = ((val - peak) / peak) * 100 if peak else 0
+                    if dd < max_dd:
+                        max_dd = dd
+                if max_dd < 0:
+                    entry["period_max_drawdown_pct"] = round(max_dd, 2)
+
+                # Best/worst days
+                daily_returns = []
+                for i in range(1, len(symbol_values)):
+                    prev_val, _ = symbol_values[i-1]
+                    curr_val, curr_date = symbol_values[i]
+                    if prev_val:
+                        ret_pct = ((curr_val - prev_val) / prev_val) * 100
+                        daily_returns.append((ret_pct, curr_date))
+
+                if daily_returns:
+                    worst = min(daily_returns, key=lambda x: x[0])
+                    best = max(daily_returns, key=lambda x: x[0])
+                    entry["worst_day_pct"] = round(worst[0], 2)
+                    entry["worst_day_date"] = worst[1]
+                    entry["best_day_pct"] = round(best[0], 2)
+                    entry["best_day_date"] = best[1]
+
+        # Categorize
         if s is None and e is not None:
-            added.append({"symbol": sym, "weight_end_pct": e.get("weight_pct")})
+            added.append(entry)
         elif e is None and s is not None:
-            removed.append({"symbol": sym, "weight_start_pct": s.get("weight_pct")})
+            removed.append(entry)
         else:
             w_start = s.get("weight_pct")
             w_end = e.get("weight_pct")
             if isinstance(w_start, (int, float)) and isinstance(w_end, (int, float)):
                 delta = w_end - w_start
                 if delta > 0.01:
-                    increases.append({"symbol": sym, "weight_start_pct": w_start, "weight_end_pct": w_end, "weight_delta_pct": round(delta, 2)})
+                    increases.append(entry)
                 elif delta < -0.01:
-                    decreases.append({"symbol": sym, "weight_start_pct": w_start, "weight_end_pct": w_end, "weight_delta_pct": round(delta, 2)})
+                    decreases.append(entry)
 
-        if s and e:
-            mv_start = s.get("market_value")
-            mv_end = e.get("market_value")
-            if isinstance(mv_start, (int, float)) and isinstance(mv_end, (int, float)) and mv_start:
-                pnl = mv_end - mv_start
-                pnl_pct = (mv_end / mv_start - 1.0) * 100
-                item = {"symbol": sym, "pnl_pct_period": round(pnl_pct, 2), "pnl_dollar_period": round(pnl, 2)}
-                if pnl >= 0:
-                    gainers.append(item)
-                else:
-                    losers.append(item)
+        # Top gainers/losers
+        if entry.get("pnl_dollar_period") is not None:
+            if entry["pnl_dollar_period"] >= 0:
+                gainers.append(entry)
+            else:
+                losers.append(entry)
 
-    gainers = sorted(gainers, key=lambda x: x["pnl_dollar_period"], reverse=True)[:5]
-    losers = sorted(losers, key=lambda x: x["pnl_dollar_period"])[:5]
+    gainers = sorted(gainers, key=lambda x: x.get("pnl_dollar_period", 0), reverse=True)[:5]
+    losers = sorted(losers, key=lambda x: x.get("pnl_dollar_period", 0))[:5]
 
     return {
         "holdings_added": added,
@@ -353,6 +561,196 @@ def _portfolio_changes(start_holdings, end_holdings):
         "weight_decreases": decreases,
         "top_gainers": gainers,
         "top_losers": losers,
+    }
+
+
+def _generate_period_activity(conn: sqlite3.Connection, start: date, end: date):
+    """Generate activity section for a period from investment_transactions."""
+    cur = conn.cursor()
+
+    # Query all transactions in the period
+    rows = cur.execute(
+        """
+        SELECT date, amount, transaction_type, symbol, plaid_account_id
+        FROM investment_transactions
+        WHERE date BETWEEN ? AND ?
+        ORDER BY date
+        """,
+        (start.isoformat(), end.isoformat()),
+    ).fetchall()
+
+    contributions = []
+    withdrawals = []
+    dividends = []
+    interest = []
+    margin_borrows = []
+    margin_repays = []
+    trades_by_symbol = {}
+
+    for row in rows:
+        tx_date, amount, tx_type, symbol, account_id = row
+        if not tx_date:
+            continue
+
+        tx_dict = {
+            "date": tx_date,
+            "amount": float(amount) if isinstance(amount, (int, float)) else 0.0,
+            "symbol": symbol,
+        }
+
+        if tx_type == "contribution":
+            contrib_dict = {**tx_dict, "account_id": account_id}
+            contributions.append(contrib_dict)
+        elif tx_type == "withdrawal":
+            withdrawal_dict = {**tx_dict, "account_id": account_id}
+            withdrawals.append(withdrawal_dict)
+        elif tx_type == "dividend":
+            dividends.append(tx_dict)
+        elif tx_type == "interest":
+            interest.append(tx_dict)
+        elif tx_type == "margin_borrow":
+            margin_borrows.append(tx_dict)
+        elif tx_type == "margin_repay":
+            margin_repays.append(tx_dict)
+        elif tx_type in ("buy", "sell"):
+            if not symbol:
+                continue
+            if symbol not in trades_by_symbol:
+                trades_by_symbol[symbol] = {"buy_count": 0, "sell_count": 0}
+            if tx_type == "buy":
+                trades_by_symbol[symbol]["buy_count"] += 1
+            elif tx_type == "sell":
+                trades_by_symbol[symbol]["sell_count"] += 1
+
+    # Calculate totals
+    contributions_total = sum(c["amount"] for c in contributions)
+    withdrawals_total = sum(w["amount"] for w in withdrawals)
+    dividends_total = sum(d["amount"] for d in dividends)
+    interest_total = sum(i["amount"] for i in interest)
+
+    total_buys = sum(t["buy_count"] for t in trades_by_symbol.values())
+    total_sells = sum(t["sell_count"] for t in trades_by_symbol.values())
+
+    # Group dividends by symbol
+    dividends_by_symbol = {}
+    for d in dividends:
+        sym = d.get("symbol")
+        if sym:
+            if sym not in dividends_by_symbol:
+                dividends_by_symbol[sym] = 0.0
+            dividends_by_symbol[sym] += d["amount"]
+
+    # Deduplicate dividend events by (symbol, ex_date) and combine amounts
+    dividend_events_dict = {}
+    for d in dividends:
+        sym = d.get("symbol")
+        ex_date = d.get("date")
+        if sym and ex_date:
+            key = (sym, ex_date)
+            if key in dividend_events_dict:
+                # Sum amounts for same symbol+ex_date
+                dividend_events_dict[key]["amount"] += d["amount"]
+            else:
+                dividend_events_dict[key] = {
+                    "symbol": sym,
+                    "ex_date": ex_date,
+                    "pay_date": None,
+                    "amount": d["amount"]
+                }
+    deduped_events = list(dividend_events_dict.values())
+
+    # Calculate margin activity
+    margin_borrowed_total = sum(abs(m["amount"]) for m in margin_borrows)
+    margin_repaid_total = sum(abs(m["amount"]) for m in margin_repays)
+    margin_net_change = margin_borrowed_total - margin_repaid_total
+
+    # Calculate position changes by comparing holdings at start vs end
+    # Get holdings at start of period (day before period starts)
+    start_holdings_rows = cur.execute(
+        """
+        SELECT symbol, shares
+        FROM daily_holdings
+        WHERE as_of_date_local = ?
+        """,
+        ((start - timedelta(days=1)).isoformat(),)
+    ).fetchall()
+
+    start_holdings = {row[0]: row[1] for row in start_holdings_rows if row[0] and row[1]}
+
+    # Get holdings at end of period
+    end_holdings_rows = cur.execute(
+        """
+        SELECT symbol, shares
+        FROM daily_holdings
+        WHERE as_of_date_local = ?
+        """,
+        (end.isoformat(),)
+    ).fetchall()
+
+    end_holdings = {row[0]: row[1] for row in end_holdings_rows if row[0] and row[1]}
+
+    # Calculate position changes
+    all_symbols = set(start_holdings.keys()) | set(end_holdings.keys())
+    positions_added = []
+    positions_removed = []
+    positions_increased = []
+    positions_decreased = []
+
+    for symbol in all_symbols:
+        start_shares = start_holdings.get(symbol, 0)
+        end_shares = end_holdings.get(symbol, 0)
+
+        if start_shares == 0 and end_shares > 0:
+            positions_added.append(symbol)
+        elif start_shares > 0 and end_shares == 0:
+            positions_removed.append(symbol)
+        elif end_shares > start_shares:
+            positions_increased.append(symbol)
+        elif end_shares < start_shares:
+            positions_decreased.append(symbol)
+
+    return {
+        "contributions": {
+            "total": contributions_total,
+            "count": len(contributions),
+            "dates": [c["date"] for c in contributions],
+            "details": contributions,
+        },
+        "withdrawals": {
+            "total": withdrawals_total,
+            "count": len(withdrawals),
+            "dates": [w["date"] for w in withdrawals],
+            "details": withdrawals,
+        },
+        "dividends": {
+            "total_received": dividends_total,
+            "count": len(dividends),
+            "by_symbol": dividends_by_symbol,
+            "events": deduped_events,
+        },
+        "interest": {
+            "total_paid": abs(interest_total),
+            "avg_daily_balance": None,  # Requires daily margin balance series
+            "avg_rate_pct": None,
+            "annualized": None,
+        },
+        "trades": {
+            "total_count": total_buys + total_sells,
+            "buy_count": total_buys,
+            "sell_count": total_sells,
+            "by_symbol": trades_by_symbol,
+        },
+        "positions": {
+            "added": positions_added,
+            "removed": positions_removed,
+            "symbols_increased": positions_increased,
+            "symbols_decreased": positions_decreased,
+        },
+        "margin": {
+            "borrowed": margin_borrowed_total,
+            "repaid": margin_repaid_total,
+            "net_change": margin_net_change,
+        },
     }
 
 
@@ -756,7 +1154,7 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
         if isinstance(risk_start.get(key), (int, float)) and isinstance(risk_end.get(key), (int, float)):
             risk_delta[key] = round(risk_end.get(key) - risk_start.get(key), 2)
 
-    macro_keys = ["ten_year_yield", "two_year_yield", "vix", "cpi_yoy"]
+    macro_keys = ["ten_year_yield", "two_year_yield", "vix", "cpi_yoy", "hy_spread_bps", "macro_stress_score"]
     macro_start_raw = _macro_snapshot(start_snap)
     macro_end_raw = _macro_snapshot(end_snap)
     macro_start = {key: macro_start_raw.get(key) for key in macro_keys}
@@ -767,8 +1165,22 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
         values = [v for v in values if isinstance(v, (int, float))]
         if values:
             macro_avg[key] = round(sum(values) / len(values), 2)
+
+    # Calculate macro period stats with min/max/std/dates
+    macro_period_stats = {}
+    for key in ["vix", "ten_year_yield", "hy_spread_bps", "macro_stress_score"]:
+        values_dict = {}
+        values_list = []
+        for snap in dailies:
+            dt = _parse_date(_as_of(snap))
+            val = _macro_snapshot(snap).get(key)
+            if dt and isinstance(val, (int, float)):
+                values_dict[dt] = val
+                values_list.append(val)
+        if values_list:
+            macro_period_stats[key] = _calc_period_stats(values_list, values_dict)
     risk_stats = {}
-    for key in ["sortino_1y", "sortino_6m", "sortino_3m", "sortino_1m"]:
+    for key in ["vol_30d_pct", "vol_90d_pct", "sharpe_1y", "sortino_1y", "sortino_6m", "sortino_3m", "sortino_1m", "calmar_1y"]:
         values = [
             _risk_flat(s).get(key)
             for s in dailies
@@ -801,6 +1213,234 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
     margin_end = totals_end.get("margin_loan_balance")
     ltv_start = totals_start.get("margin_to_portfolio_pct")
     ltv_end = totals_end.get("margin_to_portfolio_pct")
+
+    # Calculate period stats for portfolio values
+    portfolio_values = [v for v in portfolio_data.values() if isinstance(v, (int, float))]
+    mv_stats = _calc_period_stats(portfolio_values, portfolio_data) if portfolio_values else {}
+
+    # Calculate period stats for net liquidation values
+    net_values = {}
+    for snap in dailies:
+        dt = _parse_date(_as_of(snap))
+        mv = _total_market_value(snap)
+        if dt and isinstance(mv, (int, float)):
+            margin = (_totals(snap) or {}).get("margin_loan_balance")
+            if isinstance(margin, (int, float)):
+                net_values[dt] = mv - margin
+    net_list = [v for v in net_values.values() if isinstance(v, (int, float))]
+    nlv_stats = _calc_period_stats(net_list, net_values) if net_list else {}
+
+    # Calculate period stats for income
+    projected_monthly_values = []
+    yield_pct_values = []
+    for snap in dailies:
+        inc = _income(snap)
+        pm = inc.get("projected_monthly_income")
+        yp = inc.get("portfolio_current_yield_pct")
+        if isinstance(pm, (int, float)):
+            projected_monthly_values.append(pm)
+        if isinstance(yp, (int, float)):
+            yield_pct_values.append(yp)
+    income_stats = {
+        "projected_monthly_avg": _safe_avg(projected_monthly_values),
+        "projected_monthly_min": min(projected_monthly_values) if projected_monthly_values else None,
+        "projected_monthly_max": max(projected_monthly_values) if projected_monthly_values else None,
+        "yield_pct_avg": _safe_avg(yield_pct_values),
+        "yield_pct_min": min(yield_pct_values) if yield_pct_values else None,
+        "yield_pct_max": max(yield_pct_values) if yield_pct_values else None,
+    }
+
+    # Calculate period stats for margin_to_portfolio_pct
+    ltv_values = []
+    ltv_values_dict = {}
+    for snap in dailies:
+        dt = _parse_date(_as_of(snap))
+        totals = _totals(snap)
+        ltv = totals.get("margin_to_portfolio_pct") or totals.get("ltv_pct")
+        if dt and isinstance(ltv, (int, float)):
+            ltv_values.append(ltv)
+            ltv_values_dict[dt] = ltv
+    ltv_stats = _calc_period_stats(ltv_values, ltv_values_dict) if ltv_values else {}
+    
+    # Calculate period stats for margin balance
+    margin_balance_values = []
+    margin_balance_dict = {}
+    for snap in dailies:
+        dt = _parse_date(_as_of(snap))
+        mb = (_totals(snap) or {}).get("margin_loan_balance")
+        if dt and isinstance(mb, (int, float)):
+            margin_balance_values.append(mb)
+            margin_balance_dict[dt] = mb
+    margin_balance_stats = _calc_period_stats(margin_balance_values, margin_balance_dict) if margin_balance_values else {}
+    
+    # Calculate concentration metrics (top3, herfindahl)
+    conc_top3_start = _start_conc.get("top3_weight_pct")
+    conc_top3_end = _end_conc.get("top3_weight_pct")
+    conc_top3_delta = round(conc_top3_end - conc_top3_start, 2) if isinstance(conc_top3_start, (int, float)) and isinstance(conc_top3_end, (int, float)) else None
+    
+    conc_herfindahl_start = _start_conc.get("herfindahl_index")
+    conc_herfindahl_end = _end_conc.get("herfindahl_index")
+    conc_herfindahl_delta = round(conc_herfindahl_end - conc_herfindahl_start, 3) if isinstance(conc_herfindahl_start, (int, float)) and isinstance(conc_herfindahl_end, (int, float)) else None
+    
+    # Calculate margin interest stats
+    apr_values = []
+    for snap in dailies:
+        margin_guidance = (snap.get("margin") or {}).get("guidance") or {}
+        rates = margin_guidance.get("rates") or {}
+        apr = rates.get("apr_current_pct")
+        if isinstance(apr, (int, float)):
+            apr_values.append(apr)
+    margin_interest_start_apr_pct = apr_values[0] if apr_values else None
+    margin_interest_end_apr_pct = apr_values[-1] if apr_values else None
+    margin_interest_avg_apr_pct = round(sum(apr_values) / len(apr_values), 2) if apr_values else None
+
+    # Calculate interest metrics from margin balance time series
+    margin_avg_daily_balance = round(sum(margin_balance_values) / len(margin_balance_values), 2) if margin_balance_values else None
+
+    # Calculate total interest paid and annualized
+    if margin_balance_values and margin_interest_avg_apr_pct:
+        days_in_period = len(margin_balance_values)
+        total_interest = sum([
+            (balance * (margin_interest_avg_apr_pct / 100) / 365)
+            for balance in margin_balance_values
+        ])
+        margin_interest_total_paid = round(total_interest, 2)
+        margin_interest_annualized = round(total_interest * (365 / days_in_period), 2) if days_in_period else None
+        margin_interest_avg_daily_cost = round(total_interest / days_in_period, 2) if days_in_period else None
+    else:
+        margin_interest_total_paid = None
+        margin_interest_annualized = None
+        margin_interest_avg_daily_cost = None
+    
+    # Calculate goal pace tier metrics
+    start_pace = _goal_pace(start_snap)
+    end_pace = _goal_pace(end_snap)
+    start_pace_current = (start_pace or {}).get("current_pace", {}) or {}
+    end_pace_current = (end_pace or {}).get("current_pace", {}) or {}
+    pace_tier_start = start_pace_current.get("pct_of_tier_pace")
+    if pace_tier_start is None:
+        pace_tier_start = start_pace_current.get("pct_of_tier")
+    pace_tier_end = end_pace_current.get("pct_of_tier_pace")
+    if pace_tier_end is None:
+        pace_tier_end = end_pace_current.get("pct_of_tier")
+    pace_tier_delta = round(pace_tier_end - pace_tier_start, 2) if isinstance(pace_tier_start, (int, float)) and isinstance(pace_tier_end, (int, float)) else None
+    pace_months_start = start_pace_current.get("months_ahead_behind")
+    pace_months_end = end_pace_current.get("months_ahead_behind")
+    pace_months_delta = (
+        round(pace_months_end - pace_months_start, 2)
+        if isinstance(pace_months_start, (int, float)) and isinstance(pace_months_end, (int, float))
+        else None
+    )
+    pace_category_start = start_pace_current.get("pace_category")
+    pace_category_end = end_pace_current.get("pace_category")
+
+    # Calculate VaR/CVaR averages for period
+    var_95_1d_values = []
+    var_90_1d_values = []
+    var_99_1d_values = []
+    var_95_1w_values = []
+    var_95_1m_values = []
+    cvar_95_1d_values = []
+    cvar_90_1d_values = []
+    cvar_99_1d_values = []
+    cvar_95_1w_values = []
+    cvar_95_1m_values = []
+    for snap in dailies:
+        risk_data = _risk_flat(snap)
+        if isinstance(risk_data.get("var_95_1d_pct"), (int, float)):
+            var_95_1d_values.append(risk_data["var_95_1d_pct"])
+        if isinstance(risk_data.get("var_90_1d_pct"), (int, float)):
+            var_90_1d_values.append(risk_data["var_90_1d_pct"])
+        if isinstance(risk_data.get("var_99_1d_pct"), (int, float)):
+            var_99_1d_values.append(risk_data["var_99_1d_pct"])
+        if isinstance(risk_data.get("var_95_1w_pct"), (int, float)):
+            var_95_1w_values.append(risk_data["var_95_1w_pct"])
+        if isinstance(risk_data.get("var_95_1m_pct"), (int, float)):
+            var_95_1m_values.append(risk_data["var_95_1m_pct"])
+        if isinstance(risk_data.get("cvar_95_1d_pct"), (int, float)):
+            cvar_95_1d_values.append(risk_data["cvar_95_1d_pct"])
+        if isinstance(risk_data.get("cvar_90_1d_pct"), (int, float)):
+            cvar_90_1d_values.append(risk_data["cvar_90_1d_pct"])
+        if isinstance(risk_data.get("cvar_99_1d_pct"), (int, float)):
+            cvar_99_1d_values.append(risk_data["cvar_99_1d_pct"])
+        if isinstance(risk_data.get("cvar_95_1w_pct"), (int, float)):
+            cvar_95_1w_values.append(risk_data["cvar_95_1w_pct"])
+        if isinstance(risk_data.get("cvar_95_1m_pct"), (int, float)):
+            cvar_95_1m_values.append(risk_data["cvar_95_1m_pct"])
+    
+    var_95_1d_avg = round(sum(var_95_1d_values) / len(var_95_1d_values), 2) if var_95_1d_values else None
+    var_90_1d_avg = round(sum(var_90_1d_values) / len(var_90_1d_values), 2) if var_90_1d_values else None
+    var_99_1d_avg = round(sum(var_99_1d_values) / len(var_99_1d_values), 2) if var_99_1d_values else None
+    var_95_1w_avg = round(sum(var_95_1w_values) / len(var_95_1w_values), 2) if var_95_1w_values else None
+    var_95_1m_avg = round(sum(var_95_1m_values) / len(var_95_1m_values), 2) if var_95_1m_values else None
+    cvar_95_1d_avg = round(sum(cvar_95_1d_values) / len(cvar_95_1d_values), 2) if cvar_95_1d_values else None
+    cvar_90_1d_avg = round(sum(cvar_90_1d_values) / len(cvar_90_1d_values), 2) if cvar_90_1d_values else None
+    cvar_99_1d_avg = round(sum(cvar_99_1d_values) / len(cvar_99_1d_values), 2) if cvar_99_1d_values else None
+    cvar_95_1w_avg = round(sum(cvar_95_1w_values) / len(cvar_95_1w_values), 2) if cvar_95_1w_values else None
+    cvar_95_1m_avg = round(sum(cvar_95_1m_values) / len(cvar_95_1m_values), 2) if cvar_95_1m_values else None
+
+    # Calculate margin safety metrics
+    margin_safety = {}
+    buffer_values = []
+    buffer_dates = []
+    for snap in dailies:
+        dt = _parse_date(_as_of(snap))
+        margin_stress = _margin_stress(snap)
+        buffer = ((margin_stress.get("stress_scenarios") or {}).get("margin_call_distance") or {}).get("buffer_to_margin_call_pct")
+        if dt and isinstance(buffer, (int, float)):
+            buffer_values.append(buffer)
+            buffer_dates.append(dt)
+    if buffer_values:
+        min_buffer = min(buffer_values)
+        min_buffer_idx = buffer_values.index(min_buffer)
+        min_buffer_date = buffer_dates[min_buffer_idx]
+        margin_safety = {
+            "min_buffer_to_call_pct": round(min_buffer, 2),
+            "min_buffer_date": min_buffer_date.isoformat(),
+            "days_below_50pct_buffer": sum(1 for b in buffer_values if b < 50),
+            "days_below_40pct_buffer": sum(1 for b in buffer_values if b < 40),
+            "margin_call_events": sum(1 for b in buffer_values if b < 0),
+        }
+
+    # Calculate period-specific drawdown metrics
+    period_drawdown = _calc_period_drawdown(portfolio_series)
+
+    # Calculate VaR breach metrics
+    var_95_values = []
+    daily_returns = []
+    dates_list = []
+    for i in range(1, len(dailies)):
+        prev_mv = _total_market_value(dailies[i-1])
+        curr_mv = _total_market_value(dailies[i])
+        if isinstance(prev_mv, (int, float)) and isinstance(curr_mv, (int, float)) and prev_mv > 0:
+            daily_return = (curr_mv / prev_mv - 1.0) * 100
+            daily_returns.append(daily_return)
+            dates_list.append(_parse_date(_as_of(dailies[i])))
+            # Get VaR 95 from risk data
+            risk_data = _risk_flat(dailies[i])
+            var_95 = risk_data.get("var_95_1d_pct")
+            if isinstance(var_95, (int, float)):
+                var_95_values.append((var_95, daily_return, dates_list[-1]))
+    # Count days exceeding VaR 95
+    days_exceeding_var_95 = sum(1 for var_95, ret, _ in var_95_values 
+                                  if isinstance(var_95, (int, float)) and isinstance(ret, (int, float)) and ret < -abs(var_95))
+    worst_day_return = min(daily_returns) if daily_returns else None
+    worst_day_date = dates_list[daily_returns.index(worst_day_return)] if worst_day_return is not None and daily_returns.index(worst_day_return) < len(dates_list) else None
+    best_day_return = max(daily_returns) if daily_returns else None
+    best_day_date = dates_list[daily_returns.index(best_day_return)] if best_day_return is not None and daily_returns.index(best_day_return) < len(dates_list) else None
+
+    # Generate activity section early so we can extract dividends_received_period
+    activity = _generate_period_activity(conn, period_start, end_date)
+
+    # Update interest metrics with calculated values
+    activity["interest"]["avg_daily_balance"] = margin_avg_daily_balance
+    activity["interest"]["avg_rate_pct"] = margin_interest_avg_apr_pct
+    activity["interest"]["annualized"] = margin_interest_annualized
+    if activity["interest"]["total_paid"] is None:
+        activity["interest"]["total_paid"] = margin_interest_total_paid
+
+    # Extract dividends received for period_summary
+    dividends_received_period = activity.get("dividends", {}).get("total_received")
 
     period_summary = {
         "totals": {
@@ -861,6 +1501,7 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
                 if isinstance((end_income or {}).get("portfolio_yield_on_cost_pct"), (int, float)) and isinstance((start_income or {}).get("portfolio_yield_on_cost_pct"), (int, float))
                 else None,
             },
+            "dividends_received_period": dividends_received_period,
         },
         "performance": {
             "period": {"twr_period_pct": twr_period_pct, "pnl_dollar_period": _round(pnl), "pnl_pct_period": _round(pnl_pct)},
@@ -908,21 +1549,43 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
             },
         },
         "goal_tiers": _goal_tiers(end_snap),
-        "goal_pace": _goal_pace(end_snap),
+        "goal_pace": {
+            **_goal_pace(end_snap),
+            "pace_category": {
+                "start": pace_category_start,
+                "end": pace_category_end,
+            },
+            "months_ahead_behind": {
+                "start": pace_months_start,
+                "end": pace_months_end,
+                "delta": pace_months_delta,
+            },
+            "tier_pace_pct": {
+                "start": pace_tier_start,
+                "end": pace_tier_end,
+                "delta": pace_tier_delta,
+            },
+        },
         "composition": {
             "start": {
                 "holding_count": len(start_holdings),
+                "concentration_top3_pct": conc_top3_start,
                 "concentration_top5_pct": conc_top5_start,
+                "concentration_herfindahl": conc_herfindahl_start,
             },
             "end": {
                 "holding_count": len(end_holdings),
+                "concentration_top3_pct": conc_top3_end,
                 "concentration_top5_pct": conc_top5_end,
+                "concentration_herfindahl": conc_herfindahl_end,
             },
             "delta": {
                 "holding_count": len(end_holdings) - len(start_holdings),
+                "concentration_top3_pct": conc_top3_delta,
                 "concentration_top5_pct": _round(conc_top5_end - conc_top5_start, 2)
                 if isinstance(conc_top5_start, (int, float)) and isinstance(conc_top5_end, (int, float))
                 else None,
+                "concentration_herfindahl": conc_herfindahl_delta,
             },
         },
         "macro": {
@@ -957,6 +1620,62 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
     }
     if risk_stats:
         period_summary["risk"]["stats"] = risk_stats
+
+    # Add period stats for portfolio values
+    period_summary["period_stats"] = {
+        "market_value": mv_stats,
+        "net_liquidation_value": nlv_stats,
+        "projected_monthly_income": {
+            "avg": income_stats.get("projected_monthly_avg"),
+            "min": income_stats.get("projected_monthly_min"),
+            "max": income_stats.get("projected_monthly_max"),
+        },
+        "yield_pct": {
+            "avg": income_stats.get("yield_pct_avg"),
+            "min": income_stats.get("yield_pct_min"),
+            "max": income_stats.get("yield_pct_max"),
+        },
+        "margin_to_portfolio_pct": ltv_stats if ltv_stats else {},
+        "margin_balance": margin_balance_stats if margin_balance_stats else {},
+        "var_95_1d_avg": var_95_1d_avg,
+        "var_90_1d_avg": var_90_1d_avg,
+        "var_99_1d_avg": var_99_1d_avg,
+        "var_95_1w_avg": var_95_1w_avg,
+        "var_95_1m_avg": var_95_1m_avg,
+        "cvar_95_1d_avg": cvar_95_1d_avg,
+        "cvar_90_1d_avg": cvar_90_1d_avg,
+        "cvar_99_1d_avg": cvar_99_1d_avg,
+        "cvar_95_1w_avg": cvar_95_1w_avg,
+        "cvar_95_1m_avg": cvar_95_1m_avg,
+        "margin_interest": {
+            "start_apr_pct": margin_interest_start_apr_pct,
+            "end_apr_pct": margin_interest_end_apr_pct,
+            "avg_apr_pct": margin_interest_avg_apr_pct,
+        },
+    }
+
+    # Add macro period stats
+    if macro_period_stats:
+        period_summary["macro_period_stats"] = macro_period_stats
+
+    # Add period-specific drawdown metrics
+    period_summary["period_drawdown"] = period_drawdown
+
+    # Add VaR breach metrics
+    period_summary["var_breach"] = {
+        "days_exceeding_var_95": days_exceeding_var_95,
+        "worst_day_return_pct": worst_day_return,
+        "worst_day_date": worst_day_date.isoformat() if worst_day_date else None,
+        "best_day_return_pct": best_day_return,
+        "best_day_date": best_day_date.isoformat() if best_day_date else None,
+    }
+
+    # Add margin safety metrics
+    if margin_safety:
+        period_summary["margin_safety"] = margin_safety
+
+    # Add activity section (already generated earlier)
+    period_summary["activity"] = activity
 
     summary_id = f"{snapshot_type}_{end_date.isoformat()}"
     benchmark_symbol = settings.benchmark_primary
@@ -1001,7 +1720,7 @@ def build_period_snapshot(conn: sqlite3.Connection, snapshot_type: str, as_of: s
         },
         "benchmark": _benchmark_block(benchmark_symbol, period_start, end_date),
         "period_summary": period_summary,
-        "portfolio_changes": _portfolio_changes(start_holdings, end_holdings),
+        "portfolio_changes": _portfolio_changes(start_holdings, end_holdings, dailies),
         "intervals": intervals,
         "summary": summary,
     }

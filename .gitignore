@@ -60,3 +60,6 @@ TASKS.md
 blueprint.md
 *.md
 /docs
+/scripts
+/api_samples
+/tests

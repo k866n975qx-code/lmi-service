@@ -3,9 +3,12 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
+_DB_PATH = None  # Will be set when get_conn is called
 
 
 def get_conn(db_path: str) -> sqlite3.Connection:
+    global _DB_PATH
+    _DB_PATH = db_path  # Store for migration use
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, isolation_level=None)  # autocommit
     conn.execute("PRAGMA journal_mode=WAL;")
@@ -241,12 +244,14 @@ def migrate(conn: sqlite3.Connection):
                 WHERE source!='lunchmoney'
                 """
             )
-    # Flat tables migration (002)
-    _run_flat_tables_migration(conn)
-    # Period interval enrichment (003)
-    _run_period_interval_migration(conn)
-    # Drop legacy snapshot tables only (replaced by daily_portfolio, period_summary).
+    # Consolidated schema migration (004) - replaces 002 and 003
+    if _run_consolidated_schema_migration(conn, str(_DB_PATH)):
+        print("Consolidated schema migration completed")
+        # Connection remains open, no need to reopen
+    
+    # Drop legacy snapshot tables only if they exist (replaced by daily_portfolio, period_summary).
     # NEVER drop or truncate account_balances - it holds per-date balance history from sync.
+    # Note: 004 creates fresh schema, so these drops may be no-ops
     cur.execute("DROP TABLE IF EXISTS snapshot_daily_current")
     cur.execute("DROP TABLE IF EXISTS snapshots")
     conn.commit()
@@ -332,3 +337,67 @@ def _run_period_interval_migration(conn: sqlite3.Connection):
     for col_name, col_type in new_cols:
         if col_name not in pi_cols:
             cur.execute(f"ALTER TABLE period_intervals ADD COLUMN {col_name} {col_type}")
+    conn.commit()
+
+
+def _run_consolidated_schema_migration(conn: sqlite3.Connection, db_path: str) -> bool:
+    """
+    Execute migrations/004_consolidated_flat_schema.sql.
+    This creates the full flattened schema.
+    Returns True if migration was run, False if already at version 5.
+    """
+    cur = conn.cursor()
+    
+    # Check current schema version
+    cur.execute("PRAGMA user_version")
+    current_version = cur.fetchone()[0]
+    
+    if current_version >= 5:
+        print(f"Schema already at version {current_version}, skipping migration")
+        return False
+    
+    print(f"Current schema version: {current_version}")
+    print(f"Running consolidated schema migration to version 5...")
+    
+    # Create backup before migration using SQLite backup API (doesn't require closing connection)
+    import shutil
+    import os
+    from datetime import datetime
+    
+    backup_dir = os.path.dirname(db_path) + "/backups"
+    os.makedirs(backup_dir, exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_filename = f"pre_migration_v{current_version}_to_v5_{timestamp}.db"
+    backup_path = os.path.join(backup_dir, backup_filename)
+    
+    print(f"Creating backup before migration...")
+    print(f"  Source: {db_path}")
+    print(f"  Target: {backup_path}")
+    
+    # Use SQLite backup API to create consistent backup
+    backup_conn = sqlite3.connect(backup_path, isolation_level=None)
+    backup_conn.execute("PRAGMA journal_mode=WAL;")
+    conn.backup(backup_conn)
+    backup_conn.commit()
+    backup_conn.close()
+    
+    print(f"Backup created successfully")
+    
+    # Run consolidated migration (using existing open connection)
+    path = _MIGRATIONS_DIR / "004_consolidated_flat_schema.sql"
+    if not path.exists():
+        print(f"Warning: Migration file not found: {path}")
+        return False
+    
+    sql = path.read_text()
+    conn.executescript(sql)
+    
+    # Set schema version to 5
+    conn.execute("PRAGMA user_version=5")
+    conn.commit()
+    
+    print(f"Migration to schema version 5 complete")
+    print(f"Backup saved to: {backup_path}")
+    
+    return True

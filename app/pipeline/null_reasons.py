@@ -212,6 +212,9 @@ def _reason_for_zero(path: list[Any], root: dict, context: _NullReasonContext) -
         symbol = _find_holding_symbol(root, path)
         field = path[-1] if path else None
         if symbol and field:
+            # Skip numeric count fields that should return 0, not explanations
+            if field == "missed_payments_12m":
+                return None
             reason = context.dividend_reasons_by_symbol.get(symbol, {}).get(field)
             if reason:
                 return reason
@@ -406,9 +409,10 @@ def _dividend_reliability_reasons(
             reasons["avg_days_between_payments"] = base
             reasons["payment_timing_consistency"] = base
             reasons["dividend_cuts_12m"] = base
-            reasons["missed_payments_12m"] = base
+            # missed_payments_12m is a numeric count field - should not be replaced with string
         elif not pay_dates:
-            reasons["missed_payments_12m"] = f"no dividend payments recorded since {window_start.isoformat()}"
+            # missed_payments_12m is a numeric count field - should return 0, not explanation
+            pass
 
         if start_6 <= 0 or end_6 <= 0:
             reasons["dividend_growth_rate_6m_pct"] = (

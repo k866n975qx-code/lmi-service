@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from ..config import settings
 from ..db import get_conn
-from ..pipeline.snapshot_views import assemble_daily_snapshot
+from ..pipeline.snapshot_views import assemble_daily_snapshot, assemble_period_snapshot_target
 from ..pipeline.diff_daily import (
     _totals,
     _income,
@@ -46,7 +46,16 @@ from ..alerts.notifier import (
     set_min_severity,
 )
 from ..pipeline.diff_daily import diff_daily_from_db
-from ..services.telegram import TelegramClient, format_goal_tiers_html, build_inline_keyboard
+from ..services.telegram import (
+    TelegramClient,
+    format_goal_tiers_html,
+    build_inline_keyboard,
+    format_period_holdings_html,
+    format_period_trades_html,
+    format_period_activity_html,
+    format_period_risk_html,
+    build_period_insight_keyboard,
+)
 
 router = APIRouter()
 
@@ -162,7 +171,9 @@ def _help_text() -> str:
         "Add days: /chart performance 365\n\n"
         "<b>🤖 AI</b>\n"
         "/insights - AI portfolio analysis (Sonnet)\n"
-        "/insights deep - deeper analysis (Opus)\n\n"
+        "/insights deep - deeper analysis (Opus)\n"
+        "/pinsights <weekly|monthly|quarterly|yearly> - period AI insight\n"
+        "/pinsights monthly deep - deeper period analysis\n\n"
         "<b>🔮 Analysis</b>\n"
         "/whatif &lt;param&gt; &lt;value&gt; - scenario planning\n"
         "/trend [category] - alert frequency trends\n"
@@ -197,6 +208,134 @@ def _prev_snapshot_date(conn, as_of_date_local: str):
         (as_of_date_local,),
     ).fetchone()
     return row[0] if row else None
+
+
+_PERIOD_KIND_TO_DB = {
+    "weekly": "WEEK",
+    "monthly": "MONTH",
+    "quarterly": "QUARTER",
+    "yearly": "YEAR",
+}
+_PERIOD_DB_TO_KIND = {v: k for k, v in _PERIOD_KIND_TO_DB.items()}
+
+
+def _normalize_period_kind(kind: str | None) -> str | None:
+    if not kind:
+        return None
+    raw = str(kind).strip().lower()
+    upper = str(kind).strip().upper()
+    if raw in _PERIOD_KIND_TO_DB:
+        return raw
+    if upper in _PERIOD_DB_TO_KIND:
+        return _PERIOD_DB_TO_KIND[upper]
+    aliases = {
+        "week": "weekly",
+        "weeks": "weekly",
+        "month": "monthly",
+        "months": "monthly",
+        "quarter": "quarterly",
+        "quarters": "quarterly",
+        "year": "yearly",
+        "years": "yearly",
+    }
+    if raw in aliases:
+        return aliases[raw]
+    return None
+
+
+def _latest_period_target_snapshot(conn, kind: str, prefer_rolling: bool = False):
+    """Load latest period snapshot in target schema for kind."""
+    normalized = _normalize_period_kind(kind)
+    if not normalized:
+        return None
+    db_period_type = _PERIOD_KIND_TO_DB[normalized]
+    rolling_order = (1, 0) if prefer_rolling else (0, 1)
+    for is_rolling in rolling_order:
+        row = conn.execute(
+            """
+            SELECT period_start_date, period_end_date
+            FROM period_summary
+            WHERE period_type = ? AND is_rolling = ?
+            ORDER BY period_end_date DESC
+            LIMIT 1
+            """,
+            (db_period_type, is_rolling),
+        ).fetchone()
+        if not row:
+            continue
+        period_start_date, period_end_date = row[0], row[1]
+        snap = assemble_period_snapshot_target(
+            conn,
+            db_period_type,
+            period_end_date,
+            period_start_date=period_start_date,
+            rolling=bool(is_rolling),
+        )
+        if snap:
+            return snap
+    return None
+
+
+def _target_period_snapshot_from_callback(conn, param: str):
+    """
+    Parse callback param `kind:start:end` and load exact period snapshot.
+    Falls back to latest for kind when dates are missing.
+    """
+    parts = (param or "").split(":")
+    kind = _normalize_period_kind(parts[0] if parts else None)
+    if not kind:
+        return None
+    db_period_type = _PERIOD_KIND_TO_DB[kind]
+    if len(parts) >= 3 and parts[1] and parts[2]:
+        snap = assemble_period_snapshot_target(
+            conn,
+            db_period_type,
+            parts[2],
+            period_start_date=parts[1],
+            rolling=False,
+        )
+        if snap:
+            return snap
+    return _latest_period_target_snapshot(conn, kind, prefer_rolling=True)
+
+
+async def _send_period_ai_insight(tg: TelegramClient, conn, kind: str, deep: bool = False) -> bool:
+    """Generate and send period AI insight with detail buttons."""
+    if not settings.anthropic_api_key:
+        await tg.send_message_html("ANTHROPIC_API_KEY not configured")
+        return False
+
+    normalized = _normalize_period_kind(kind)
+    if not normalized:
+        await tg.send_message_html("Usage: /pinsights <weekly|monthly|quarterly|yearly> [deep]")
+        return False
+
+    period_snap = _latest_period_target_snapshot(conn, normalized, prefer_rolling=True)
+    if not period_snap:
+        await tg.send_message_html(f"No {normalized} period summary available.")
+        return False
+
+    try:
+        from ..services.ai_insights import generate_period_insight
+
+        model = "claude-opus-4-20250514" if deep else "claude-sonnet-4-20250514"
+        label = "Deep Analysis" if deep else "Quick Insight"
+        await tg.send_message_html(f"🤖 Generating {normalized} {label.lower()}...")
+        insight = generate_period_insight(period_snap, settings.anthropic_api_key, model=model)
+        if not insight:
+            await tg.send_message_html("Failed to generate period AI insight.")
+            return False
+
+        reply_markup = build_period_insight_keyboard(period_snap)
+        title = f"🤖 <b>{normalized.title()} AI {label}</b>"
+        await tg.send_message_html(f"{title}\n\n{insight}", reply_markup=reply_markup)
+        return True
+    except ImportError:
+        await tg.send_message_html("AI insights not available (anthropic package not installed).")
+        return False
+    except Exception:
+        await tg.send_message_html("Error generating period AI insight.")
+        return False
 
 def _fmt_money(val):
     try:
@@ -923,6 +1062,10 @@ def _menu_markup() -> dict:
             {"text": "🤖 AI Insight", "callback_data": "insights:quick"},
             {"text": "🧠 Deep Analysis", "callback_data": "insights:deep"},
         ],
+        [
+            {"text": "🤖 Weekly AI", "callback_data": "period_insights:weekly:quick"},
+            {"text": "🧠 Weekly Deep", "callback_data": "period_insights:weekly:deep"},
+        ],
         # Analysis
         [
             {"text": "🔮 What-If", "callback_data": "cmd:whatif"},
@@ -1586,15 +1729,53 @@ async def _handle_callback_query(callback_query: dict):
             await tg.send_message_html("Error generating chart")
 
     elif action == "period":
-        if param in {"weekly", "monthly", "quarterly", "yearly"}:
+        period_kind = _normalize_period_kind(param)
+        if period_kind in {"weekly", "monthly", "quarterly", "yearly"}:
             try:
-                as_of, html = build_period_report_html(conn, param)
+                _as_of, html = build_period_report_html(conn, period_kind)
                 if html:
-                    await tg.send_message_html(html)
+                    period_menu = build_inline_keyboard(
+                        [
+                            [
+                                {"text": "🤖 AI Insight", "callback_data": f"period_insights:{period_kind}:quick"},
+                                {"text": "🧠 Deep Analysis", "callback_data": f"period_insights:{period_kind}:deep"},
+                            ]
+                        ]
+                    )
+                    await tg.send_message_html(html, reply_markup=period_menu)
                 else:
-                    await tg.send_message_html(f"No {param} report available")
+                    await tg.send_message_html(f"No {period_kind} report available")
             except Exception:
-                await tg.send_message_html(f"Error generating {param} report")
+                await tg.send_message_html(f"Error generating {period_kind} report")
+
+    elif action in {"period_holdings", "period_trades", "period_activity", "period_risk"}:
+        period_snap = _target_period_snapshot_from_callback(conn, param)
+        if not period_snap:
+            await tg.send_message_html("No period snapshot found for this action.")
+        else:
+            formatter_map = {
+                "period_holdings": format_period_holdings_html,
+                "period_trades": format_period_trades_html,
+                "period_activity": format_period_activity_html,
+                "period_risk": format_period_risk_html,
+            }
+            formatter = formatter_map.get(action)
+            html = formatter(period_snap) if formatter else "No period action available."
+            await tg.send_message_html(html)
+
+    elif action == "period_dismiss":
+        if message_id:
+            await tg.edit_message_reply_markup(chat_id, message_id, None)
+
+    elif action == "period_insights":
+        param_parts = (param or "").split(":")
+        period_kind = _normalize_period_kind(param_parts[0] if param_parts else None)
+        depth = (param_parts[1] if len(param_parts) > 1 else "quick").lower()
+        deep = depth == "deep"
+        if not period_kind:
+            await tg.send_message_html("Invalid period insight request.")
+        else:
+            await _send_period_ai_insight(tg, conn, period_kind, deep=deep)
 
     elif action == "insights":
         if not settings.anthropic_api_key:
@@ -1904,6 +2085,24 @@ async def telegram_webhook(update: dict):
                 reply = "AI insights not available (anthropic package not installed)."
             except Exception:
                 reply = "Error generating AI insight."
+    elif cmd == "pinsights":
+        if not args:
+            period_kind = "weekly"
+            use_deep = False
+        else:
+            first = args[0].lower()
+            if first == "deep":
+                period_kind = "weekly"
+                use_deep = True
+            else:
+                period_kind = _normalize_period_kind(first)
+                use_deep = any(arg.lower() == "deep" for arg in args[1:])
+        if not period_kind:
+            reply = "Usage: /pinsights <weekly|monthly|quarterly|yearly> [deep]"
+        else:
+            tg = TelegramClient(settings.telegram_bot_token, chat_id)
+            await _send_period_ai_insight(tg, conn, period_kind, deep=use_deep)
+            return {"ok": True}
     elif cmd == "morning":
         as_of, html = build_morning_brief_html(conn)
         reply = html if html else "No snapshot available."

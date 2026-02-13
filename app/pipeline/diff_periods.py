@@ -283,7 +283,10 @@ def diff_periods_from_db(conn: sqlite3.Connection, snapshot_type: str, left_as_o
     mtd_right = (right_like.get("dividends") or {}).get("realized_mtd", {}).get("total_dividends")
 
     weekly_aligned = bool(getattr(settings, "weekly_calendar_aligned", False))
-    calendar_aligned = _calendar_aligned(snapshot_type, left_end, right_end, weekly_aligned)
+    # Calendar alignment is a property of each period window, not the distance between two end dates.
+    left_calendar_aligned = _calendar_aligned(snapshot_type, left_start, left_end_date, weekly_aligned)
+    right_calendar_aligned = _calendar_aligned(snapshot_type, right_start, right_end_date, weekly_aligned)
+    calendar_aligned = bool(left_calendar_aligned and right_calendar_aligned)
 
     diff = build_daily_diff(
         left_like,

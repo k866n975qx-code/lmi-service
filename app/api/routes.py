@@ -8,7 +8,10 @@ from ..pipeline.orchestrator import trigger_sync, trigger_sync_window, get_statu
 from ..pipeline.periods import _period_bounds
 from ..pipeline.diff_daily import diff_daily_from_db
 from ..pipeline.diff_periods import diff_periods_from_db
-from ..pipeline.snapshot_views import assemble_daily_snapshot, assemble_period_snapshot
+from ..pipeline.snapshot_views import (
+    assemble_daily_snapshot,
+    assemble_period_snapshot_target,
+)
 from ..pipeline.null_reasons import replace_nulls_with_reasons
 from ..config import settings
 from ..db import get_conn
@@ -207,7 +210,7 @@ def get_daily_portfolio(
     description=(
         "Returns the most recent completed period summary (final snapshot). "
         "Example: /period-summary/weekly/latest returns the last completed week. "
-        "Schema: samples/period.json. "
+        "Schema: api_samples/target_period schema. "
         "Use slim=false for full payload."
     ),
     tags=["Periods"],
@@ -234,11 +237,10 @@ def get_latest_period_summary(kind: str):
     if not row:
         raise HTTPException(404, f'no {kind} snapshots found')
 
-    snap = assemble_period_snapshot(conn, period_type, row[1], period_start_date=row[0], rolling=False)
+    snap = assemble_period_snapshot_target(conn, period_type, row[1], period_start_date=row[0], rolling=False)
     if not snap:
         raise HTTPException(404, f'no {kind} snapshots found')
-    # Period snapshots are already summary-level; slim_snapshot is for daily V5 shape only
-    return replace_nulls_with_reasons(snap, kind="period", conn=conn)
+    return snap
 
 @router.get(
     '/period-summary/{kind}/rolling',
@@ -246,7 +248,7 @@ def get_latest_period_summary(kind: str):
     description=(
         "Returns the current incomplete period summary (rolling snapshot). "
         "Example: /period-summary/monthly/rolling returns month-to-date. "
-        "Schema: samples/period.json. "
+        "Schema: api_samples/target_period schema. "
     ),
     tags=["Periods"],
 )
@@ -272,17 +274,17 @@ def get_rolling_period_summary(kind: str):
     if not row:
         raise HTTPException(404, f'no rolling {kind} snapshot found')
 
-    snap = assemble_period_snapshot(conn, period_type, row[1], period_start_date=row[0], rolling=True)
+    snap = assemble_period_snapshot_target(conn, period_type, row[1], period_start_date=row[0], rolling=True)
     if not snap:
         raise HTTPException(404, f'no rolling {kind} snapshot found')
-    return replace_nulls_with_reasons(snap, kind="period", conn=conn)
+    return snap
 
 @router.get(
     '/period-summary/{kind}/{as_of}',
     summary="Get stored period summary by as-of date",
     description=(
         "Returns a persisted period summary. "
-        "Schema: samples/period.json. "
+        "Schema: api_samples/target_period schema. "
         "Use slim=false for full payload."
     ),
     tags=["Periods"],
@@ -297,15 +299,15 @@ def get_period_summary(kind: str, as_of: str):
         raise HTTPException(400, 'as_of must be YYYY-MM-DD')
     start, end = _period_bounds(kind, as_of_date)
     conn = get_conn(settings.db_path)
-    snap = assemble_period_snapshot(conn, _PERIOD_MAP[kind], end.isoformat(), period_start_date=start.isoformat(), rolling=False)
+    snap = assemble_period_snapshot_target(conn, _PERIOD_MAP[kind], end.isoformat(), period_start_date=start.isoformat(), rolling=False)
     if not snap:
         raise HTTPException(404, 'snapshot not found')
-    return replace_nulls_with_reasons(snap, kind="period", conn=conn)
+    return snap
 
 @router.get(
     '/compare/daily/{left_date}/{right_date}',
     summary="Compare two daily portfolios",
-    description="Returns a daily comparison. Schema: samples/diff_daily.json.",
+    description="Returns a daily comparison. Schema: api_samples/diff_daily.json.",
     tags=["Diffs"],
 )
 def compare_daily_portfolios(left_date: str, right_date: str):
@@ -319,7 +321,7 @@ def compare_daily_portfolios(left_date: str, right_date: str):
 @router.get(
     '/compare/period/{kind}/{left_as_of}/{right_as_of}',
     summary="Compare two period summaries",
-    description="Returns a period comparison. Schema: samples/diff_period.json.",
+    description="Returns a period comparison. Schema: api_samples/diff_period.json.",
     tags=["Diffs"],
 )
 def compare_period_summaries(kind: str, left_as_of: str, right_as_of: str):

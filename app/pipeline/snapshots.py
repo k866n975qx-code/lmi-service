@@ -29,6 +29,204 @@ SPECIAL_DIVIDEND_FACTOR = 2.5
 DIVIDEND_PAY_MATCH_WINDOW_DAYS = 3
 
 
+def _best_ex_date_for_pay(
+    sym: str,
+    pay_date: date,
+    provider_divs: dict[str, list[dict]],
+    ex_date_est_by_symbol: dict[str, date] | None = None,
+    pay_lag_by_symbol: dict[str, int] | None = None,
+    default_lag: int | None = None,
+) -> date | None:
+    """
+    Find the ex-date that corresponds to a received dividend payment.
+
+    This function attempts to match a payment date to its corresponding ex-date
+    by looking at provider dividend records. The matching strategy is:
+
+    1. Direct match: Find provider ex-date with pay_date within DIVIDEND_PAY_MATCH_WINDOW_DAYS
+    2. Estimated match: Use ex_date_est if within 60 days of payment
+    3. Historical fallback: Use most recent ex-date before payment date
+    4. Lag estimation: Estimate ex-date by subtracting typical pay lag from pay_date
+
+    Args:
+        sym: Stock symbol
+        pay_date: Date payment was received
+        provider_divs: Dictionary of provider dividend events by symbol
+        ex_date_est_by_symbol: Estimated ex-dates by symbol (optional)
+        pay_lag_by_symbol: Typical pay lag in days by symbol (optional)
+        default_lag: Default pay lag to use if symbol-specific not available (optional)
+
+    Returns:
+        The ex-date corresponding to the payment, or None if cannot be determined
+    """
+    events = provider_divs.get(sym, [])
+
+    # Strategy 1: Direct match - find ex-date with pay_date within tolerance window
+    matches = []
+    for ev in events:
+        ex = ev.get("ex_date")
+        pay = ev.get("pay_date")
+        if not ex or not pay:
+            continue
+        delta = abs((pay - pay_date).days)
+        if delta <= DIVIDEND_PAY_MATCH_WINDOW_DAYS:
+            matches.append((delta, ex))
+    if matches:
+        matches.sort(key=lambda item: item[0])
+        return matches[0][1]
+
+    # Strategy 2: Use estimated ex-date if available and within 60 days
+    est = ex_date_est_by_symbol.get(sym) if ex_date_est_by_symbol else None
+    if est and est <= pay_date and (pay_date - est).days <= 60:
+        return est
+
+    # Strategy 3: Use most recent ex-date before payment
+    past_ex = [ev.get("ex_date") for ev in events if ev.get("ex_date") and ev.get("ex_date") <= pay_date]
+    if past_ex:
+        return max(past_ex)
+
+    # Strategy 4: Estimate ex-date by subtracting pay lag
+    lag_days = None
+    if pay_lag_by_symbol:
+        lag_days = pay_lag_by_symbol.get(sym)
+    if lag_days is None:
+        lag_days = _symbol_pay_lag_days(events, default_lag) if default_lag is not None else None
+    return pay_date - timedelta(days=lag_days) if lag_days else None
+
+
+def _match_payments_to_ex_dates(
+    pay_history: dict[str, list[dict]],
+    provider_divs: dict[str, list[dict]],
+    ex_date_est_by_symbol: dict[str, date] | None = None,
+    pay_lag_by_symbol: dict[str, int] | None = None,
+    default_lag: int | None = None,
+) -> dict[str, dict[date, dict]]:
+    """
+    Match received dividend payments to their corresponding ex-dates.
+
+    This function creates a mapping for each symbol that links each received payment
+    to its corresponding ex-date. This is critical for accurately calculating
+    missed payments, as it allows us to determine whether a payment corresponds
+    to an ex-date during the ownership period.
+
+    Args:
+        pay_history: Dictionary of received payment events by symbol
+        provider_divs: Dictionary of provider dividend events by symbol
+        ex_date_est_by_symbol: Estimated ex-dates by symbol (optional)
+        pay_lag_by_symbol: Typical pay lag in days by symbol (optional)
+        default_lag: Default pay lag to use if symbol-specific not available (optional)
+
+    Returns:
+        Nested dictionary: {symbol: {ex_date: {"pay_date": date, "amount": float}}}
+        Unmatched payments (pay_date with no known ex-date) are not included in the mapping.
+    """
+    default_lag = default_lag or _median_pay_lag_days(provider_divs)
+
+    mapping: dict[str, dict[date, dict]] = {}
+
+    for sym, payments in pay_history.items():
+        sym_upper = str(sym).upper()
+        ex_to_payment: dict[date, dict] = {}
+
+        for payment in payments:
+            pay_date = payment.get("date")
+            amount = payment.get("amount")
+
+            if not pay_date or not isinstance(amount, (int, float)):
+                continue
+
+            # Find the ex-date for this payment
+            ex_date = _best_ex_date_for_pay(
+                sym_upper, pay_date, provider_divs, ex_date_est_by_symbol, pay_lag_by_symbol, default_lag
+            )
+
+            if ex_date:
+                # If multiple payments map to same ex-date, sum them
+                if ex_date in ex_to_payment:
+                    ex_to_payment[ex_date]["amount"] += float(amount)
+                else:
+                    ex_to_payment[ex_date] = {"pay_date": pay_date, "amount": float(amount)}
+
+        if ex_to_payment:
+            mapping[sym_upper] = ex_to_payment
+
+    return mapping
+
+
+def _build_ownership_aware_dividend_series(
+    symbol: str,
+    provider_divs: dict[str, list[dict]],
+    ex_to_payment_mapping: dict[str, dict[date, dict]],
+    position_index: dict[str, tuple[list[date], list[float]]] | None,
+    cutoff: date,
+    as_of_date: date,
+) -> list[dict]:
+    """
+    Build a hybrid dividend time series that properly handles ownership boundaries.
+
+    This function creates a chronological series of dividend events by combining:
+    - Provider dividend events for periods BEFORE ownership (shows historical reliability)
+    - Received dividend payments (mapped to ex-dates) for periods DURING ownership
+
+    This hybrid approach ensures that consistency_score can be calculated even for
+    recently acquired positions, while accurately reflecting actual received dividends
+    during ownership.
+
+    Args:
+        symbol: Stock symbol
+        provider_divs: Dictionary of provider dividend events by symbol
+        ex_to_payment_mapping: Output from _match_payments_to_ex_dates()
+        position_index: Position index for checking ownership on specific dates
+        cutoff: Start of the 12-month window
+        as_of_date: As-of date for the snapshot
+
+    Returns:
+        List of dividend events sorted by ex-date, each containing:
+        - ex_date: date of the ex-dividend event
+        - amount: dividend amount
+        - source: "provider" or "received"
+        - ownership_pct: percentage of current shares owned on ex_date (0-1)
+    """
+    events: list[dict] = []
+
+    # Get all provider events in the 12-month window
+    provider_events = provider_divs.get(symbol, [])
+    provider_ex_dates = {}
+
+    for ev in provider_events:
+        ex_date = ev.get("ex_date")
+        amt = ev.get("amount")
+        if ex_date and isinstance(amt, (int, float)) and cutoff <= ex_date <= as_of_date:
+            provider_ex_dates[ex_date] = float(amt)
+
+    # Get payment mapping for this symbol
+    payment_map = ex_to_payment_mapping.get(symbol, {})
+
+    # Determine ownership on each ex-date
+    for ex_date, provider_amt in sorted(provider_ex_dates.items()):
+        source = "received" if ex_date in payment_map else "provider"
+        amount = payment_map[ex_date]["amount"] if source == "received" else provider_amt
+
+        ownership_pct = 1.0
+        if position_index:
+            shares_owned = _shares_at_date(position_index, symbol, ex_date)
+            # Use most recent shares count as reference for ownership_pct
+            entry = position_index.get(str(symbol).upper())
+            if entry:
+                _, shares_list = entry
+                current_shares = shares_list[-1] if shares_list else 0.0
+                ownership_pct = shares_owned / current_shares if current_shares > 0 else 0.0
+
+        events.append({
+            "ex_date": ex_date,
+            "amount": amount,
+            "source": source,
+            "ownership_pct": ownership_pct,
+        })
+
+    return events
+
+
 def _last_valid_price(df):
     if df is None or getattr(df, "empty", True):
         return None
@@ -95,6 +293,9 @@ def _last_business_day(d: date) -> date:
 
 
 def _add_months(d: date, months: int) -> date:
+    # Type safety: ensure months is an int before arithmetic (can be string 'N/A' from bad data)
+    if not isinstance(months, int):
+        raise TypeError(f"_add_months() requires 'months' to be int, got {type(months).__name__}: {months!r}")
     year = d.year + (d.month - 1 + months) // 12
     month = (d.month - 1 + months) % 12 + 1
     day = min(d.day, calendar.monthrange(year, month)[1])
@@ -705,6 +906,104 @@ def _load_first_acquired_dates(conn: sqlite3.Connection) -> dict[str, date]:
     return out
 
 
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
+
+
+def _score_lower_better(value: float | None, good: float, bad: float) -> float | None:
+    if value is None:
+        return None
+    if bad <= good:
+        return 1.0 if value <= good else 0.0
+    if value <= good:
+        return 1.0
+    if value >= bad:
+        return 0.0
+    return (bad - value) / (bad - good)
+
+
+def _trend_from_dividend_events(
+    events: list[dict],
+    as_of_date: date,
+    lookback_days: int = 183,
+) -> str | None:
+    if not events:
+        return None
+    start = as_of_date - timedelta(days=lookback_days)
+    recent = [
+        float(ev.get("amount_per_share"))
+        for ev in events
+        if ev.get("ex_date")
+        and start <= ev.get("ex_date") <= as_of_date
+        and isinstance(ev.get("amount_per_share"), (int, float))
+    ]
+    if len(recent) >= 3:
+        return _trend_label(recent, threshold_pct=0.03)
+    if len(recent) == 2:
+        first, last = recent
+        if first <= 0:
+            return "stable"
+        change = (last - first) / first
+        if change >= 0.03:
+            return "growing"
+        if change <= -0.03:
+            return "declining"
+        return "stable"
+    return None
+
+
+def _build_dividend_amount_per_share_series(
+    symbol: str,
+    provider_events: list[dict],
+    payment_map: dict[date, dict],
+    position_index: dict[str, tuple[list[date], list[float]]] | None,
+    cutoff: date,
+    as_of_date: date,
+) -> list[dict]:
+    """Build per-share dividend event series using received payments when possible.
+
+    Provider events are per-share. Received dividend transactions are cash amounts,
+    so they are converted to per-share using shares owned on ex-date.
+    """
+    out: list[dict] = []
+    for ev in provider_events:
+        ex_date = ev.get("ex_date")
+        provider_amt = ev.get("amount")
+        if not ex_date or not isinstance(provider_amt, (int, float)):
+            continue
+        if ex_date < cutoff or ex_date > as_of_date:
+            continue
+
+        shares_owned = _shares_at_date(position_index, symbol, ex_date) if position_index else None
+        received = payment_map.get(ex_date) or {}
+        received_cash = received.get("amount")
+
+        amount_ps = float(provider_amt)
+        source = "provider"
+        if isinstance(received_cash, (int, float)) and isinstance(shares_owned, (int, float)) and shares_owned > 0:
+            received_ps = float(received_cash) / float(shares_owned)
+            # Guard against bad pay/ex-date matches causing extreme per-share outliers.
+            ratio = received_ps / float(provider_amt) if provider_amt else None
+            if ratio is not None and 0.25 <= ratio <= 4.0:
+                amount_ps = received_ps
+                source = "received"
+            else:
+                source = "provider_fallback"
+
+        if amount_ps <= 0:
+            continue
+
+        out.append(
+            {
+                "ex_date": ex_date,
+                "amount_per_share": amount_ps,
+                "source": source,
+            }
+        )
+    out.sort(key=lambda item: item["ex_date"])
+    return out
+
+
 def _dividend_reliability_metrics(
     symbol: str,
     div_tx: list[dict],
@@ -721,50 +1020,66 @@ def _dividend_reliability_metrics(
         window_start = first_acquired
     window_months = max(1, _months_between(window_start, as_of_date)) if window_start else 12
 
-    totals_12 = _monthly_income_totals(div_tx, as_of_date, window_months, symbol=symbol)
+    # Build payment-to-ex-date mapping so realized cash can be matched to ex-dates.
+    ex_to_payment_mapping = _match_payments_to_ex_dates(pay_history, provider_divs)
+    payment_map = ex_to_payment_mapping.get(symbol, {})
 
-    # If no actual received dividends, fall back to provider ex-date amounts
-    # over the full 12-month window for trend/growth/volatility.
-    if not any(t > 0 for t in totals_12):
-        provider_events = provider_divs.get(symbol, [])
-        if provider_events:
-            prov_by_month: dict[tuple[int, int], float] = defaultdict(float)
-            for ev in provider_events:
-                ex = ev.get("ex_date")
-                amt = ev.get("amount")
-                if ex and isinstance(amt, (int, float)) and cutoff <= ex <= as_of_date:
-                    prov_by_month[(ex.year, ex.month)] += float(amt)
-            if prov_by_month:
-                months = _month_keys(as_of_date, 12)
-                totals_12 = [prov_by_month.get(key, 0.0) for key in months]
+    provider_events = provider_divs.get(symbol, [])
+    amount_ps_events = _build_dividend_amount_per_share_series(
+        symbol,
+        provider_events,
+        payment_map,
+        position_index,
+        cutoff,
+        as_of_date,
+    )
+    amount_ps_values = [ev["amount_per_share"] for ev in amount_ps_events]
 
-    totals_6 = totals_12[-6:] if len(totals_12) >= 6 else totals_12
-
-    mean_12 = statistics.mean(totals_12) if totals_12 else 0.0
     cv_12 = None
-    consistency_score = 0.0
-    if mean_12 > 0:
-        cv_12 = statistics.pstdev(totals_12) / mean_12
-        consistency_score = max(0.0, 1.0 - (cv_12 / 0.5))
+    amount_stability_score = 0.0
+    if amount_ps_values:
+        if len(amount_ps_values) == 1:
+            amount_stability_score = 0.65
+            cv_12 = 0.0
+        else:
+            mean_12 = statistics.mean(amount_ps_values)
+            if mean_12 > 0:
+                cv_12 = statistics.pstdev(amount_ps_values) / mean_12
+                amount_stability_score = _score_lower_better(cv_12, good=0.08, bad=0.60) or 0.0
 
-    trend_6m = _trend_label(totals_6)
+    # Trend over roughly 6 months from event-level per-share amounts.
+    trend_6m = _trend_from_dividend_events(amount_ps_events, as_of_date)
+    if trend_6m is None:
+        # Fallback: monthly provider trend when event-level history is sparse.
+        provider_monthly: dict[tuple[int, int], float] = defaultdict(float)
+        for ev in provider_events:
+            ex = ev.get("ex_date")
+            amt = ev.get("amount")
+            if ex and isinstance(amt, (int, float)) and cutoff <= ex <= as_of_date:
+                provider_monthly[(ex.year, ex.month)] += float(amt)
+        months = _month_keys(as_of_date, 6)
+        trend_6m = _trend_label([provider_monthly.get(key, 0.0) for key in months])
+
+    # Growth/volatility diagnostics on 6m event-level per-share stream.
+    lookback_start = as_of_date - timedelta(days=183)
+    recent_events = [ev for ev in amount_ps_events if lookback_start <= ev["ex_date"] <= as_of_date]
+    recent_vals = [ev["amount_per_share"] for ev in recent_events]
     growth_6m = None
-    if len(totals_6) >= 2:
-        growth_6m = _annualized_growth_rate(totals_6[0], totals_6[-1], len(totals_6) - 1)
-
-    mean_6 = statistics.mean(totals_6) if totals_6 else 0.0
+    if len(recent_events) >= 2:
+        first_date = recent_events[0]["ex_date"]
+        last_date = recent_events[-1]["ex_date"]
+        month_span = max(1, _months_between(first_date, last_date) - 1)
+        growth_6m = _annualized_growth_rate(recent_vals[0], recent_vals[-1], month_span)
     vol_6m = None
-    if mean_6 > 0:
-        vol_6m = (statistics.pstdev(totals_6) / mean_6) * 100.0
+    if len(recent_vals) >= 2:
+        mean_recent = statistics.mean(recent_vals)
+        if mean_recent > 0:
+            vol_6m = (statistics.pstdev(recent_vals) / mean_recent) * 100.0
 
     pay_events = pay_history.get(symbol, [])
     pay_dates = [ev.get("date") for ev in pay_events if ev.get("date") and ev.get("date") >= window_start]
     pay_dates = [d for d in pay_dates if d]
     pay_dates.sort()
-
-    provider_events = provider_divs.get(symbol, [])
-    # Use full 365-day cutoff for provider ex-dates — the stock's dividend
-    # schedule is independent of when the position was acquired.
     ex_dates = sorted(
         {
             ev.get("ex_date")
@@ -792,21 +1107,31 @@ def _dividend_reliability_metrics(
             if ev.get("ex_date") and cutoff <= ev.get("ex_date") <= due_cutoff
         }
     )
-
     if position_index:
         ex_dates_due = [dt for dt in ex_dates_due if _shares_at_date(position_index, symbol, dt) > 0]
 
     missed_payments = 0
-    if pay_dates:
-        expected_count = len(ex_dates_due) if ex_dates_due else None
-        if expected_count is None and len(pay_dates) >= 2:
-            gap_days = _median_gap_days(pay_dates)
-            if gap_days:
-                span_days = (due_cutoff - pay_dates[0]).days
-                if span_days >= 0:
-                    expected_count = int(span_days // gap_days) + 1
-        if expected_count is not None:
-            missed_payments = max(expected_count - len(pay_dates), 0)
+    for ex_date in ex_dates_due:
+        expected_pay_date = ex_date + timedelta(days=symbol_pay_lag) if symbol_pay_lag else None
+        if expected_pay_date and expected_pay_date <= as_of_date:
+            payment_received = ex_date in payment_map
+            if not payment_received:
+                payment_received = _payment_received(
+                    pay_history,
+                    symbol,
+                    expected_pay_date,
+                    DIVIDEND_PAY_MATCH_WINDOW_DAYS,
+                )
+            if not payment_received:
+                missed_payments += 1
+
+    expected_due_count = len(ex_dates_due)
+    received_due_count = max(0, expected_due_count - missed_payments)
+    payment_hit_rate = (
+        float(received_due_count) / float(expected_due_count)
+        if expected_due_count > 0
+        else 1.0
+    )
 
     timing_dates = pay_dates if len(pay_dates) >= 2 else ex_dates
     gap_days = _gap_days(timing_dates)
@@ -815,11 +1140,11 @@ def _dividend_reliability_metrics(
     if gap_days:
         mean_gap = statistics.mean(gap_days)
         if mean_gap > 0:
-            timing_consistency = max(0.0, min(1.0, 1.0 - (statistics.pstdev(gap_days) / mean_gap)))
+            timing_consistency = _clamp01(1.0 - (statistics.pstdev(gap_days) / mean_gap))
 
     cut_window_end = as_of_date + timedelta(days=DIVIDEND_CUT_LOOKAHEAD_DAYS)
     events = []
-    for ev in provider_divs.get(symbol, []):
+    for ev in provider_events:
         ex_date = ev.get("ex_date")
         amt = ev.get("amount")
         if ex_date and isinstance(amt, (int, float)) and cutoff <= ex_date <= cut_window_end:
@@ -836,13 +1161,7 @@ def _dividend_reliability_metrics(
     cuts = 0
     last_increase = None
     last_decrease = None
-    history_dates = sorted(
-        {
-            ev.get("ex_date")
-            for ev in provider_divs.get(symbol, [])
-            if ev.get("ex_date")
-        }
-    )
+    history_dates = sorted({ev.get("ex_date") for ev in provider_events if ev.get("ex_date")})
     cut_series = _annualized_dividend_series(events, history_dates)
     for prev, curr in zip(cut_series[:-1], cut_series[1:]):
         if prev.get("special") or curr.get("special"):
@@ -858,12 +1177,24 @@ def _dividend_reliability_metrics(
         elif change >= DIVIDEND_CUT_THRESHOLD:
             last_increase = curr.get("date")
 
+    timing_component = timing_consistency if isinstance(timing_consistency, (int, float)) else 0.5
+    consistency_score = (0.55 * amount_stability_score) + (0.30 * payment_hit_rate) + (0.15 * timing_component)
+    if trend_6m == "growing":
+        consistency_score += 0.05
+    elif trend_6m == "declining":
+        consistency_score -= 0.05
+    consistency_score -= min(0.30, cuts * 0.10)
+    if not amount_ps_values and expected_due_count == 0:
+        consistency_score = 0.0
+    consistency_score = _clamp01(consistency_score)
+
     return {
         "consistency_score": round(consistency_score, 3),
         "payment_frequency_actual": payment_frequency_actual,
         "payment_frequency_expected": payment_frequency_expected,
         "missed_payments_12m": missed_payments,
         "dividend_cuts_12m": cuts,
+        "trend_6m": trend_6m,
         "dividend_trend_6m": trend_6m,
         "dividend_growth_rate_6m_pct": _round_pct(growth_6m * 100 if growth_6m is not None else None),
         "dividend_volatility_6m_pct": _round_pct(vol_6m),
@@ -1120,32 +1451,6 @@ def _estimate_expected_pay_events(
     total_raw = 0.0
     ex_date_est_by_symbol = ex_date_est_by_symbol or {}
 
-    def _best_ex_date_for_pay(sym: str, pay_date: date):
-        events = provider_divs.get(sym, [])
-        matches = []
-        for ev in events:
-            ex = ev.get("ex_date")
-            pay = ev.get("pay_date")
-            if not ex or not pay:
-                continue
-            delta = abs((pay - pay_date).days)
-            if delta <= DIVIDEND_PAY_MATCH_WINDOW_DAYS:
-                matches.append((delta, ex))
-        if matches:
-            matches.sort(key=lambda item: item[0])
-            return matches[0][1]
-        est = ex_date_est_by_symbol.get(sym)
-        if est and est <= pay_date and (pay_date - est).days <= 60:
-            return est
-        past_ex = [ev.get("ex_date") for ev in events if ev.get("ex_date") and ev.get("ex_date") <= pay_date]
-        if past_ex:
-            return max(past_ex)
-        lag_days = None
-        if pay_lag_by_symbol:
-            lag_days = pay_lag_by_symbol.get(sym)
-        if lag_days is None:
-            lag_days = _symbol_pay_lag_days(events, default_lag)
-        return pay_date - timedelta(days=lag_days) if lag_days else None
     def _pay_date_seen(seen: list[date], candidate: date) -> bool:
         for dt in seen:
             if abs((candidate - dt).days) <= DIVIDEND_PAY_MATCH_WINDOW_DAYS:
@@ -1229,7 +1534,9 @@ def _estimate_expected_pay_events(
                     next_pay = dates[-1] + timedelta(days=median_gap)
             if next_pay and window_start <= next_pay <= window_end and not _pay_date_seen(pay_dates_seen, next_pay):
                 if ex_date_est is None:
-                    ex_date_est = _best_ex_date_for_pay(sym, next_pay)
+                    ex_date_est = _best_ex_date_for_pay(
+                        sym, next_pay, provider_divs, ex_date_est_by_symbol, pay_lag_by_symbol, default_lag
+                    )
                 per_share = _best_per_share_amount(sym, ex_date_est, provider_divs, history)
                 amount_est = None
                 if per_share is not None and ex_date_est:
@@ -2285,7 +2592,8 @@ def _build_goal_progress(projected_monthly_income, total_market_value, target_mo
     assumptions = "based_on_current_yield_with_contrib_and_drip"
     if monthly_contribution <= 0 and monthly_drip <= 0:
         assumptions = "based_on_current_yield"
-    estimated_goal_date = _add_months(as_of_date, months_to_goal).isoformat() if as_of_date and months_to_goal is not None else None
+    # Type safety: ensure months_to_goal is int before calling _add_months
+    estimated_goal_date = _add_months(as_of_date, months_to_goal).isoformat() if as_of_date and isinstance(months_to_goal, int) else None
     return {
         "portfolio_yield_pct": _round_pct(portfolio_yield_pct),
         "required_portfolio_value_at_goal": _round_money(required),
@@ -2473,7 +2781,7 @@ def _build_goal_tiers(
             "ltv_maintained": False,
         },
         "months_to_goal": tier1_months,
-        "estimated_goal_date": _add_months(as_of_date, tier1_months).isoformat() if as_of_date and tier1_months is not None else None,
+        "estimated_goal_date": _add_months(as_of_date, tier1_months).isoformat() if as_of_date and isinstance(tier1_months, int) else None,
         "required_portfolio_value": _round_money(tier1_required),
         "final_portfolio_value": _round_money(tier1_final),
         "additional_investment_needed": _round_money(tier1_required - total_market_value if tier1_required else None),
@@ -2502,7 +2810,7 @@ def _build_goal_tiers(
             "ltv_maintained": False,
         },
         "months_to_goal": tier2_months,
-        "estimated_goal_date": _add_months(as_of_date, tier2_months).isoformat() if as_of_date and tier2_months is not None else None,
+        "estimated_goal_date": _add_months(as_of_date, tier2_months).isoformat() if as_of_date and isinstance(tier2_months, int) else None,
         "required_portfolio_value": _round_money(tier2_required),
         "final_portfolio_value": _round_money(tier2_final),
         "additional_investment_needed": _round_money(tier2_required - total_market_value if tier2_required else None),
@@ -2531,7 +2839,7 @@ def _build_goal_tiers(
             "ltv_maintained": False,
         },
         "months_to_goal": tier3_months,
-        "estimated_goal_date": _add_months(as_of_date, tier3_months).isoformat() if as_of_date and tier3_months is not None else None,
+        "estimated_goal_date": _add_months(as_of_date, tier3_months).isoformat() if as_of_date and isinstance(tier3_months, int) else None,
         "required_portfolio_value": _round_money(tier3_required),
         "final_portfolio_value": _round_money(tier3_final),
         "additional_investment_needed": _round_money(tier3_required - total_market_value if tier3_required else None),
@@ -2562,7 +2870,7 @@ def _build_goal_tiers(
             "target_ltv_pct": _round_pct(settings.goal_target_ltv_pct),
         },
         "months_to_goal": tier4_months,
-        "estimated_goal_date": _add_months(as_of_date, tier4_months).isoformat() if as_of_date and tier4_months is not None else None,
+        "estimated_goal_date": _add_months(as_of_date, tier4_months).isoformat() if as_of_date and isinstance(tier4_months, int) else None,
         "required_portfolio_value": _round_money(tier4_required),
         "final_portfolio_value": _round_money(tier4_final),
         "additional_investment_needed": _round_money(tier4_required - total_market_value if tier4_required else None),
@@ -2593,7 +2901,7 @@ def _build_goal_tiers(
             "target_ltv_pct": _round_pct(settings.goal_target_ltv_pct),
         },
         "months_to_goal": tier5_months,
-        "estimated_goal_date": _add_months(as_of_date, tier5_months).isoformat() if as_of_date and tier5_months is not None else None,
+        "estimated_goal_date": _add_months(as_of_date, tier5_months).isoformat() if as_of_date and isinstance(tier5_months, int) else None,
         "required_portfolio_value": _round_money(tier5_required),
         "final_portfolio_value": _round_money(tier5_final),
         "additional_investment_needed": _round_money(tier5_required - total_market_value if tier5_required else None),
@@ -2624,7 +2932,7 @@ def _build_goal_tiers(
             "target_ltv_pct": _round_pct(settings.goal_target_ltv_pct),
         },
         "months_to_goal": tier6_months,
-        "estimated_goal_date": _add_months(as_of_date, tier6_months).isoformat() if as_of_date and tier6_months is not None else None,
+        "estimated_goal_date": _add_months(as_of_date, tier6_months).isoformat() if as_of_date and isinstance(tier6_months, int) else None,
         "required_portfolio_value": _round_money(tier6_required),
         "final_portfolio_value": _round_money(tier6_final),
         "additional_investment_needed": _round_money(tier6_required - total_market_value if tier6_required else None),
@@ -2970,7 +3278,8 @@ def _build_goal_pace(
 
     # Revise goal date based on current pace
     original_months = likely_tier.get("months_to_goal")
-    if original_months is not None:
+    # Type safety: only calculate revised goal date if months_ahead_behind is numeric and original_months is int
+    if original_months is not None and isinstance(original_months, int) and isinstance(months_ahead_behind, (int, float)):
         revised_months = max(0, original_months - months_ahead_behind)
         revised_goal_date = _add_months(as_of_date, int(revised_months))
     else:
@@ -3413,9 +3722,10 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         unrealized_pct = _safe_divide(unrealized_pnl, float(h["cost_basis"])) if unrealized_pnl is not None else None
         avg_cost = _safe_divide(float(h["cost_basis"]), float(h["shares"])) if h.get("cost_basis") is not None else None
 
-        div_30d = sum(ev["amount"] for ev in div_by_symbol.get(sym, []) if ev["date"] >= as_of_date_local - timedelta(days=30))
-        div_qtd = sum(ev["amount"] for ev in div_by_symbol.get(sym, []) if ev["date"] >= _quarter_start(as_of_date_local))
-        div_ytd = sum(ev["amount"] for ev in div_by_symbol.get(sym, []) if ev["date"] >= _year_start(as_of_date_local))
+        # Type safety: only sum numeric amount values
+        div_30d = sum(ev["amount"] for ev in div_by_symbol.get(sym, []) if ev["date"] >= as_of_date_local - timedelta(days=30) and isinstance(ev.get("amount"), (int, float)))
+        div_qtd = sum(ev["amount"] for ev in div_by_symbol.get(sym, []) if ev["date"] >= _quarter_start(as_of_date_local) and isinstance(ev.get("amount"), (int, float)))
+        div_ytd = sum(ev["amount"] for ev in div_by_symbol.get(sym, []) if ev["date"] >= _year_start(as_of_date_local) and isinstance(ev.get("amount"), (int, float)))
 
         metrics_out = _symbol_metrics(series, benchmark_series) if series is not None else {}
         trailing_12m_yield = _safe_divide(trailing_12m_div_ps, last_price) if last_price else None
@@ -3653,7 +3963,8 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
             continue
         upcoming_events.append(ev)
 
-    projected_upcoming = sum(ev["amount_est"] for ev in upcoming_events if ev.get("amount_est") is not None)
+    # Type safety: only sum numeric amount_est values (can be 'N/A' string from bad data)
+    projected_upcoming = sum(ev["amount_est"] for ev in upcoming_events if isinstance(ev.get("amount_est"), (int, float)))
     dividends_upcoming = {
         "projected": _round_money(projected_upcoming),
         "events": upcoming_events,

@@ -34,7 +34,11 @@ def _income(snap: dict | None) -> dict:
 def _perf(snap: dict | None) -> dict:
     if not snap:
         return {}
-    return (snap.get("portfolio") or {}).get("performance") or {}
+    perf = (snap.get("portfolio") or {}).get("performance")
+    if isinstance(perf, dict):
+        return perf
+    # Backward-compat: some call sites/tests pass period-like/diff-like shape.
+    return ((snap.get("portfolio_rollups") or {}).get("performance") or {})
 
 
 def _risk_flat(snap: dict | None) -> dict:
@@ -59,9 +63,15 @@ def _rollups(snap: dict | None) -> dict:
     inc = portfolio.get("income") or {}
     attr = portfolio.get("attribution") or {}
     perf = portfolio.get("performance") or {}
+    legacy_rollups = snap.get("portfolio_rollups") or {}
+    if not perf and isinstance(legacy_rollups.get("performance"), dict):
+        perf = legacy_rollups.get("performance") or {}
+    risk = _risk_flat(snap)
+    if not risk and isinstance(legacy_rollups.get("risk"), dict):
+        risk = legacy_rollups.get("risk") or {}
     return {
         "performance": perf,
-        "risk": _risk_flat(snap),
+        "risk": risk,
         "income_stability": inc.get("income_stability"),
         "income_growth": inc.get("income_growth"),
         "tail_risk": (portfolio.get("risk") or {}).get("tail_risk"),
@@ -141,7 +151,8 @@ def _dividends_upcoming(snap: dict | None) -> dict:
         return {}
     up = (snap.get("dividends") or {}).get("upcoming_this_month") or snap.get("dividends_upcoming") or {}
     events = up.get("events") or []
-    projected = sum((e.get("amount_est") or 0) for e in events) if events else None
+    # Type safety: only sum numeric values (amount_est can be 'N/A' string from bad data)
+    projected = sum((e.get("amount_est") or 0) for e in events if isinstance(e.get("amount_est"), (int, float))) if events else None
     return {"events": events, "projected": projected}
 
 
