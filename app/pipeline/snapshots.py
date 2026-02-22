@@ -1450,6 +1450,15 @@ def _estimate_expected_pay_events(
     expected = []
     total_raw = 0.0
     ex_date_est_by_symbol = ex_date_est_by_symbol or {}
+    # Reconcile projected events against received cash by ex-date so early/shifted
+    # payment dates do not remain incorrectly projected.
+    ex_to_payment_mapping = _match_payments_to_ex_dates(
+        pay_history,
+        provider_divs,
+        ex_date_est_by_symbol,
+        pay_lag_by_symbol,
+        default_lag,
+    )
 
     def _pay_date_seen(seen: list[date], candidate: date) -> bool:
         for dt in seen:
@@ -1464,6 +1473,7 @@ def _estimate_expected_pay_events(
     for sym in sorted(holdings.keys()):
         history = pay_history.get(sym, [])
         events = provider_divs.get(sym, [])
+        payment_map = ex_to_payment_mapping.get(sym, {})
         pay_dates_seen = []
         window_has_event = False
 
@@ -1485,6 +1495,16 @@ def _estimate_expected_pay_events(
                 amt = ev.get("amount")
                 if ex is None or amt is None:
                     continue
+                # If a received payment is already mapped to this ex-date in the
+                # current window, suppress projected duplicates for this event.
+                mapped_payment = payment_map.get(ex)
+                if mapped_payment:
+                    mapped_pay_date = mapped_payment.get("pay_date")
+                    if mapped_pay_date and window_start <= mapped_pay_date <= window_end:
+                        if not _pay_date_seen(pay_dates_seen, mapped_pay_date):
+                            pay_dates_seen.append(mapped_pay_date)
+                        window_has_event = True
+                        continue
                 # Tier 1: provider-sourced pay_date, else pattern-aware estimation
                 pay = ev.get("pay_date")
                 if pay is None:
@@ -1537,6 +1557,12 @@ def _estimate_expected_pay_events(
                     ex_date_est = _best_ex_date_for_pay(
                         sym, next_pay, provider_divs, ex_date_est_by_symbol, pay_lag_by_symbol, default_lag
                     )
+                if ex_date_est in payment_map:
+                    mapped_pay_date = payment_map[ex_date_est].get("pay_date")
+                    if mapped_pay_date and window_start <= mapped_pay_date <= window_end:
+                        if not _pay_date_seen(pay_dates_seen, mapped_pay_date):
+                            pay_dates_seen.append(mapped_pay_date)
+                        continue
                 per_share = _best_per_share_amount(sym, ex_date_est, provider_divs, history)
                 amount_est = None
                 if per_share is not None and ex_date_est:

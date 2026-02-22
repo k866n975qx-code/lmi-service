@@ -1,0 +1,439 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "mira-service API",
+    "version": "1.0.0",
+    "description": "Actions schema for snapshot retrieval and comparisons."
+  },
+  "servers": [
+    {
+      "url": "https://mira.joseai.dev"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Health check",
+        "description": "Returns service and DB connectivity plus last run metadata.",
+        "responses": {
+          "200": {
+            "description": "Health status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/summaries/available": {
+      "get": {
+        "operationId": "listAvailablePeriodSummaries",
+        "summary": "List available summaries",
+        "description": "Lists stored daily dates and period summaries.",
+        "parameters": [
+          {
+            "name": "snapshot_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["daily", "weekly", "monthly", "quarterly", "yearly"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Available summaries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotsAvailableResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/portfolio/daily/latest": {
+      "get": {
+        "operationId": "getLatestDailyPortfolio",
+        "summary": "Get latest daily portfolio",
+        "description": "Returns the most recent daily portfolio snapshot.",
+        "parameters": [
+          {
+            "name": "slim",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "name": "apply_null_reasons",
+            "in": "query",
+            "required": false,
+            "description": "If false, return raw nulls; no placeholder reason strings.",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Daily portfolio payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/portfolio/daily/{as_of}": {
+      "get": {
+        "operationId": "getDailyPortfolio",
+        "summary": "Get daily portfolio by date",
+        "description": "Returns a daily portfolio snapshot for the given date.",
+        "parameters": [
+          {
+            "name": "as_of",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "slim",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "name": "apply_null_reasons",
+            "in": "query",
+            "required": false,
+            "description": "If false, return raw nulls; no placeholder reason strings.",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Daily portfolio payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/period-summary/{kind}/{as_of}": {
+      "get": {
+        "operationId": "getPeriodSummary",
+        "summary": "Get stored period summary by as-of date",
+        "description": "Returns a persisted period summary.",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["weekly", "monthly", "quarterly", "yearly"]
+            }
+          },
+          {
+            "name": "as_of",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Period summary payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/period-summary/{kind}/rolling": {
+      "get": {
+        "operationId": "getRollingPeriodSummary",
+        "summary": "Get current rolling period summary",
+        "description": "Returns the current incomplete period summary (rolling snapshot). Example: /period-summary/monthly/rolling returns month-to-date.",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["weekly", "monthly", "quarterly", "yearly"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Period summary payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/period-summary/{kind}/latest": {
+      "get": {
+        "operationId": "getLatestPeriodSummary",
+        "summary": "Get latest period summary by type",
+        "description": "Returns the most recent period summary for the requested type.",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["weekly", "monthly", "quarterly", "yearly"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Period summary payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/compare/daily/{left_date}/{right_date}": {
+      "get": {
+        "operationId": "compareDailyPortfolios",
+        "summary": "Compare two daily portfolios",
+        "description": "Returns a daily comparison.",
+        "parameters": [
+          {
+            "name": "left_date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "right_date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Daily comparison payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiffResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/compare/period/{kind}/{left_as_of}/{right_as_of}": {
+      "get": {
+        "operationId": "comparePeriodSummaries",
+        "summary": "Compare two period summaries",
+        "description": "Returns a period comparison.",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["weekly", "monthly", "quarterly", "yearly"]
+            }
+          },
+          {
+            "name": "left_as_of",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "right_as_of",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Period comparison payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiffResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "db": {
+            "type": "string"
+          },
+          "last_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LastRun"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["ok", "db"]
+      },
+      "LastRun": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "started_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at_utc": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          }
+        },
+        "required": ["run_id", "status", "started_at_utc"]
+      },
+      "SnapshotsAvailableResponse": {
+        "type": "object",
+        "properties": {
+          "daily": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          "period": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PeriodSnapshotSummary"
+            }
+          }
+        },
+        "required": ["daily", "period"]
+      },
+      "PeriodSnapshotSummary": {
+        "type": "object",
+        "properties": {
+          "period_type": {
+            "type": "string",
+            "enum": ["WEEK", "MONTH", "QUARTER", "YEAR"]
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "snapshot_id": {
+            "type": "string"
+          },
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["period_type", "start_date", "end_date", "snapshot_id", "created_at_utc"]
+      },
+      "SnapshotResponse": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      },
+      "DiffResponse": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    }
+  }
+}

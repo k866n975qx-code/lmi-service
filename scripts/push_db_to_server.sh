@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SERVER="jose@ssh.joseai.dev"
+SERVER="jose@192.168.12.221"
 REMOTE_DB="/home/jose/lmi-service/data/app.db"
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
