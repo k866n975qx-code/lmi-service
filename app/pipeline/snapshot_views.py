@@ -37,6 +37,22 @@ from ..config import settings
 SIGNIFICANT_MISSING_PCT = 1.0
 
 
+def _goal_target_ltv_pct_default() -> float:
+    return float(getattr(settings, "goal_target_ltv_pct", 35.0))
+
+
+def _resolve_target_ltv_pct(explicit_target: Any, ltv_maintained: Any) -> float | None:
+    if explicit_target is not None:
+        return explicit_target
+    if isinstance(ltv_maintained, bool):
+        maintained = ltv_maintained
+    elif isinstance(ltv_maintained, (int, float)):
+        maintained = ltv_maintained != 0
+    else:
+        maintained = bool(ltv_maintained)
+    return _goal_target_ltv_pct_default() if maintained else None
+
+
 def _parse_date(value: str | None) -> date | None:
     if not value:
         return None
@@ -477,7 +493,7 @@ def assemble_daily_snapshot(conn: sqlite3.Connection, as_of_date: str | None = N
     # Build tiers and backfill nulls from baseline so "goal data not available" doesn't appear
     baseline_target = goals["baseline"].get("target_monthly_income") or goals["baseline"].get("target_monthly") or r.get("goal_target_monthly_income")
     baseline_progress = goals["baseline"].get("progress_pct") or r.get("goal_progress_pct")
-    target_ltv = getattr(settings, "goal_target_ltv_pct", 30.0)
+    target_ltv = _goal_target_ltv_pct_default()
     for t in tiers_rows:
         row = dict(t)
         if row.get("target_monthly") is None and baseline_target is not None:
@@ -493,7 +509,10 @@ def assemble_daily_snapshot(conn: sqlite3.Connection, as_of_date: str | None = N
             else:
                 row["confidence"] = "low"
         if row.get("assumption_target_ltv_pct") is None:
-            row["assumption_target_ltv_pct"] = target_ltv
+            row["assumption_target_ltv_pct"] = _resolve_target_ltv_pct(
+                row.get("assumption_target_ltv_pct"),
+                row.get("assumption_ltv_maintained"),
+            ) or target_ltv
         goals["tiers"].append(row)
 
     # Backfill net_of_interest.months_to_goal when flat row has null
@@ -1195,9 +1214,10 @@ def assemble_period_snapshot(
                             "drip_enabled": bool(row.get("assumption_drip_enabled")) if row.get("assumption_drip_enabled") is not None else None,
                             "annual_appreciation_pct": row.get("assumption_annual_appreciation_pct"),
                             "ltv_maintained": bool(row.get("assumption_ltv_maintained")) if row.get("assumption_ltv_maintained") is not None else None,
-                            "target_ltv_pct": row.get("assumption_target_ltv_pct")
-                            if row.get("assumption_target_ltv_pct") is not None
-                            else (30.0 if row.get("assumption_ltv_maintained") else None),
+                            "target_ltv_pct": _resolve_target_ltv_pct(
+                                row.get("assumption_target_ltv_pct"),
+                                row.get("assumption_ltv_maintained"),
+                            ),
                         },
                     }
                     tiers.append(tier)

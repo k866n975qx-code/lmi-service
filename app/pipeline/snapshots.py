@@ -2408,7 +2408,7 @@ def _build_margin_guidance(total_market_value, margin_loan_balance, projected_mo
     for mode, max_pct, stress_drawdown, min_coverage in [
         ("conservative", 20.0, 0.40, 2.0),
         ("balanced", 25.0, 0.30, 1.5),
-        ("aggressive", 30.0, 0.20, 1.2),
+        ("aggressive", 35.0, 0.20, 1.2),
     ]:
         max_balance = total_market_value * (max_pct / 100.0)
         repay_amt = max(margin_loan_balance - max_balance, 0.0)
@@ -2766,8 +2766,8 @@ def _build_goal_tiers(
             # 4. Calculate additional margin needed to maintain target LTV
             additional_margin = 0.0
             if maintain_ltv and ltv_target > 0:
-                # User's formula: additional_margin = (0.3 * (portfolio_value + drip + contribution) - margin_balance) / 0.7
-                # This maintains 30% LTV: (margin_balance + additional_margin) / (portfolio_value + drip + contribution + additional_margin) = 0.3
+                # User's formula for target LTV:
+                # additional_margin = (ltv_target * (portfolio_value + drip + contribution) - margin_balance) / (1 - ltv_target)
                 total_before_margin = portfolio_value + drip_amount + monthly_contrib
                 additional_margin = (ltv_target * total_before_margin - margin_balance) / (1.0 - ltv_target)
                 additional_margin = max(0.0, additional_margin)  # Can't unborrow

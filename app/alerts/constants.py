@@ -3,7 +3,7 @@ from __future__ import annotations
 # Thresholds and knobs (unit: percent unless noted)
 MARGIN_LTV_CRITICAL = 45.0
 MARGIN_LTV_RED = 40.0
-MARGIN_LTV_YELLOW = 30.0
+MARGIN_LTV_YELLOW = 35.0
 MARGIN_COVERAGE_MIN = 2.0
 MARGIN_INTEREST_INCOME_WARN_PCT = 15.0
 

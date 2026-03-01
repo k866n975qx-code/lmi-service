@@ -377,7 +377,7 @@ def _build_alerts(daily: dict) -> list[dict]:
     """Generate actionable alerts from snapshot data.
 
     Six alert types:
-    1. margin   — LTV exceeds target (>30%)
+    1. margin   — LTV exceeds target (>35%)
     2. dividend — upcoming ex-dates within 14 days
     3. performance — holdings down >15% with declining dividends
     4. goal    — pace vs baseline (ahead/behind)
@@ -397,7 +397,7 @@ def _build_alerts(daily: dict) -> list[dict]:
 
     # ── 1. Margin ────────────────────────────────────────────────────────
     ltv = totals.get("margin_to_portfolio_pct")
-    if isinstance(ltv, (int, float)) and ltv > 30:
+    if isinstance(ltv, (int, float)) and ltv > 35:
         n += 1
         severity = "critical" if ltv > 40 else "warning"
         repay = None
@@ -408,7 +408,7 @@ def _build_alerts(daily: dict) -> list[dict]:
             "id": f"alert_{n:03d}",
             "type": "margin",
             "severity": severity,
-            "message": f"LTV at {ltv}% exceeds target of 30.0%",
+            "message": f"LTV at {ltv}% exceeds target of 35.0%",
             "action_required": (
                 f"Consider repaying ${repay:,.0f} to reach target LTV"
                 if repay else "Consider reducing margin balance"

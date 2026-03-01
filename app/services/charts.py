@@ -536,7 +536,7 @@ def generate_margin_chart(conn: sqlite3.Connection, days: int = 90) -> bytes | N
     ax1.plot(dates, ltv_pct, linewidth=2.2, color="#f9e2af", label="LTV %")
 
     # Warning/critical threshold lines
-    ax1.axhline(y=30, color="#fab387", linewidth=1, linestyle=":", alpha=0.7, label="Warning (30%)")
+    ax1.axhline(y=35, color="#fab387", linewidth=1, linestyle=":", alpha=0.7, label="Warning (35%)")
     ax1.axhline(y=40, color="#f38ba8", linewidth=1, linestyle=":", alpha=0.7, label="Critical (40%)")
 
     ax1.set_ylabel("LTV (%)", color="#f9e2af")
