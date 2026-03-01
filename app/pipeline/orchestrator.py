@@ -189,6 +189,7 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
 
         should_persist_daily = force_daily or not has_daily or market_value_changed or prices_as_of_changed
 
+        wrote_daily = False
         if should_persist_daily:
             ok, reasons = validate_daily_snapshot(daily)
             if not ok:
@@ -234,7 +235,7 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
 
         # 6) Persist periodic snapshots if boundary can be closed
         started = _step_start("persist_periodic_snapshots")
-        maybe_persist_periodic(conn, run_id, daily)
+        maybe_persist_periodic(conn, run_id, daily, daily_was_written=wrote_daily)
         _step_done("persist_periodic_snapshots", started)
 
         finish_run_ok(conn, run_id)

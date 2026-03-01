@@ -4368,7 +4368,7 @@ def _period_bounds(period_type: str, on: date):
     return start, end
 
 
-def maybe_persist_periodic(conn: sqlite3.Connection, run_id: str, daily: dict):
+def maybe_persist_periodic(conn: sqlite3.Connection, run_id: str, daily: dict, daily_was_written: bool = False):
     # Get as_of_date_local from V5 timestamps or fall back to V4 format
     timestamps = daily.get("timestamps") or {}
     as_of_date_local = timestamps.get("portfolio_data_as_of_local") or daily.get("as_of_date_local")
@@ -4376,9 +4376,19 @@ def maybe_persist_periodic(conn: sqlite3.Connection, run_id: str, daily: dict):
         as_of_utc = timestamps.get("portfolio_data_as_of_utc") or daily.get("as_of_utc") or ""
         as_of_date_local = as_of_utc[:10] if as_of_utc else ""
     dt = date.fromisoformat(as_of_date_local)
+    cur = conn.cursor()
     for period in ["WEEK", "MONTH", "QUARTER", "YEAR"]:
         start, end = _period_bounds(period, dt)
         if dt != end:
+            continue
+        existing = cur.execute(
+            """
+            SELECT built_from_run_id FROM period_summary
+            WHERE period_type=? AND period_start_date=? AND period_end_date=? AND is_rolling=0
+            """,
+            (period, str(start), str(end)),
+        ).fetchone()
+        if existing and not daily_was_written:
             continue
         try:
             from .periods import build_period_snapshot
@@ -4397,16 +4407,6 @@ def maybe_persist_periodic(conn: sqlite3.Connection, run_id: str, daily: dict):
         ok, reasons = validate_period_snapshot(snapshot)
         if not ok:
             log.error("period_snapshot_invalid", run_id=run_id, period=period, reasons=reasons)
-            continue
-        cur = conn.cursor()
-        existing = cur.execute(
-            """
-            SELECT 1 FROM period_summary
-            WHERE period_type=? AND period_start_date=? AND period_end_date=? AND is_rolling=0
-            """,
-            (period, str(start), str(end)),
-        ).fetchone()
-        if existing:
             continue
         try:
             from .flat_persist import _write_period_flat
@@ -4483,14 +4483,14 @@ def persist_rolling_summaries(conn: sqlite3.Connection, run_id: str, daily: dict
         cur = conn.cursor()
         existing = cur.execute(
             """
-            SELECT period_end_date FROM period_summary
+            SELECT period_end_date, built_from_run_id FROM period_summary
             WHERE period_type=? AND period_start_date=? AND is_rolling=1
             ORDER BY period_end_date DESC LIMIT 1
             """,
             (period_db_type, str(start)),
         ).fetchone()
 
-        if existing and existing[0] == str(dt):
+        if existing and existing[0] == str(dt) and existing[1] == run_id:
             log.debug("rolling_snapshot_unchanged", period=period_db_type, start=str(start), end=str(dt))
             continue
 
