@@ -292,6 +292,14 @@ def _last_business_day(d: date) -> date:
     return me
 
 
+def _next_business_day(d: date) -> date:
+    """Return d if weekday, else next Monday-style business day."""
+    cursor = d
+    while cursor.weekday() >= 5:
+        cursor += timedelta(days=1)
+    return cursor
+
+
 def _add_months(d: date, months: int) -> date:
     # Type safety: ensure months is an int before arithmetic (can be string 'N/A' from bad data)
     if not isinstance(months, int):
@@ -507,46 +515,88 @@ def _detect_ex_date_pattern(
     return None
 
 
-def _project_next_from_pattern(last_ex_date: date, pattern: dict, frequency_months: int) -> date | None:
-    """Project the next ex-date based on a detected pattern."""
-    ptype = pattern["pattern_type"]
-    params = pattern["params"]
+def _detect_pay_date_pattern(
+    provider_events: list[dict],
+    pay_history: list[dict],
+    min_samples: int = 4,
+    match_threshold: float = 0.70,
+    recent_dates: int = 8,
+) -> dict | None:
+    """Detect recurring calendar pattern for payment dates."""
+    pay_dates = sorted(
+        {
+            dt
+            for dt in (
+                [ev.get("pay_date") for ev in provider_events if ev.get("pay_date")]
+                + [ev.get("date") for ev in pay_history if ev.get("date")]
+            )
+            if dt is not None
+        }
+    )
+    if recent_dates and len(pay_dates) > recent_dates:
+        pay_dates = pay_dates[-recent_dates:]
+    if len(pay_dates) < min_samples:
+        return None
+    return _detect_ex_date_pattern(
+        pay_dates,
+        min_samples=min_samples,
+        match_threshold=match_threshold,
+    )
 
-    target_month = last_ex_date.month + frequency_months
-    target_year = last_ex_date.year + (target_month - 1) // 12
-    target_month = (target_month - 1) % 12 + 1
+
+def _project_pattern_for_month(pattern: dict, year: int, month: int) -> date | None:
+    """Project a pattern-conforming date inside a specific target month."""
+    ptype = pattern.get("pattern_type")
+    params = pattern.get("params") or {}
 
     if ptype == "nth_weekday":
-        weekday = params["weekday"]
-        week_num = params["week_num"]
-        first = date(target_year, target_month, 1)
+        weekday = params.get("weekday")
+        week_num = params.get("week_num")
+        if not isinstance(weekday, int) or not isinstance(week_num, int):
+            return None
+        if weekday < 0 or weekday > 6 or week_num < 1:
+            return None
+        first = date(year, month, 1)
         offset = (weekday - first.weekday()) % 7
         candidate = first + timedelta(days=offset + 7 * (week_num - 1))
-        # clamp to same month (e.g. 5th Monday may overflow)
-        if candidate.month != target_month:
+        # Clamp to same month (e.g. 5th Monday may overflow)
+        if candidate.month != month:
             candidate -= timedelta(days=7)
-        return candidate if candidate > last_ex_date else None
+        return candidate
 
     if ptype == "nth_last_bday":
-        bdays_from_end = params["bdays_from_end"]
-        me = _month_end(date(target_year, target_month, 1))
+        bdays_from_end = params.get("bdays_from_end")
+        if not isinstance(bdays_from_end, int) or bdays_from_end < 0:
+            return None
+        me = _month_end(date(year, month, 1))
         cursor = me
         count = 0
         while count < bdays_from_end and cursor.day > 1:
             if cursor.weekday() < 5:
                 count += 1
             cursor -= timedelta(days=1)
-        # cursor may be on weekend, walk to prior weekday
         while cursor.weekday() >= 5:
             cursor -= timedelta(days=1)
-        return cursor if cursor > last_ex_date else None
+        return cursor
 
     if ptype == "fixed_day":
-        target_day = min(params["day"], calendar.monthrange(target_year, target_month)[1])
-        candidate = date(target_year, target_month, target_day)
-        return candidate if candidate > last_ex_date else None
+        target_day = params.get("day")
+        if not isinstance(target_day, int) or target_day < 1:
+            return None
+        target_day = min(target_day, calendar.monthrange(year, month)[1])
+        return date(year, month, target_day)
 
     return None
+
+
+def _project_next_from_pattern(last_ex_date: date, pattern: dict, frequency_months: int) -> date | None:
+    """Project the next ex-date based on a detected pattern."""
+    target_month = last_ex_date.month + frequency_months
+    target_year = last_ex_date.year + (target_month - 1) // 12
+    target_month = (target_month - 1) % 12 + 1
+
+    candidate = _project_pattern_for_month(pattern, target_year, target_month)
+    return candidate if candidate and candidate > last_ex_date else None
 
 
 _FREQ_MONTHS = {"monthly": 1, "quarterly": 3, "semiannual": 6, "annual": 12}
@@ -1401,35 +1451,50 @@ def _estimate_pay_from_ex(
     default_lag: int,
     events: list[dict],
     ex_date_patterns: dict[str, dict] | None = None,
+    pay_date_pattern: dict | None = None,
 ) -> date:
     """Estimate pay-date from an ex-date using historical patterns.
 
     Tier 1 (caller handles): provider-sourced pay_date
-    Tier 2: symbol-specific lag → last business day of the target month
-    Tier 3: last business day of the ex-date's month (default)
-
-    For monthly payers with ex-dates in the last ~10 days of the month,
-    pay is capped to the same month (month-end funds always pay within
-    the same month, and LM-derived lags are inflated by sync delays).
-    For quarterly/annual payers the lag is used as-is since the payment
-    genuinely lands in a different month.
+    Tier 2: lag-first target (ex + median lag), adjusted to next business day
+    Tier 3: payment date pattern (nth weekday / nth-last business day / fixed day)
+            only when close to lag target
+    Tier 4: lag target fallback
     """
     sym_lag = pay_lag_by_symbol.get(sym) if pay_lag_by_symbol else None
-    freq = _frequency_from_ex_dates(
-        sorted(ev["ex_date"] for ev in events if ev.get("ex_date"))
-    ) if events else None
+    lag_days = sym_lag if isinstance(sym_lag, int) and sym_lag >= 1 else None
+    if lag_days is None:
+        lag_days = _symbol_pay_lag_days(events, default_lag)
+    if lag_days is None or lag_days < 1:
+        lag_days = max(1, int(default_lag or 2))
+    lag_target = _next_business_day(ex + timedelta(days=lag_days))
 
-    if sym_lag is not None and sym_lag >= 1:
-        target = ex + timedelta(days=sym_lag)
-        # Monthly payers with ex-date near month-end: keep pay in same month.
-        # Their LM-derived lags are inflated by brokerage sync delays.
-        if freq == "monthly" and ex.day >= _month_end(ex).day - 10:
-            if target.month != ex.month or target.year != ex.year:
-                return _last_business_day(ex)
-        return _last_business_day(target)
+    # Prefer an explicit calendar pattern when enough history exists
+    # (e.g. "4th Friday of the month"), but only as a near-lag override.
+    pattern = pay_date_pattern
+    if pattern is None and ex_date_patterns:
+        # Backward-compatible fallback: allow callers to pass a symbol-keyed map
+        # via ex_date_patterns until all call sites pass pay_date_pattern.
+        candidate = ex_date_patterns.get(sym)
+        if isinstance(candidate, dict):
+            pattern = candidate
+    if isinstance(pattern, dict):
+        confidence = pattern.get("confidence")
+        if confidence is None or (isinstance(confidence, (int, float)) and confidence >= 0.70):
+            candidate_months = {(lag_target.year, lag_target.month), (ex.year, ex.month)}
+            candidates = []
+            for year, month in candidate_months:
+                projected = _project_pattern_for_month(pattern, year, month)
+                if projected is not None and projected >= ex:
+                    candidates.append(_next_business_day(projected))
+            if candidates:
+                candidates.sort(key=lambda d: (abs((d - lag_target).days), abs((d - ex).days)))
+                best = candidates[0]
+                # Strict guard: avoid dragging projected pay dates too far from lag target.
+                if abs((best - lag_target).days) <= 4:
+                    return best
 
-    # No symbol-specific lag → pay in same month as ex-date
-    return _last_business_day(ex)
+    return lag_target
 
 
 def _estimate_expected_pay_events(
@@ -1443,6 +1508,7 @@ def _estimate_expected_pay_events(
     position_index: dict[str, tuple[list[date], list[float]]] | None = None,
     pay_lag_by_symbol: dict[str, int] | None = None,
     ex_date_patterns: dict[str, dict] | None = None,
+    pay_date_patterns: dict[str, dict] | None = None,
 ):
     default_lag = _median_pay_lag_days(provider_divs)
     if as_of_date is None:
@@ -1450,6 +1516,7 @@ def _estimate_expected_pay_events(
     expected = []
     total_raw = 0.0
     ex_date_est_by_symbol = ex_date_est_by_symbol or {}
+    pay_date_patterns = pay_date_patterns or {}
     # Reconcile projected events against received cash by ex-date so early/shifted
     # payment dates do not remain incorrectly projected.
     ex_to_payment_mapping = _match_payments_to_ex_dates(
@@ -1467,7 +1534,8 @@ def _estimate_expected_pay_events(
         return False
     def _shares_for(sym: str, ex_date: date) -> float:
         if position_index:
-            return _shares_at_date(position_index, sym, ex_date)
+            # Dividend entitlement is based on shares held BEFORE ex-date open.
+            return _shares_at_date(position_index, sym, ex_date - timedelta(days=1))
         return float(holdings[sym]["shares"])
 
     for sym in sorted(holdings.keys()):
@@ -1495,8 +1563,8 @@ def _estimate_expected_pay_events(
                 amt = ev.get("amount")
                 if ex is None or amt is None:
                     continue
-                # If a received payment is already mapped to this ex-date in the
-                # current window, suppress projected duplicates for this event.
+                # If this ex-date is already mapped to a received payment,
+                # suppress projection to avoid carrying paid events forward.
                 mapped_payment = payment_map.get(ex)
                 if mapped_payment:
                     mapped_pay_date = mapped_payment.get("pay_date")
@@ -1504,12 +1572,13 @@ def _estimate_expected_pay_events(
                         if not _pay_date_seen(pay_dates_seen, mapped_pay_date):
                             pay_dates_seen.append(mapped_pay_date)
                         window_has_event = True
-                        continue
+                    continue
                 # Tier 1: provider-sourced pay_date, else pattern-aware estimation
                 pay = ev.get("pay_date")
                 if pay is None:
+                    pay_pattern = pay_date_patterns.get(sym)
                     pay = _estimate_pay_from_ex(
-                        ex, sym, pay_lag_by_symbol, default_lag, events, ex_date_patterns)
+                        ex, sym, pay_lag_by_symbol, default_lag, events, ex_date_patterns, pay_pattern)
                 if pay < window_start or pay > window_end:
                     continue
                 window_has_event = True
@@ -1542,9 +1611,10 @@ def _estimate_expected_pay_events(
             ex_date_est = ex_date_est_by_symbol.get(sym)
             next_pay = None
             if ex_date_est:
+                pay_pattern = pay_date_patterns.get(sym)
                 next_pay_candidate = _estimate_pay_from_ex(
                     ex_date_est, sym, pay_lag_by_symbol, default_lag,
-                    provider_divs.get(sym, []), ex_date_patterns)
+                    provider_divs.get(sym, []), ex_date_patterns, pay_pattern)
                 if window_start <= next_pay_candidate <= window_end:
                     next_pay = next_pay_candidate
             if next_pay is None:
@@ -3667,6 +3737,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
     total_forward_12m = 0.0
     ex_dates_by_symbol = {}
     ex_date_patterns_by_symbol: dict[str, dict] = {}
+    pay_date_patterns_by_symbol: dict[str, dict] = {}
 
     for sym in sorted(holdings.keys()):
         h = holdings[sym]
@@ -3739,6 +3810,9 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         sym_pattern = _detect_ex_date_pattern(ex_dates)
         if sym_pattern:
             ex_date_patterns_by_symbol[sym] = sym_pattern
+        pay_pattern = _detect_pay_date_pattern(div_events, pay_history.get(sym, []))
+        if pay_pattern:
+            pay_date_patterns_by_symbol[sym] = pay_pattern
         forward_12m_div_ps = trailing_12m_div_ps if trailing_12m_div_ps else 0.0
         forward_method = "t12m" if trailing_12m_div_ps else None
         forward_12m_dividend = forward_12m_div_ps * float(h["shares"])
@@ -3950,6 +4024,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         position_index,
         pay_lag_by_symbol,
         ex_date_patterns_by_symbol,
+        pay_date_patterns_by_symbol,
     )
     event_projected = projected_alt or 0.0
 
