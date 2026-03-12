@@ -56,7 +56,10 @@ class MarketData:
             'yq': YahooQueryAdapter(enabled=bool(settings.yq_enable)),
             'stooq': StooqAdapter(enabled=bool(settings.stooq_enable)),
         }
-        self.fred = FredAdapter(api_key=settings.fred_api_key)
+        self.fred = FredAdapter(
+            api_key=settings.fred_api_key,
+            timeout_seconds=settings.http_timeout_seconds,
+        )
         self.prices: Dict[str, Any] = {}
         self.quotes: Dict[str, Any] = {}
         self.provenance: Dict[str, list] = {}

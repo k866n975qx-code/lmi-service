@@ -3,6 +3,7 @@ from datetime import date
 
 from app.pipeline import orchestrator as orchestrator_mod
 from app.pipeline import snapshots as snapshots_mod
+from app.providers.fred_adapter import FredAdapter
 
 
 def _make_conn() -> sqlite3.Connection:
@@ -169,3 +170,75 @@ def test_daily_persist_state_skips_when_nothing_changed():
 
     assert state["macro_changed"] is False
     assert state["should_persist_daily"] is False
+
+
+def test_fred_adapter_uses_json_api_when_key_present_and_pyfredapi_missing(monkeypatch):
+    payload = {
+        "observations": [
+            {"date": "2026-03-10", "value": "4.15"},
+            {"date": "2026-03-11", "value": "4.20"},
+        ]
+    }
+    calls: list[str] = []
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            import json
+
+            return json.dumps(payload).encode("utf-8")
+
+    def fake_urlopen(req, timeout=None):
+        calls.append(req.full_url)
+        return _Resp()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    adapter = FredAdapter(api_key="secret", timeout_seconds=5.0)
+    adapter.fred = None
+    df = adapter.series("DGS10")
+
+    assert df is not None
+    assert calls and calls[0].startswith("https://api.stlouisfed.org/fred/series/observations?")
+    assert df["value"].tolist() == [4.15, 4.2]
+
+
+def test_fred_adapter_falls_back_to_csv_when_api_unavailable(monkeypatch):
+    calls: list[str] = []
+
+    class _Resp:
+        def __init__(self, body: str):
+            self._body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return self._body.encode("utf-8")
+
+    def fake_urlopen(req, timeout=None):
+        url = req.full_url
+        calls.append(url)
+        if "api.stlouisfed.org" in url:
+            raise TimeoutError("api timeout")
+        return _Resp("DATE,DGS10\n2026-03-10,4.15\n2026-03-11,4.20\n")
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    adapter = FredAdapter(api_key="secret", timeout_seconds=5.0)
+    adapter.fred = None
+    df = adapter.series("DGS10")
+
+    assert df is not None
+    assert len(calls) == 2
+    assert "api.stlouisfed.org" in calls[0]
+    assert "fredgraph.csv" in calls[1]
+    assert df["value"].tolist() == [4.15, 4.2]
