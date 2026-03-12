@@ -18,6 +18,78 @@ from .locking import acquire_lock, release_lock
 
 log = structlog.get_logger()
 
+_MACRO_SIGNATURE_FIELDS = (
+    "vix",
+    "ten_year_yield",
+    "two_year_yield",
+    "hy_spread_bps",
+    "macro_stress_score",
+    "cpi_yoy",
+    "date",
+)
+
+
+def _market_value(payload: dict | None):
+    if not isinstance(payload, dict):
+        return None
+    try:
+        totals = (payload.get("portfolio") or {}).get("totals") or payload.get("totals") or {}
+        return round(float(totals.get("market_value")), 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def _price_data_as_of(payload: dict | None):
+    if not isinstance(payload, dict):
+        return None
+    timestamps = payload.get("timestamps") or {}
+    return timestamps.get("price_data_as_of_utc") or payload.get("prices_as_of_utc") or payload.get("prices_as_of")
+
+
+def _daily_macro_signature(payload: dict | None) -> tuple:
+    snap = ((payload or {}).get("macro") or {}).get("snapshot") or {}
+    return tuple(snap.get(field) for field in _MACRO_SIGNATURE_FIELDS)
+
+
+def _existing_macro_signature(row: tuple | None) -> tuple | None:
+    if row is None:
+        return None
+    return row[2:]
+
+
+def _daily_persist_state(existing_flat: tuple | None, daily: dict, *, new_tx_count: int) -> dict:
+    has_daily = existing_flat is not None
+    existing_mv = round(float(existing_flat[0]), 2) if has_daily and existing_flat[0] is not None else None
+    existing_prices_as_of = existing_flat[1] if has_daily and existing_flat[1] else None
+    force_daily = bool(has_daily and new_tx_count > 0)
+
+    current_mv = _market_value(daily)
+    if not has_daily:
+        market_value_changed = False
+    elif existing_mv is None or current_mv is None:
+        market_value_changed = True
+    else:
+        market_value_changed = existing_mv != current_mv
+
+    current_prices_as_of = _price_data_as_of(daily)
+    prices_as_of_changed = bool(has_daily and existing_prices_as_of != current_prices_as_of)
+    macro_changed = bool(has_daily and _existing_macro_signature(existing_flat) != _daily_macro_signature(daily))
+
+    return {
+        "has_daily": has_daily,
+        "force_daily": force_daily,
+        "market_value_changed": market_value_changed,
+        "prices_as_of_changed": prices_as_of_changed,
+        "macro_changed": macro_changed,
+        "should_persist_daily": (
+            force_daily
+            or not has_daily
+            or market_value_changed
+            or prices_as_of_changed
+            or macro_changed
+        ),
+    }
+
 def trigger_sync(background) -> str:
     run_id = str(uuid.uuid4())
     background.add_task(_sync_impl, run_id)
@@ -151,43 +223,31 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
 
         started = _step_start("persist_daily_snapshot")
 
-        def _market_value(payload: dict | None):
-            if not isinstance(payload, dict):
-                return None
-            try:
-                totals = (payload.get("portfolio") or {}).get("totals") or payload.get("totals") or {}
-                return round(float(totals.get("market_value")), 2)
-            except (TypeError, ValueError):
-                return None
-
         # Prefer flat table (daily_portfolio) so skip logic uses live-filled data as of that date
         existing_flat = cur.execute(
-            "SELECT market_value, prices_as_of_utc FROM daily_portfolio WHERE as_of_date_local=?",
+            """
+            SELECT
+                market_value,
+                prices_as_of_utc,
+                macro_vix,
+                macro_ten_year_yield,
+                macro_two_year_yield,
+                macro_hy_spread_bps,
+                macro_stress_score,
+                macro_cpi_yoy,
+                macro_data_as_of_date
+            FROM daily_portfolio
+            WHERE as_of_date_local=?
+            """,
             (as_of_date_local,),
         ).fetchone()
-        if existing_flat is not None:
-            has_daily = True
-            existing_mv = round(float(existing_flat[0]), 2) if existing_flat[0] is not None else None
-            existing_prices_as_of = existing_flat[1] if existing_flat[1] else None
-        else:
-            has_daily = False
-            existing_mv = None
-            existing_prices_as_of = None
-
-        force_daily = bool(has_daily and new_tx_count > 0)
-        current_mv = _market_value(daily)
-        market_value_changed = False
-        if has_daily:
-            if existing_mv is None or current_mv is None:
-                market_value_changed = True
-            else:
-                market_value_changed = existing_mv != current_mv
-        prices_as_of_changed = False
-        if has_daily:
-            current_prices_as_of = (daily.get("timestamps") or {}).get("price_data_as_of_utc") or daily.get("prices_as_of_utc") or daily.get("prices_as_of")
-            prices_as_of_changed = existing_prices_as_of != current_prices_as_of
-
-        should_persist_daily = force_daily or not has_daily or market_value_changed or prices_as_of_changed
+        persist_state = _daily_persist_state(existing_flat, daily, new_tx_count=new_tx_count)
+        has_daily = persist_state["has_daily"]
+        force_daily = persist_state["force_daily"]
+        market_value_changed = persist_state["market_value_changed"]
+        prices_as_of_changed = persist_state["prices_as_of_changed"]
+        macro_changed = persist_state["macro_changed"]
+        should_persist_daily = persist_state["should_persist_daily"]
 
         wrote_daily = False
         if should_persist_daily:
@@ -206,6 +266,7 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
                 existing_daily=has_daily,
                 market_value_changed=market_value_changed,
                 prices_as_of_changed=prices_as_of_changed,
+                macro_changed=macro_changed,
             )
             if wrote_daily:
                 upsert_facts_from_sources(conn, run_id, daily, sources)

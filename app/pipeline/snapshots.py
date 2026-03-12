@@ -27,6 +27,13 @@ DIVIDEND_CUT_THRESHOLD = 0.10
 DIVIDEND_CUT_LOOKAHEAD_DAYS = 90
 SPECIAL_DIVIDEND_FACTOR = 2.5
 DIVIDEND_PAY_MATCH_WINDOW_DAYS = 3
+_MACRO_CORE_FIELDS = (
+    "vix",
+    "ten_year_yield",
+    "two_year_yield",
+    "hy_spread_bps",
+    "macro_stress_score",
+)
 
 
 def _best_ex_date_for_pay(
@@ -3653,6 +3660,101 @@ def _build_macro_snapshot(md, as_of_date_local: date):
     return {"snapshot": snapshot, "trends": trends, "history": history, "provenance": provenance}
 
 
+def _macro_snapshot_dict(macro: dict | None) -> dict:
+    return (macro or {}).get("snapshot") or {}
+
+
+def _macro_snapshot_complete(macro: dict | None) -> bool:
+    snap = _macro_snapshot_dict(macro)
+    return bool(snap) and all(snap.get(field) is not None for field in _MACRO_CORE_FIELDS)
+
+
+def _macro_from_flat_row(row: tuple | None) -> dict | None:
+    if not row:
+        return None
+    (
+        _as_of_date_local,
+        macro_vix,
+        macro_ten_year_yield,
+        macro_two_year_yield,
+        macro_hy_spread_bps,
+        macro_yield_spread_10y_2y,
+        macro_stress_score,
+        macro_cpi_yoy,
+        macro_data_as_of_date,
+    ) = row
+    snapshot = {
+        "date": macro_data_as_of_date,
+        "vix": macro_vix,
+        "ten_year_yield": macro_ten_year_yield,
+        "two_year_yield": macro_two_year_yield,
+        "hy_spread_bps": macro_hy_spread_bps,
+        "yield_spread_10y_2y": macro_yield_spread_10y_2y,
+        "macro_stress_score": macro_stress_score,
+        "cpi_yoy": macro_cpi_yoy,
+    }
+    return {
+        "snapshot": snapshot,
+        "trends": None,
+        "history": {"records": [], "meta": {"updated_at": now_utc_iso(), "count": 0}},
+        "provenance": {"fetched_at": now_utc_iso(), "schema_version": "1.0", "source": "daily_portfolio_fallback"},
+        "as_of_date": macro_data_as_of_date,
+    }
+
+
+def _latest_complete_macro_snapshot(conn: sqlite3.Connection, as_of_date_local: date | str) -> dict | None:
+    as_of = as_of_date_local.isoformat() if isinstance(as_of_date_local, date) else str(as_of_date_local)
+    row = conn.execute(
+        """
+        SELECT
+            as_of_date_local,
+            macro_vix,
+            macro_ten_year_yield,
+            macro_two_year_yield,
+            macro_hy_spread_bps,
+            macro_yield_spread_10y_2y,
+            macro_stress_score,
+            macro_cpi_yoy,
+            macro_data_as_of_date
+        FROM daily_portfolio
+        WHERE as_of_date_local <= ?
+          AND macro_vix IS NOT NULL
+          AND macro_ten_year_yield IS NOT NULL
+          AND macro_two_year_yield IS NOT NULL
+          AND macro_hy_spread_bps IS NOT NULL
+          AND macro_stress_score IS NOT NULL
+        ORDER BY as_of_date_local DESC
+        LIMIT 1
+        """,
+        (as_of,),
+    ).fetchone()
+    return _macro_from_flat_row(row)
+
+
+def _stabilize_macro_snapshot(conn: sqlite3.Connection, macro: dict, as_of_date_local: date) -> dict:
+    if _macro_snapshot_complete(macro):
+        return macro
+    fallback = _latest_complete_macro_snapshot(conn, as_of_date_local)
+    if fallback is None:
+        missing = [field for field in _MACRO_CORE_FIELDS if _macro_snapshot_dict(macro).get(field) is None]
+        if missing:
+            log.warning(
+                "macro_snapshot_incomplete",
+                as_of_date_local=as_of_date_local.isoformat(),
+                missing_fields=missing,
+                fallback="none",
+            )
+        return macro
+    missing = [field for field in _MACRO_CORE_FIELDS if _macro_snapshot_dict(macro).get(field) is None]
+    log.warning(
+        "macro_snapshot_incomplete",
+        as_of_date_local=as_of_date_local.isoformat(),
+        missing_fields=missing,
+        fallback_as_of_date=(fallback.get("snapshot") or {}).get("date"),
+    )
+    return fallback
+
+
 def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[dict, list[dict]]:
     dt_utc = datetime.now(timezone.utc)
     as_of_utc = dt_utc.isoformat()
@@ -4341,7 +4443,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         except ValueError:
             plaid_account_id = settings.lm_plaid_account_ids.split(",")[0].strip()
 
-    macro = _build_macro_snapshot(md, as_of_date_local)
+    macro = _stabilize_macro_snapshot(conn, _build_macro_snapshot(md, as_of_date_local), as_of_date_local)
 
     if prices_as_of_date is None:
         prices_as_of_date = as_of_date_local
@@ -4407,17 +4509,6 @@ def persist_daily_snapshot(conn: sqlite3.Connection, daily: dict, run_id: str, f
     if not as_of_date_local:
         as_of_utc = timestamps.get("portfolio_data_as_of_utc") or daily.get("as_of_utc") or ""
         as_of_date_local = as_of_utc[:10] if as_of_utc else ""
-    cur = conn.cursor()
-    if not force:
-        # Skip if flat row exists with same market_value (unchanged)
-        totals = (daily.get("portfolio") or {}).get("totals") or daily.get("totals") or {}
-        new_mv = totals.get("market_value")
-        existing = cur.execute(
-            "SELECT market_value FROM daily_portfolio WHERE as_of_date_local=?",
-            (as_of_date_local,),
-        ).fetchone()
-        if existing and new_mv is not None and existing[0] is not None and abs(float(existing[0]) - float(new_mv)) < 0.01:
-            return False
     from .flat_persist import _write_daily_flat
     _write_daily_flat(conn, daily, run_id)
     return True
