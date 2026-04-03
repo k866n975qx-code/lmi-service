@@ -1840,13 +1840,24 @@ def _projected_monthly_income_stream(holdings: list[dict], as_of_date: date) -> 
         income_data = holding.get("income") or {}
         analytics = holding.get("analytics") or {}
         dist = analytics.get("distribution") or {}
+        ultimate = holding.get("ultimate") or {}
 
-        projected_monthly = income_data.get("projected_monthly_dividend")
+        projected_monthly = (
+            income_data.get("projected_monthly_dividend")
+            if income_data
+            else holding.get("projected_monthly_dividend")
+        )
         if not projected_monthly or projected_monthly <= 0:
             continue
 
         # Get payment frequency
-        frequency = dist.get("frequency_estimate") or dist.get("payment_frequency") or "unknown"
+        frequency = (
+            dist.get("distribution_frequency")
+            or ultimate.get("distribution_frequency")
+            or dist.get("frequency_estimate")
+            or dist.get("payment_frequency")
+            or "unknown"
+        )
 
         # Distribute dividends based on frequency
         if frequency == "monthly":

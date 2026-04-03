@@ -1018,12 +1018,20 @@ def evaluate_alerts(conn: sqlite3.Connection) -> List[dict]:
     gt_cs = goal_tiers_eval.get("current_state") or {}
     gt_target = gt_cs.get("target_monthly", 0)
     gt_current = gt_cs.get("projected_monthly_income", 0)
-    cur_progress = round(gt_current / gt_target * 100, 1) if gt_target > 0 else None
+    cur_progress = (
+        round(gt_current / gt_target * 100, 1)
+        if isinstance(gt_current, (int, float)) and isinstance(gt_target, (int, float)) and gt_target > 0
+        else None
+    )
     prev_gt_data = _goal_tiers(prev_snap) if prev_snap else {}
     prev_gt_cs = prev_gt_data.get("current_state") or {}
     prev_gt_target = prev_gt_cs.get("target_monthly", 0)
     prev_gt_current = prev_gt_cs.get("projected_monthly_income", 0)
-    prev_progress = round(prev_gt_current / prev_gt_target * 100, 1) if prev_gt_target > 0 else None
+    prev_progress = (
+        round(prev_gt_current / prev_gt_target * 100, 1)
+        if isinstance(prev_gt_current, (int, float)) and isinstance(prev_gt_target, (int, float)) and prev_gt_target > 0
+        else None
+    )
     for threshold in MILESTONE_PROGRESS_PCT:
         if isinstance(cur_progress, (int, float)) and isinstance(prev_progress, (int, float)) and prev_progress < threshold <= cur_progress:
             title = f"Milestone: Goal progress {threshold}%"
@@ -1329,7 +1337,11 @@ def build_daily_report_html(conn: sqlite3.Connection):
 
         target = current_state.get("target_monthly", 0)
         current = current_state.get("projected_monthly_income", 0)
-        progress = round(current / target * 100, 1) if target > 0 else 0
+        progress = (
+            round(current / target * 100, 1)
+            if isinstance(current, (int, float)) and isinstance(target, (int, float)) and target > 0
+            else 0
+        )
 
         parts.append("")
         parts.append("<b>🎯 GOAL</b>")
@@ -1655,7 +1667,11 @@ def build_period_report_html(conn: sqlite3.Connection, period: str):
     gt_period_cs = goal_tiers_period.get("current_state") or {}
     gt_period_target = gt_period_cs.get("target_monthly", 0)
     gt_period_current = gt_period_cs.get("projected_monthly_income", 0)
-    gt_period_pct = round(gt_period_current / gt_period_target * 100, 1) if gt_period_target > 0 else 0
+    gt_period_pct = (
+        round(gt_period_current / gt_period_target * 100, 1)
+        if isinstance(gt_period_current, (int, float)) and isinstance(gt_period_target, (int, float)) and gt_period_target > 0
+        else 0
+    )
     parts.append(f"• Progress: {gt_period_pct:.0f}% ({_fmt_money(gt_period_current)}/{_fmt_money(gt_period_target)} mo)")
     gp_likely = (goal_pace_period.get("likely_tier") or {})
     gp_pace = (goal_pace_period.get("current_pace") or {})

@@ -25,11 +25,21 @@ from ..pipeline.diff_daily import (
     _dividends_upcoming,
 )
 from ..alerts.evaluator import _holding_ultimate
+from .runtime_cache import TTLCacheStore, db_namespace
 
 log = structlog.get_logger()
+_SNAPSHOT_SERIES_CACHE = TTLCacheStore(maxsize=32)
 
 
-def _load_snapshots(conn: sqlite3.Connection, days: int = 90) -> list[tuple[date, dict]]:
+def _daily_series_signature(conn: sqlite3.Connection) -> tuple:
+    row = conn.execute(
+        "SELECT MAX(as_of_date_local), MAX(created_at_utc), COUNT(*) FROM daily_portfolio"
+    ).fetchone()
+    row_tuple = tuple(row) if row else (None, None, 0)
+    return (db_namespace(conn), *row_tuple)
+
+
+def _load_snapshots_uncached(conn: sqlite3.Connection, days: int = 90) -> list[tuple[date, dict]]:
     """Load recent daily snapshots from flat tables (assembled to V5) ordered by date ascending."""
     cur = conn.cursor()
     rows = cur.execute(
@@ -47,6 +57,15 @@ def _load_snapshots(conn: sqlite3.Connection, days: int = 90) -> list[tuple[date
             except (ValueError, TypeError):
                 continue
     return out
+
+
+def _load_snapshots(conn: sqlite3.Connection, days: int = 90) -> list[tuple[date, dict]]:
+    key = ("daily_snapshot_series", _daily_series_signature(conn), int(days))
+    return _SNAPSHOT_SERIES_CACHE.get_or_set(
+        key,
+        lambda: _load_snapshots_uncached(conn, days),
+        ttl_seconds=900,
+    )
 
 
 def _fig_to_bytes(fig) -> bytes:

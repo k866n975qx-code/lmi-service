@@ -547,7 +547,10 @@ def assemble_daily_snapshot(conn: sqlite3.Connection, as_of_date: str | None = N
         impact = rr.get("margin_impact_pct")
         if impact is None and isinstance(mc, (int, float)) and isinstance(inc, (int, float)) and inc:
             impact = round(float(mc) / float(inc) * 100.0, 2)
-        rate_shock[rr["scenario"]] = {
+        scenario_key = rr.get("scenario")
+        if isinstance(scenario_key, str) and scenario_key.startswith("rate_plus_"):
+            scenario_key = "+" + scenario_key.removeprefix("rate_plus_")
+        rate_shock[scenario_key] = {
             "new_rate_pct": rr.get("new_rate_pct"),
             "new_monthly_cost": mc,
             "income_coverage_ratio": rr.get("income_coverage"),
@@ -566,7 +569,7 @@ def assemble_daily_snapshot(conn: sqlite3.Connection, as_of_date: str | None = N
             cov = round(income / monthly_cost, 2) if monthly_cost else None
             # margin_impact_pct = expense as % of income (so client sees impact of rate shock)
             impact_pct = round(monthly_cost / income * 100.0, 2) if income else None
-            rate_shock[f"rate_plus_{int(shock * 100)}bp"] = {
+            rate_shock[f"+{int(shock * 100)}bp"] = {
                 "new_rate_pct": new_pct,
                 "new_monthly_cost": monthly_cost,
                 "income_coverage_ratio": cov,

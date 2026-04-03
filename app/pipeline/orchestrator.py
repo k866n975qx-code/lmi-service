@@ -300,6 +300,12 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
         _step_done("persist_periodic_snapshots", started)
 
         finish_run_ok(conn, run_id)
+        try:
+            from ..api.alerts import warm_telegram_cache_async
+
+            warm_telegram_cache_async(settings.db_path)
+        except Exception as warm_err:
+            log.warning("telegram_cache_warm_failed", run_id=run_id, err=str(warm_err))
         log.info("sync_finished", run_id=run_id, status="succeeded")
     except Exception as e:
         log.error("sync_failed", run_id=run_id, err=str(e))

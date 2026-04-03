@@ -17,6 +17,7 @@ _ALLOWED_TX_TYPES = {
     "reinvestment",
     "dividend",
     "interest",
+    "margin_interest",
     "contribution",
     "withdrawal",
     "margin_borrow",
@@ -103,20 +104,19 @@ def _infer_tx_type(tx: dict, meta: dict | None):
     if "dividend" in text:
         return "dividend"
     
-    # Check for interest (but exclude margin interest)
+    # Check for interest and split margin interest from general credits
     if "interest" in text:
-        if "margin" in text:
-            # This is margin interest expense (repayment to loan account)
-            return "margin_repay"
         if "securities lending" in text:
             return "interest"
-        # Generic interest - could be margin or securities lending
-        # If it's positive, likely margin repayment; if negative, likely securities lending
+        if "margin" in text:
+            return "margin_interest"
+        # Generic interest: positive amounts are usually interest expense/charges,
+        # while negative amounts are typically credits such as securities lending.
         amount = tx.get("amount")
         try:
             amount_float = float(amount) if amount is not None else 0.0
             if amount_float > 0:
-                return "margin_repay"
+                return "margin_interest"
             else:
                 return "interest"
         except (ValueError, TypeError):

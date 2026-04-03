@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from .logging import setup_logging
 from .api.routes import router as api_router
-from .api.alerts import router as alerts_router
+from .api.alerts import router as alerts_router, warm_telegram_cache_async
 from .alerts.scheduler import get_scheduler, schedule_jobs
 from .alerts.storage import migrate_alerts
 from .config import settings
@@ -17,6 +17,7 @@ def _startup():
     conn = get_conn(settings.db_path)
     migrate_alerts(conn)
     schedule_jobs(get_scheduler())
+    warm_telegram_cache_async(settings.db_path)
 
 @app.on_event("shutdown")
 def _shutdown():

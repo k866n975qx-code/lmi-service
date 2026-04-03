@@ -375,6 +375,10 @@ def build_period_insight_keyboard(period_snap: dict) -> dict:
             {"text": "⚠️ Risk Breakdown", "callback_data": f"period_risk:{period_id}"},
         ],
         [
+            {"text": "🎯 Goals & Pace", "callback_data": f"period_goals:{period_id}"},
+            {"text": "🏦 Margin", "callback_data": f"period_margin:{period_id}"},
+        ],
+        [
             {"text": "✓ Done", "callback_data": f"period_dismiss:{period_id}"},
         ],
     ]
@@ -588,6 +592,18 @@ def format_period_activity_html(period_snap: dict) -> str:
                 amt = abs(_to_float(event.get("amount")) or 0.0)
                 lines.append(f"  {sym}: ${amt:.2f}")
 
+    interest = activity.get("interest") if isinstance(activity.get("interest"), dict) else {}
+    interest_total = abs(_to_float(interest.get("total_paid")) or 0.0)
+    if interest_total > 0:
+        lines.append("")
+        lines.append(f"<b>Margin Interest:</b> ${interest_total:,.2f}")
+        avg_rate = _to_float(interest.get("avg_rate_pct"))
+        annualized = _to_float(interest.get("annualized"))
+        if avg_rate is not None:
+            lines.append(f"  Avg APR: {avg_rate:.2f}%")
+        if annualized is not None:
+            lines.append(f"  Annualized: ${annualized:,.2f}")
+
     margin = activity.get("margin") if isinstance(activity.get("margin"), dict) else {}
     borrowed = _coalesce(_to_float(margin.get("borrowed")), _to_float(margin.get("net_borrow")), 0.0)
     repaid = _coalesce(_to_float(margin.get("repaid")), _to_float(margin.get("net_repay")), 0.0)
@@ -674,6 +690,179 @@ def format_period_risk_html(period_snap: dict) -> str:
             lines.append(f"  Sortino: {sortino_start:.2f} → {sortino_end:.2f}")
 
     return "\n".join(lines) if len(lines) > 1 else "<b>No risk data available</b>"
+
+
+def format_period_goals_html(period_snap: dict) -> str:
+    """Format period goal progress and pace as HTML for telegram."""
+    _, _, _, period_label = _period_identity(period_snap)
+    goals = period_snap.get("goals") if isinstance(period_snap.get("goals"), dict) else {}
+    start = goals.get("start") if isinstance(goals.get("start"), dict) else {}
+    end = goals.get("end") if isinstance(goals.get("end"), dict) else {}
+    delta = goals.get("delta") if isinstance(goals.get("delta"), dict) else {}
+    pace = goals.get("pace") if isinstance(goals.get("pace"), dict) else {}
+
+    def _fmt_months(value) -> str:
+        num = _to_float(value)
+        if num is None:
+            return "—"
+        if abs(num - round(num)) < 1e-9:
+            return str(int(round(num)))
+        return f"{num:.1f}"
+
+    lines = [f"<b>🎯 Goals & Pace - {period_label}</b>\n"]
+
+    target_monthly = _coalesce(_to_float(end.get("target_monthly")), _to_float(start.get("target_monthly")))
+    if target_monthly is not None:
+        lines.append(f"Target Monthly: ${target_monthly:,.2f}")
+
+    start_income = _to_float(start.get("projected_monthly_income"))
+    end_income = _to_float(end.get("projected_monthly_income"))
+    delta_income = _coalesce(_to_float(delta.get("projected_monthly_income")), None)
+    if start_income is not None or end_income is not None:
+        lines.append("<b>Income Progress:</b>")
+        if start_income is not None and end_income is not None:
+            income_delta_txt = f" ({end_income - start_income:+,.2f})"
+            if delta_income is not None:
+                income_delta_txt = f" ({delta_income:+,.2f})"
+            lines.append(f"  Monthly Income: ${start_income:,.2f} → ${end_income:,.2f}{income_delta_txt}")
+        elif end_income is not None:
+            lines.append(f"  Monthly Income: ${end_income:,.2f}")
+
+    start_progress = _to_float(start.get("progress_pct"))
+    end_progress = _to_float(end.get("progress_pct"))
+    delta_progress = _coalesce(_to_float(delta.get("progress_pct")), None)
+    if start_progress is not None or end_progress is not None:
+        if not any(line == "<b>Income Progress:</b>" for line in lines):
+            lines.append("<b>Income Progress:</b>")
+        if start_progress is not None and end_progress is not None:
+            progress_delta_txt = f" ({end_progress - start_progress:+.2f}pp)"
+            if delta_progress is not None:
+                progress_delta_txt = f" ({delta_progress:+.2f}pp)"
+            lines.append(f"  Goal Progress: {start_progress:.2f}% → {end_progress:.2f}%{progress_delta_txt}")
+        elif end_progress is not None:
+            lines.append(f"  Goal Progress: {end_progress:.2f}%")
+
+    start_months = _to_float(start.get("months_to_goal"))
+    end_months = _to_float(end.get("months_to_goal"))
+    delta_months = _coalesce(_to_float(delta.get("months_to_goal")), None)
+    if start_months is not None or end_months is not None:
+        if start_months is not None and end_months is not None:
+            months_delta_txt = f" ({end_months - start_months:+.1f})"
+            if delta_months is not None:
+                months_delta_txt = f" ({delta_months:+.1f})"
+            lines.append(
+                f"  Months To Goal: {_fmt_months(start_months)} → {_fmt_months(end_months)}{months_delta_txt}"
+            )
+        elif end_months is not None:
+            lines.append(f"  Months To Goal: {_fmt_months(end_months)}")
+
+    if end.get("estimated_goal_date") or start.get("estimated_goal_date"):
+        lines.append(
+            f"  Goal Date: {start.get('estimated_goal_date') or '—'} → {end.get('estimated_goal_date') or '—'}"
+        )
+
+    pace_start = _to_float(pace.get("start_months_ahead_behind"))
+    pace_end = _to_float(pace.get("end_months_ahead_behind"))
+    pace_delta = _coalesce(_to_float(pace.get("delta_months_ahead_behind")), None)
+    tier_start = _to_float(pace.get("start_tier_pace_pct"))
+    tier_end = _to_float(pace.get("end_tier_pace_pct"))
+    if pace_start is not None or pace_end is not None or tier_start is not None or tier_end is not None:
+        lines.append("")
+        lines.append("<b>Pace:</b>")
+        if pace_start is not None and pace_end is not None:
+            pace_delta_txt = f" ({pace_end - pace_start:+.2f})"
+            if pace_delta is not None:
+                pace_delta_txt = f" ({pace_delta:+.2f})"
+            lines.append(
+                f"  Months Ahead/Behind: {_fmt_months(pace_start)} → {_fmt_months(pace_end)}{pace_delta_txt}"
+            )
+        elif pace_end is not None:
+            lines.append(f"  Months Ahead/Behind: {_fmt_months(pace_end)}")
+        if tier_start is not None and tier_end is not None:
+            lines.append(f"  Tier Pace: {tier_start:.2f}% → {tier_end:.2f}%")
+        elif tier_end is not None:
+            lines.append(f"  Tier Pace: {tier_end:.2f}%")
+
+    return "\n".join(lines) if len(lines) > 1 else "<b>No goal data available</b>"
+
+
+def format_period_margin_html(period_snap: dict) -> str:
+    """Format period margin balance, cost, and safety as HTML for telegram."""
+    _, _, _, period_label = _period_identity(period_snap)
+    margin = period_snap.get("margin") if isinstance(period_snap.get("margin"), dict) else {}
+    balance = margin.get("balance") if isinstance(margin.get("balance"), dict) else {}
+    ltv = margin.get("ltv") if isinstance(margin.get("ltv"), dict) else {}
+    interest = margin.get("interest") if isinstance(margin.get("interest"), dict) else {}
+    safety = margin.get("safety") if isinstance(margin.get("safety"), dict) else {}
+
+    lines = [f"<b>🏦 Margin - {period_label}</b>\n"]
+
+    start_balance = _to_float(balance.get("start"))
+    end_balance = _to_float(balance.get("end"))
+    delta_balance = _coalesce(_to_float(balance.get("delta")), None)
+    avg_balance = _to_float(balance.get("avg"))
+    if start_balance is not None or end_balance is not None or avg_balance is not None:
+        lines.append("<b>Balance:</b>")
+        if start_balance is not None and end_balance is not None:
+            delta_txt = f" ({end_balance - start_balance:+,.2f})"
+            if delta_balance is not None:
+                delta_txt = f" ({delta_balance:+,.2f})"
+            lines.append(f"  Start → End: ${start_balance:,.2f} → ${end_balance:,.2f}{delta_txt}")
+        elif end_balance is not None:
+            lines.append(f"  End: ${end_balance:,.2f}")
+        if avg_balance is not None:
+            lines.append(f"  Avg Balance: ${avg_balance:,.2f}")
+        min_balance = _to_float(balance.get("min"))
+        max_balance = _to_float(balance.get("max"))
+        if min_balance is not None and max_balance is not None:
+            lines.append(f"  Range: ${min_balance:,.2f} → ${max_balance:,.2f}")
+
+    start_ltv = _to_float(ltv.get("start_pct"))
+    end_ltv = _to_float(ltv.get("end_pct"))
+    avg_ltv = _to_float(ltv.get("avg_pct"))
+    if start_ltv is not None or end_ltv is not None or avg_ltv is not None:
+        lines.append("")
+        lines.append("<b>LTV:</b>")
+        if start_ltv is not None and end_ltv is not None:
+            lines.append(f"  Start → End: {start_ltv:.2f}% → {end_ltv:.2f}%")
+        elif end_ltv is not None:
+            lines.append(f"  End: {end_ltv:.2f}%")
+        if avg_ltv is not None:
+            lines.append(f"  Avg LTV: {avg_ltv:.2f}%")
+        min_ltv = _to_float(ltv.get("min_pct"))
+        max_ltv = _to_float(ltv.get("max_pct"))
+        if min_ltv is not None and max_ltv is not None:
+            lines.append(f"  Range: {min_ltv:.2f}% → {max_ltv:.2f}%")
+
+    total_paid = _to_float(interest.get("total_paid"))
+    avg_daily_cost = _to_float(interest.get("avg_daily_cost"))
+    avg_apr = _to_float(interest.get("avg_apr_pct"))
+    if total_paid is not None or avg_daily_cost is not None or avg_apr is not None:
+        lines.append("")
+        lines.append("<b>Interest:</b>")
+        if total_paid is not None:
+            lines.append(f"  Total Paid: ${total_paid:,.2f}")
+        if avg_daily_cost is not None:
+            lines.append(f"  Avg Daily Cost: ${avg_daily_cost:,.2f}")
+        if avg_apr is not None:
+            lines.append(f"  Avg APR: {avg_apr:.2f}%")
+
+    min_buffer = _to_float(safety.get("min_buffer_to_call_pct"))
+    if min_buffer is not None:
+        lines.append("")
+        lines.append("<b>Safety:</b>")
+        lines.append(f"  Minimum Buffer: {min_buffer:.2f}% on {safety.get('min_buffer_date') or '—'}")
+        below_50 = _to_float(safety.get("days_below_50pct_buffer"))
+        below_40 = _to_float(safety.get("days_below_40pct_buffer"))
+        margin_call_events = _to_float(safety.get("margin_call_events"))
+        if below_50 is not None:
+            lines.append(f"  Days Below 50% Buffer: {int(below_50)}")
+        if below_40 is not None:
+            lines.append(f"  Days Below 40% Buffer: {int(below_40)}")
+        if margin_call_events is not None:
+            lines.append(f"  Margin Call Events: {int(margin_call_events)}")
+
+    return "\n".join(lines) if len(lines) > 1 else "<b>No margin data available</b>"
 
 
 def send_period_insight_to_telegram(

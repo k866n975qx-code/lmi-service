@@ -134,6 +134,16 @@ def _margin_stress(snap: dict | None) -> dict:
                 "buffer_status": mc.get("buffer_status"),
             }
         }
+    rate_shock = stress.get("rate_shock_scenarios")
+    normalized_rate_shock = {}
+    if isinstance(rate_shock, list):
+        for item in rate_shock:
+            if isinstance(item, dict) and item.get("scenario"):
+                normalized_rate_shock[str(item["scenario"])] = item
+    elif isinstance(rate_shock, dict):
+        normalized_rate_shock = dict(rate_shock)
+    if normalized_rate_shock:
+        result.setdefault("stress_scenarios", {})["interest_rate_shock"] = normalized_rate_shock
     # So flat_persist can write margin_history_90d_json
     result["historical_trends_90d"] = margin.get("historical_trends_90d") or margin.get("history_90d")
     return result

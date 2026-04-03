@@ -571,7 +571,7 @@ def _generate_period_activity(conn: sqlite3.Connection, start: date, end: date):
     # Query all transactions in the period
     rows = cur.execute(
         """
-        SELECT date, amount, transaction_type, symbol, plaid_account_id
+        SELECT date, amount, transaction_type, symbol, plaid_account_id, name
         FROM investment_transactions
         WHERE date BETWEEN ? AND ?
         ORDER BY date
@@ -588,9 +588,14 @@ def _generate_period_activity(conn: sqlite3.Connection, start: date, end: date):
     trades_by_symbol = {}
 
     for row in rows:
-        tx_date, amount, tx_type, symbol, account_id = row
+        tx_date, amount, tx_type, symbol, account_id, name = row
         if not tx_date:
             continue
+
+        tx_name = (name or "").lower()
+        normalized_type = (tx_type or "").lower()
+        if normalized_type == "margin_repay" and "interest" in tx_name:
+            normalized_type = "margin_interest"
 
         tx_dict = {
             "date": tx_date,
@@ -598,28 +603,28 @@ def _generate_period_activity(conn: sqlite3.Connection, start: date, end: date):
             "symbol": symbol,
         }
 
-        if tx_type == "contribution":
+        if normalized_type == "contribution":
             contrib_dict = {**tx_dict, "account_id": account_id}
             contributions.append(contrib_dict)
-        elif tx_type == "withdrawal":
+        elif normalized_type == "withdrawal":
             withdrawal_dict = {**tx_dict, "account_id": account_id}
             withdrawals.append(withdrawal_dict)
-        elif tx_type == "dividend":
+        elif normalized_type == "dividend":
             dividends.append(tx_dict)
-        elif tx_type == "interest":
+        elif normalized_type in {"interest", "margin_interest"}:
             interest.append(tx_dict)
-        elif tx_type == "margin_borrow":
+        elif normalized_type == "margin_borrow":
             margin_borrows.append(tx_dict)
-        elif tx_type == "margin_repay":
+        elif normalized_type == "margin_repay":
             margin_repays.append(tx_dict)
-        elif tx_type in ("buy", "sell"):
+        elif normalized_type in ("buy", "sell"):
             if not symbol:
                 continue
             if symbol not in trades_by_symbol:
                 trades_by_symbol[symbol] = {"buy_count": 0, "sell_count": 0}
-            if tx_type == "buy":
+            if normalized_type == "buy":
                 trades_by_symbol[symbol]["buy_count"] += 1
-            elif tx_type == "sell":
+            elif normalized_type == "sell":
                 trades_by_symbol[symbol]["sell_count"] += 1
 
     # Calculate totals

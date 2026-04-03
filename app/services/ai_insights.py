@@ -73,11 +73,13 @@ RISK
 - Sharpe (1Y): {sharpe}
 - Sortino (1Y): {sortino}
 - Max Drawdown (1Y): {max_dd:.1f}%
+- Income Stability: {income_stability:.2f}
 - Risk Quality: {risk_quality}
 
 MARGIN STRESS
 - Decline to Margin Call: {decline_to_call:.0f}%
-- Income Coverage Ratio: {income_coverage:.1f}x
+- Current Income Coverage: {income_coverage_now:.1f}x
+- +100bp Coverage: {income_coverage_stress:.1f}x
 
 MACRO
 - VIX: {vix}
@@ -118,6 +120,10 @@ def _extract_context(snap: dict) -> dict:
     macro_snap = macro_data.get("snapshot") or {}
     stress = _margin_stress(snap)
     stress_scenarios = stress.get("stress_scenarios") or {}
+    margin = snap.get("margin") or {}
+    margin_current = margin.get("current") or {}
+    margin_stress = margin.get("stress") or {}
+    rate_scenarios = margin_stress.get("rate_shock_scenarios") or {}
 
     current_pace = pace.get("current_pace") or {}
     likely_tier = pace.get("likely_tier") or {}
@@ -141,6 +147,15 @@ def _extract_context(snap: dict) -> dict:
         yld = u.get("current_yield_pct", 0) or 0
         mo_div = u.get("projected_monthly_dividend", 0) or 0
         top_lines.append(f"  {sym}: {w:.1f}% weight, {yld:.1f}% yield, ${mo_div:.2f}/mo")
+
+    coverage_now = _safe_get(margin_current, "income_interest_coverage", default=None)
+    preferred_stress = (
+        rate_scenarios.get("+100bp")
+        or rate_scenarios.get("rate_plus_100bp")
+        or next(iter(rate_scenarios.values()), {})
+    )
+    coverage_stress = _safe_get(preferred_stress, "income_coverage_ratio", default=0)
+    income_stability = _safe_get(risk, "income_stability_score", default=0)
 
     return {
         "as_of": _as_of(snap),
@@ -166,9 +181,11 @@ def _extract_context(snap: dict) -> dict:
         "sharpe": f"{_safe_get(risk, 'sharpe_1y'):.2f}" if isinstance(_safe_get(risk, "sharpe_1y"), (int, float)) else "N/A",
         "sortino": f"{_safe_get(risk, 'sortino_1y'):.2f}" if isinstance(_safe_get(risk, "sortino_1y"), (int, float)) else "N/A",
         "max_dd": _safe_get(risk, "max_drawdown_1y_pct"),
+        "income_stability": income_stability,
         "risk_quality": risk.get("portfolio_risk_quality", "N/A"),
-        "decline_to_call": _safe_get(stress_scenarios, "margin_call_distance", "portfolio_decline_to_call_pct", default=0),
-        "income_coverage": _safe_get(stress_scenarios, "interest_rate_shock", "+50bps", "income_coverage_ratio", default=0),
+        "decline_to_call": abs(_safe_get(stress_scenarios, "margin_call_distance", "portfolio_decline_to_call_pct", default=0)),
+        "income_coverage_now": coverage_now if isinstance(coverage_now, (int, float)) else 0,
+        "income_coverage_stress": coverage_stress if isinstance(coverage_stress, (int, float)) else 0,
         "vix": f"{macro_snap.get('vix', 'N/A')}",
         "ten_year": f"{macro_snap.get('ten_year_yield', 'N/A')}",
         "spread": f"{macro_snap.get('yield_spread_10y_2y', 'N/A')}",
