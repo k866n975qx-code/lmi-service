@@ -25,6 +25,7 @@ from .diff_daily import (
     _holdings_flat,
 )
 from ..services.ai_insights import _safe_get
+from .realized import build_period_realized_summary
 
 
 
@@ -567,11 +568,24 @@ def _portfolio_changes(start_holdings, end_holdings, dailies=None):
 def _generate_period_activity(conn: sqlite3.Connection, start: date, end: date):
     """Generate activity section for a period from investment_transactions."""
     cur = conn.cursor()
+    realized_summary = build_period_realized_summary(conn, start, end)
+    realized_cashflow = realized_summary.get("cashflow") or {}
+    realized_by_symbol = realized_summary.get("by_symbol") or {}
+    realized_block = realized_summary.get("realized") or {}
 
     # Query all transactions in the period
     rows = cur.execute(
         """
-        SELECT date, amount, transaction_type, symbol, plaid_account_id, name
+        SELECT
+          date,
+          amount,
+          transaction_type,
+          symbol,
+          plaid_account_id,
+          name,
+          external_flow_amount,
+          income_flow_amount,
+          financing_flow_amount
         FROM investment_transactions
         WHERE date BETWEEN ? AND ?
         ORDER BY date
@@ -588,7 +602,17 @@ def _generate_period_activity(conn: sqlite3.Connection, start: date, end: date):
     trades_by_symbol = {}
 
     for row in rows:
-        tx_date, amount, tx_type, symbol, account_id, name = row
+        (
+            tx_date,
+            amount,
+            tx_type,
+            symbol,
+            account_id,
+            name,
+            external_flow_amount,
+            income_flow_amount,
+            financing_flow_amount,
+        ) = row
         if not tx_date:
             continue
 
@@ -604,28 +628,37 @@ def _generate_period_activity(conn: sqlite3.Connection, start: date, end: date):
         }
 
         if normalized_type == "contribution":
-            contrib_dict = {**tx_dict, "account_id": account_id}
+            contrib_dict = {
+                **tx_dict,
+                "amount": abs(float(external_flow_amount or 0.0)),
+                "account_id": account_id,
+            }
             contributions.append(contrib_dict)
         elif normalized_type == "withdrawal":
-            withdrawal_dict = {**tx_dict, "account_id": account_id}
+            withdrawal_dict = {
+                **tx_dict,
+                "amount": abs(float(external_flow_amount or 0.0)),
+                "account_id": account_id,
+            }
             withdrawals.append(withdrawal_dict)
         elif normalized_type == "dividend":
-            dividends.append(tx_dict)
+            dividends.append({**tx_dict, "amount": abs(float(income_flow_amount or 0.0))})
         elif normalized_type in {"interest", "margin_interest"}:
-            interest.append(tx_dict)
+            if normalized_type == "margin_interest":
+                interest.append({**tx_dict, "amount": abs(float(financing_flow_amount or 0.0))})
         elif normalized_type == "margin_borrow":
-            margin_borrows.append(tx_dict)
+            margin_borrows.append({**tx_dict, "amount": abs(float(financing_flow_amount or 0.0))})
         elif normalized_type == "margin_repay":
-            margin_repays.append(tx_dict)
+            margin_repays.append({**tx_dict, "amount": abs(float(financing_flow_amount or 0.0))})
         elif normalized_type in ("buy", "sell"):
             if not symbol:
                 continue
             if symbol not in trades_by_symbol:
-                trades_by_symbol[symbol] = {"buy_count": 0, "sell_count": 0}
+                trades_by_symbol[symbol] = dict(realized_by_symbol.get(symbol) or {})
             if normalized_type == "buy":
-                trades_by_symbol[symbol]["buy_count"] += 1
+                trades_by_symbol[symbol]["buy_count"] = int(trades_by_symbol[symbol].get("buy_count") or 0) + 1
             elif normalized_type == "sell":
-                trades_by_symbol[symbol]["sell_count"] += 1
+                trades_by_symbol[symbol]["sell_count"] = int(trades_by_symbol[symbol].get("sell_count") or 0) + 1
 
     # Calculate totals
     contributions_total = sum(c["amount"] for c in contributions)
@@ -633,8 +666,8 @@ def _generate_period_activity(conn: sqlite3.Connection, start: date, end: date):
     dividends_total = sum(d["amount"] for d in dividends)
     interest_total = sum(i["amount"] for i in interest)
 
-    total_buys = sum(t["buy_count"] for t in trades_by_symbol.values())
-    total_sells = sum(t["sell_count"] for t in trades_by_symbol.values())
+    total_buys = sum(int(t.get("buy_count") or 0) for t in trades_by_symbol.values())
+    total_sells = sum(int(t.get("sell_count") or 0) for t in trades_by_symbol.values())
 
     # Group dividends by symbol
     dividends_by_symbol = {}
@@ -735,6 +768,8 @@ def _generate_period_activity(conn: sqlite3.Connection, start: date, end: date):
         },
         "interest": {
             "total_paid": abs(interest_total),
+            "income_total": realized_cashflow.get("interest_income_total"),
+            "fees_total": realized_cashflow.get("fees_total"),
             "avg_daily_balance": None,  # Requires daily margin balance series
             "avg_rate_pct": None,
             "annualized": None,
@@ -743,7 +778,24 @@ def _generate_period_activity(conn: sqlite3.Connection, start: date, end: date):
             "total_count": total_buys + total_sells,
             "buy_count": total_buys,
             "sell_count": total_sells,
+            "buys_total": realized_cashflow.get("buys_total"),
+            "sells_total": realized_cashflow.get("sells_total"),
+            "trading_net_cash": realized_cashflow.get("trading_net_cash"),
             "by_symbol": trades_by_symbol,
+        },
+        "realized": {
+            "capital_pnl": realized_block.get("realized_pnl"),
+            "gross_proceeds": realized_block.get("gross_proceeds"),
+            "net_proceeds": realized_block.get("net_proceeds"),
+            "cost_basis_sold": realized_block.get("realized_cost_basis"),
+            "sale_count": realized_block.get("sale_count"),
+            "winning_sales": realized_block.get("winning_sales"),
+            "losing_sales": realized_block.get("losing_sales"),
+        },
+        "cashflow": {
+            "external_net": realized_cashflow.get("external_net"),
+            "realized_total_return": realized_cashflow.get("realized_total_return"),
+            "portfolio_cash_net": realized_cashflow.get("portfolio_cash_net"),
         },
         "positions": {
             "added": positions_added,

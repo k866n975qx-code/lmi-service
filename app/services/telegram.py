@@ -372,13 +372,14 @@ def build_period_insight_keyboard(period_snap: dict) -> dict:
         ],
         [
             {"text": "💰 Activity Details", "callback_data": f"period_activity:{period_id}"},
+            {"text": "📈 P&L / Cashflow", "callback_data": f"period_pnl:{period_id}"},
+        ],
+        [
             {"text": "⚠️ Risk Breakdown", "callback_data": f"period_risk:{period_id}"},
-        ],
-        [
             {"text": "🎯 Goals & Pace", "callback_data": f"period_goals:{period_id}"},
-            {"text": "🏦 Margin", "callback_data": f"period_margin:{period_id}"},
         ],
         [
+            {"text": "🏦 Margin", "callback_data": f"period_margin:{period_id}"},
             {"text": "✓ Done", "callback_data": f"period_dismiss:{period_id}"},
         ],
     ]
@@ -507,8 +508,16 @@ def format_period_trades_html(period_snap: dict) -> str:
     total = int(trades.get("total_count") or 0)
     buys = int(trades.get("buy_count") or 0)
     sells = int(trades.get("sell_count") or 0)
+    buys_total = _to_float(trades.get("buys_total")) or 0.0
+    sells_total = _to_float(trades.get("sells_total")) or 0.0
+    trading_net_cash = _to_float(trades.get("trading_net_cash"))
 
     lines.append(f"Total Trades: {total} ({buys} buys, {sells} sells)")
+    if buys_total or sells_total or trading_net_cash is not None:
+        lines.append(f"Buy Spend: ${buys_total:,.2f}")
+        lines.append(f"Sell Proceeds: ${sells_total:,.2f}")
+        if trading_net_cash is not None:
+            lines.append(f"Net Trade Cash: ${trading_net_cash:+,.2f}")
     lines.append("")
 
     by_symbol_raw = trades.get("by_symbol")
@@ -524,6 +533,10 @@ def format_period_trades_html(period_snap: dict) -> str:
                     "count": buy_ct + sell_ct,
                     "buy_count": buy_ct,
                     "sell_count": sell_ct,
+                    "net_trade_cash": _to_float(payload.get("net_trade_cash")),
+                    "realized_capital_pnl": _to_float(payload.get("realized_capital_pnl")),
+                    "shares_bought": _to_float(payload.get("shares_bought")),
+                    "shares_sold": _to_float(payload.get("shares_sold")),
                 }
             )
     elif isinstance(by_symbol_raw, list):
@@ -539,16 +552,42 @@ def format_period_trades_html(period_snap: dict) -> str:
                     "count": count,
                     "buy_count": buy_ct,
                     "sell_count": sell_ct,
+                    "net_trade_cash": _to_float(row.get("net_trade_cash")),
+                    "realized_capital_pnl": _to_float(row.get("realized_capital_pnl")),
+                    "shares_bought": _to_float(row.get("shares_bought")),
+                    "shares_sold": _to_float(row.get("shares_sold")),
                 }
             )
 
     if by_symbol:
         lines.append("<b>Most Active:</b>")
         for row in sorted(by_symbol, key=lambda x: x.get("count", 0), reverse=True)[:10]:
+            extras = []
+            if row.get("shares_bought"):
+                extras.append(f"{row.get('shares_bought'):,.2f} sh bought")
+            if row.get("shares_sold"):
+                extras.append(f"{row.get('shares_sold'):,.2f} sh sold")
+            if row.get("net_trade_cash") is not None:
+                extras.append(f"cash ${row.get('net_trade_cash'):+,.2f}")
             lines.append(
                 f"  {row.get('symbol', '?')}: {row.get('count', 0)} trades "
                 f"({row.get('buy_count', 0)}B/{row.get('sell_count', 0)}S)"
             )
+            if extras:
+                lines.append(f"    {' | '.join(extras)}")
+
+        realized_rows = [
+            row for row in by_symbol if isinstance(row.get("realized_capital_pnl"), (int, float)) and abs(row.get("realized_capital_pnl") or 0.0) > 1e-9
+        ]
+        if realized_rows:
+            losers = [row for row in realized_rows if (row.get("realized_capital_pnl") or 0.0) < 0]
+            winners = [row for row in realized_rows if (row.get("realized_capital_pnl") or 0.0) > 0]
+            lines.append("")
+            lines.append("<b>Realized Movers:</b>")
+            for row in sorted(losers, key=lambda x: x.get("realized_capital_pnl", 0.0))[:5]:
+                lines.append(f"  {row.get('symbol', '?')}: ${row.get('realized_capital_pnl', 0.0):+,.2f}")
+            for row in sorted(winners, key=lambda x: x.get("realized_capital_pnl", 0.0), reverse=True)[:5]:
+                lines.append(f"  {row.get('symbol', '?')}: ${row.get('realized_capital_pnl', 0.0):+,.2f}")
 
     return "\n".join(lines) if len(lines) > 1 else "<b>No trades data available</b>"
 
@@ -603,6 +642,15 @@ def format_period_activity_html(period_snap: dict) -> str:
             lines.append(f"  Avg APR: {avg_rate:.2f}%")
         if annualized is not None:
             lines.append(f"  Annualized: ${annualized:,.2f}")
+    interest_income_total = _to_float(interest.get("income_total")) or 0.0
+    fees_total = _to_float(interest.get("fees_total")) or 0.0
+    if interest_income_total > 0 or fees_total > 0:
+        lines.append("")
+        lines.append("<b>Other Income / Fees:</b>")
+        if interest_income_total > 0:
+            lines.append(f"  Interest Income: ${interest_income_total:,.2f}")
+        if fees_total > 0:
+            lines.append(f"  Fees: ${fees_total:,.2f}")
 
     margin = activity.get("margin") if isinstance(activity.get("margin"), dict) else {}
     borrowed = _coalesce(_to_float(margin.get("borrowed")), _to_float(margin.get("net_borrow")), 0.0)
@@ -621,6 +669,64 @@ def format_period_activity_html(period_snap: dict) -> str:
         lines.append(f"  Net Change: ${float(net_change):+,.2f}")
 
     return "\n".join(lines) if len(lines) > 1 else "<b>No activity data available</b>"
+
+
+def format_period_pnl_html(period_snap: dict) -> str:
+    """Format period realized P&L and normalized cashflow as HTML for telegram."""
+    _, _, _, period_label = _period_identity(period_snap)
+    activity = _activity_block(period_snap)
+    realized = activity.get("realized") if isinstance(activity.get("realized"), dict) else {}
+    cashflow = activity.get("cashflow") if isinstance(activity.get("cashflow"), dict) else {}
+    trades = activity.get("trades") if isinstance(activity.get("trades"), dict) else {}
+    dividends = activity.get("dividends") if isinstance(activity.get("dividends"), dict) else {}
+    interest = activity.get("interest") if isinstance(activity.get("interest"), dict) else {}
+
+    lines = [f"<b>📈 P&L & Cashflow - {period_label}</b>\n"]
+
+    realized_pnl = _to_float(realized.get("capital_pnl"))
+    gross_proceeds = _to_float(realized.get("gross_proceeds"))
+    net_proceeds = _to_float(realized.get("net_proceeds"))
+    cost_basis_sold = _to_float(realized.get("cost_basis_sold"))
+    sale_count = int(realized.get("sale_count") or 0)
+    wins = int(realized.get("winning_sales") or 0)
+    losses = int(realized.get("losing_sales") or 0)
+    if any(value is not None for value in (realized_pnl, gross_proceeds, net_proceeds, cost_basis_sold)) or sale_count:
+        lines.append("<b>Realized Capital:</b>")
+        lines.append(f"  Realized P&L: ${float(realized_pnl or 0.0):+,.2f}")
+        lines.append(f"  Cost Basis Sold: ${float(cost_basis_sold or 0.0):,.2f}")
+        lines.append(f"  Gross Proceeds: ${float(gross_proceeds or 0.0):,.2f}")
+        lines.append(f"  Net Proceeds: ${float(net_proceeds or 0.0):,.2f}")
+        lines.append(f"  Sales: {sale_count} ({wins} wins / {losses} losses)")
+        lines.append("")
+
+    buys_total = _to_float(trades.get("buys_total")) or 0.0
+    sells_total = _to_float(trades.get("sells_total")) or 0.0
+    trading_net_cash = _to_float(trades.get("trading_net_cash")) or 0.0
+    external_net = _to_float(cashflow.get("external_net")) or 0.0
+    realized_total_return = _to_float(cashflow.get("realized_total_return")) or 0.0
+    portfolio_cash_net = _to_float(cashflow.get("portfolio_cash_net")) or 0.0
+    dividends_total = _to_float(dividends.get("total_received")) or 0.0
+    margin_interest_total = _to_float(interest.get("total_paid")) or 0.0
+    interest_income_total = _to_float(interest.get("income_total")) or 0.0
+    fees_total = _to_float(interest.get("fees_total")) or 0.0
+
+    lines.append("<b>Normalized Cashflow:</b>")
+    lines.append(f"  External Net: ${external_net:+,.2f}")
+    lines.append(f"  Buy Spend: ${buys_total:,.2f}")
+    lines.append(f"  Sell Proceeds: ${sells_total:,.2f}")
+    lines.append(f"  Trading Net Cash: ${trading_net_cash:+,.2f}")
+    lines.append(f"  Dividends: ${dividends_total:,.2f}")
+    if interest_income_total > 0:
+        lines.append(f"  Interest Income: ${interest_income_total:,.2f}")
+    if margin_interest_total > 0:
+        lines.append(f"  Margin Interest: ${margin_interest_total:,.2f}")
+    if fees_total > 0:
+        lines.append(f"  Fees: ${fees_total:,.2f}")
+    lines.append(f"  Portfolio Cash Net: ${portfolio_cash_net:+,.2f}")
+    lines.append("")
+    lines.append(f"<b>Realized Total Return:</b> ${realized_total_return:+,.2f}")
+
+    return "\n".join(lines)
 
 
 def format_period_risk_html(period_snap: dict) -> str:

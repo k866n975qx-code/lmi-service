@@ -248,6 +248,8 @@ def migrate(conn: sqlite3.Connection):
     if _run_consolidated_schema_migration(conn, str(_DB_PATH)):
         print("Consolidated schema migration completed")
         # Connection remains open, no need to reopen
+    if _run_realized_schema_migration(conn):
+        print("Realized P&L schema migration completed")
     
     # Drop legacy snapshot tables only if they exist (replaced by daily_portfolio, period_summary).
     # NEVER drop or truncate account_balances - it holds per-date balance history from sync.
@@ -347,11 +349,32 @@ def _run_consolidated_schema_migration(conn: sqlite3.Connection, db_path: str) -
     Returns True if migration was run, False if already at version 5.
     """
     cur = conn.cursor()
-    
+
     # Check current schema version
     cur.execute("PRAGMA user_version")
     current_version = cur.fetchone()[0]
-    
+
+    existing_tables = {
+        row[0]
+        for row in cur.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    consolidated_tables = {
+        "daily_portfolio",
+        "daily_holdings",
+        "period_summary",
+        "period_activity",
+        "period_trades",
+    }
+    has_consolidated_schema = consolidated_tables.issubset(existing_tables)
+
+    if has_consolidated_schema and current_version < 5:
+        conn.execute("PRAGMA user_version=5")
+        conn.commit()
+        print("Detected existing consolidated schema; updated user_version to 5")
+        return False
+
     if current_version >= 5:
         print(f"Schema already at version {current_version}, skipping migration")
         return False
@@ -399,5 +422,122 @@ def _run_consolidated_schema_migration(conn: sqlite3.Connection, db_path: str) -
     
     print(f"Migration to schema version 5 complete")
     print(f"Backup saved to: {backup_path}")
-    
+
     return True
+
+
+def _column_names(cur: sqlite3.Cursor, table_name: str) -> set[str]:
+    try:
+        return {row[1] for row in cur.execute(f"PRAGMA table_info({table_name})").fetchall()}
+    except sqlite3.OperationalError:
+        return set()
+
+
+def _run_realized_schema_migration(conn: sqlite3.Connection) -> bool:
+    cur = conn.cursor()
+    changed = False
+
+    investment_tx_columns = {
+        "economic_bucket": "TEXT",
+        "cash_flow_direction": "TEXT",
+        "cash_flow_amount": "REAL",
+        "external_flow_amount": "REAL",
+        "trading_flow_amount": "REAL",
+        "income_flow_amount": "REAL",
+        "financing_flow_amount": "REAL",
+        "fee_flow_amount": "REAL",
+    }
+    period_activity_columns = {
+        "buys_total": "REAL",
+        "sells_total": "REAL",
+        "trading_net_cash": "REAL",
+        "realized_capital_pnl": "REAL",
+        "fees_total": "REAL",
+        "interest_income_total": "REAL",
+        "realized_total_return": "REAL",
+    }
+    period_trades_columns = {
+        "shares_bought": "REAL",
+        "shares_sold": "REAL",
+        "buy_amount_total": "REAL",
+        "sell_amount_total": "REAL",
+        "net_trade_cash": "REAL",
+        "realized_cost_basis": "REAL",
+        "realized_capital_pnl": "REAL",
+    }
+
+    for table_name, columns in (
+        ("investment_transactions", investment_tx_columns),
+        ("period_activity", period_activity_columns),
+        ("period_trades", period_trades_columns),
+    ):
+        existing = _column_names(cur, table_name)
+        for column_name, column_type in columns.items():
+            if column_name in existing:
+                continue
+            cur.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
+            changed = True
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS realized_trade_ledger (
+          lm_transaction_id TEXT PRIMARY KEY,
+          date TEXT NOT NULL,
+          transaction_datetime TEXT,
+          symbol TEXT NOT NULL,
+          shares_sold REAL NOT NULL,
+          sell_price REAL,
+          gross_proceeds REAL,
+          fees REAL,
+          net_proceeds REAL,
+          realized_cost_basis REAL,
+          realized_pnl REAL,
+          realized_pnl_pct REAL,
+          matched_shares REAL,
+          unmatched_shares REAL,
+          matched_complete INTEGER NOT NULL DEFAULT 1,
+          lots_closed_count INTEGER NOT NULL DEFAULT 0,
+          weighted_holding_period_days REAL,
+          source TEXT NOT NULL,
+          run_id TEXT NOT NULL,
+          pulled_at_utc TEXT NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS realized_trade_lots (
+          lm_transaction_id TEXT NOT NULL,
+          lot_index INTEGER NOT NULL,
+          symbol TEXT NOT NULL,
+          acquisition_lm_transaction_id TEXT,
+          acquisition_date TEXT,
+          disposal_date TEXT NOT NULL,
+          shares_closed REAL NOT NULL,
+          buy_price_effective REAL,
+          sell_price REAL,
+          gross_proceeds REAL,
+          sell_fees REAL,
+          net_proceeds REAL,
+          realized_cost_basis REAL,
+          realized_pnl REAL,
+          holding_period_days REAL,
+          PRIMARY KEY (lm_transaction_id, lot_index)
+        )
+        """
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS ix_realized_trade_ledger_date_symbol ON realized_trade_ledger(date, symbol)"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS ix_realized_trade_lots_symbol_disposal ON realized_trade_lots(symbol, disposal_date)"
+    )
+
+    cur.execute("PRAGMA user_version")
+    current_version = cur.fetchone()[0]
+    if current_version < 6:
+        conn.execute("PRAGMA user_version=6")
+        changed = True
+
+    conn.commit()
+    return changed

@@ -162,6 +162,15 @@ def transform_to_v5(daily: dict) -> dict:
         },
     }
 
+    # ── Capital Gains / Cashflow ────────────────────────────────────────
+    capital_gains = {
+        "windows": (daily.get("capital_gains") or {}).get("windows") or {},
+        "recent_sales": (daily.get("capital_gains") or {}).get("recent_sales") or [],
+    }
+    cashflow = {
+        "windows": (daily.get("cashflow") or {}).get("windows") or {},
+    }
+
     # ── Margin ───────────────────────────────────────────────────────────
     margin = _build_margin(daily)
 
@@ -209,6 +218,8 @@ def transform_to_v5(daily: dict) -> dict:
         "dividends": dividends,
         "margin": margin,
         "goals": goals,
+        "capital_gains": capital_gains,
+        "cashflow": cashflow,
         "macro": daily.get("macro"),
         "provenance": provenance,
     }

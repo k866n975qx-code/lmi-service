@@ -55,6 +55,7 @@ from ..services.telegram import (
     format_period_holdings_html,
     format_period_trades_html,
     format_period_activity_html,
+    format_period_pnl_html,
     format_period_goals_html,
     format_period_margin_html,
     format_period_risk_html,
@@ -140,6 +141,9 @@ def _help_text() -> str:
         "/changes [weekly|monthly|quarterly|yearly] [rolling] - change attribution\n"
         "/calendar [7|30|recent|symbol] - dividend calendar views\n"
         "/transactions [days] [all|trade|dividend|cash|margin] - transaction drilldown\n\n"
+        "/pnl [mtd|30d|qtd|ytd|ltd] - realized capital gains/losses\n"
+        "/cashflow [mtd|30d|qtd|ytd|ltd] - normalized portfolio cashflow\n"
+        "/sales [count] - recent realized sales ledger\n\n"
         "<b>Core Snapshot Views</b>\n"
         "/status, /balance, /holdings, /allocation, /benchmark\n"
         "/income, /incomeprofile, /received, /mtd, /perf, /risk, /riskdetail, /margin, /rateshock, /pace\n"
@@ -1619,6 +1623,132 @@ def _tx_label(tx_type: str | None, bucket: str) -> str:
     return labels.get(raw, raw.replace("_", " ").title() or "Transaction")
 
 
+_WINDOW_LABELS = {
+    "mtd": "MTD",
+    "30d": "30D",
+    "qtd": "QTD",
+    "ytd": "YTD",
+    "ltd": "LTD",
+}
+
+
+def _normalize_window_key(value: str | None, default: str = "ytd") -> str:
+    raw = (value or "").strip().lower()
+    aliases = {
+        "mtd": "mtd",
+        "month": "mtd",
+        "30": "30d",
+        "30d": "30d",
+        "month30": "30d",
+        "qtd": "qtd",
+        "quarter": "qtd",
+        "ytd": "ytd",
+        "year": "ytd",
+        "ltd": "ltd",
+        "all": "ltd",
+        "alltime": "ltd",
+    }
+    return aliases.get(raw, default)
+
+
+def _capital_gains_text(snap: dict, window_key: str = "ytd") -> str:
+    normalized = _normalize_window_key(window_key, "ytd")
+    gains = ((snap.get("capital_gains") or {}).get("windows") or {}).get(normalized) or {}
+    recent_sales = (snap.get("capital_gains") or {}).get("recent_sales") or []
+    label = _WINDOW_LABELS.get(normalized, normalized.upper())
+
+    lines = [f"<b>📈 Realized P&amp;L - {label}</b>\n"]
+    lines.append(f"As of: {_as_of(snap) or '—'}")
+    lines.append(f"Gross Proceeds: {_fmt_money(gains.get('gross_proceeds'))}")
+    lines.append(f"Net Proceeds: {_fmt_money(gains.get('net_proceeds'))}")
+    lines.append(f"Cost Basis Sold: {_fmt_money(gains.get('realized_cost_basis'))}")
+    lines.append(f"Realized P&amp;L: {_fmt_money(gains.get('realized_pnl'))}")
+    lines.append(f"Realized Return: {_fmt_pct(gains.get('realized_pnl_pct'), 2)}")
+    lines.append(
+        f"Sales: {int(gains.get('sale_count') or 0)} "
+        f"({int(gains.get('winning_sales') or 0)} wins / {int(gains.get('losing_sales') or 0)} losses)"
+    )
+
+    if recent_sales:
+        lines.append("")
+        lines.append("<b>Recent Sales:</b>")
+        for row in recent_sales[:6]:
+            if not isinstance(row, dict):
+                continue
+            lines.append(
+                f"  {row.get('date') or '—'} | {row.get('symbol') or '?'} | "
+                f"{_fmt_money(row.get('realized_pnl'))} | {_fmt_pct(row.get('realized_pnl_pct'), 2)}"
+            )
+
+    return "\n".join(lines)
+
+
+def _cashflow_text(snap: dict, window_key: str = "ytd") -> str:
+    normalized = _normalize_window_key(window_key, "ytd")
+    cash = ((snap.get("cashflow") or {}).get("windows") or {}).get(normalized) or {}
+    label = _WINDOW_LABELS.get(normalized, normalized.upper())
+
+    lines = [f"<b>💸 Cashflow - {label}</b>\n"]
+    lines.append(f"As of: {_as_of(snap) or '—'}")
+    lines.append(f"External Net: {_fmt_money(cash.get('external_net'))}")
+    lines.append(f"Contributions: {_fmt_money(cash.get('contributions_total'))}")
+    lines.append(f"Withdrawals: {_fmt_money(cash.get('withdrawals_total'))}")
+    lines.append("")
+    lines.append("<b>Trading:</b>")
+    lines.append(f"  Buy Spend: {_fmt_money(cash.get('buys_total'))}")
+    lines.append(f"  Sell Proceeds: {_fmt_money(cash.get('sells_total'))}")
+    lines.append(f"  Trading Net Cash: {_fmt_money(cash.get('trading_net_cash'))}")
+    lines.append("")
+    lines.append("<b>Income / Financing:</b>")
+    lines.append(f"  Dividends: {_fmt_money(cash.get('dividends_total'))}")
+    lines.append(f"  Interest Income: {_fmt_money(cash.get('interest_income_total'))}")
+    lines.append(f"  Margin Interest: {_fmt_money(cash.get('margin_interest_total'))}")
+    lines.append(f"  Margin Borrowed: {_fmt_money(cash.get('margin_borrowed_total'))}")
+    lines.append(f"  Margin Repaid: {_fmt_money(cash.get('margin_repaid_total'))}")
+    lines.append(f"  Fees: {_fmt_money(cash.get('fees_total'))}")
+    lines.append("")
+    lines.append(f"<b>Portfolio Cash Net:</b> {_fmt_money(cash.get('portfolio_cash_net'))}")
+    lines.append(f"<b>Realized Total Return:</b> {_fmt_money(cash.get('realized_total_return'))}")
+    return "\n".join(lines)
+
+
+def _recent_sales_text(conn, limit: int = 10) -> str:
+    rows = conn.execute(
+        """
+        SELECT
+          date,
+          symbol,
+          shares_sold,
+          gross_proceeds,
+          realized_cost_basis,
+          realized_pnl,
+          realized_pnl_pct,
+          weighted_holding_period_days,
+          matched_complete
+        FROM realized_trade_ledger
+        ORDER BY date DESC, COALESCE(transaction_datetime, date) DESC, lm_transaction_id DESC
+        LIMIT ?
+        """,
+        (max(1, min(int(limit), 25)),),
+    ).fetchall()
+    if not rows:
+        return "No realized sales found."
+
+    lines = ["<b>🧾 Recent Sales</b>\n"]
+    for row in rows:
+        tx_date, symbol, shares_sold, gross_proceeds, cost_basis, realized_pnl, realized_pnl_pct, holding_days, matched_complete = row
+        status = "" if matched_complete else " (partial lot match)"
+        lines.append(
+            f"  {tx_date} | {symbol or '?'} | {float(shares_sold or 0.0):,.4f} sh | "
+            f"{_fmt_money(realized_pnl)} | {_fmt_pct(realized_pnl_pct, 2)}{status}"
+        )
+        lines.append(
+            f"    Proceeds {_fmt_money(gross_proceeds)} | Cost {_fmt_money(cost_basis)} | "
+            f"Held {holding_days if holding_days is not None else '—'}d"
+        )
+    return "\n".join(lines)
+
+
 def _top_symbols(conn, *, sort_column: str, limit: int = 8) -> list[dict]:
     latest = _latest_table_date(conn, "daily_holdings", "as_of_date_local")
     if not latest:
@@ -2096,7 +2226,15 @@ def _transaction_drilldown_text(conn, days_back: int, tx_filter: str = "all", sy
 
     rows = conn.execute(
         f"""
-        SELECT date, transaction_type, symbol, quantity, amount, name
+        SELECT
+          date,
+          transaction_type,
+          symbol,
+          quantity,
+          amount,
+          name,
+          economic_bucket,
+          cash_flow_amount
         FROM investment_transactions
         WHERE date BETWEEN ? AND ?{symbol_clause}
         ORDER BY date DESC, lm_transaction_id DESC
@@ -2105,14 +2243,22 @@ def _transaction_drilldown_text(conn, days_back: int, tx_filter: str = "all", sy
     ).fetchall()
     filtered = []
     summary: dict[str, dict[str, float]] = {}
-    for tx_date, tx_type, tx_symbol, quantity, amount, name in rows:
-        bucket = _effective_tx_bucket(tx_type, name)
+    for tx_date, tx_type, tx_symbol, quantity, amount, name, economic_bucket, cash_flow_amount in rows:
+        bucket = (economic_bucket or _effective_tx_bucket(tx_type, name) or "other").lower()
         if not _matches_tx_filter(bucket, tx_type, tx_filter):
             continue
-        filtered.append((tx_date, tx_type, tx_symbol, quantity, amount, name, bucket))
-        stats = summary.setdefault(bucket, {"count": 0, "amount": 0.0})
+        cash_effect = _float_or_none(cash_flow_amount)
+        if cash_effect is None:
+            raw_amount = abs(float(amount or 0.0))
+            if bucket in {"trade", "margin_interest", "withdrawal", "margin_repay", "fee"}:
+                cash_effect = -raw_amount if bucket != "trade" or (tx_type or "").lower() == "buy" else raw_amount
+            else:
+                cash_effect = raw_amount
+        filtered.append((tx_date, tx_type, tx_symbol, quantity, amount, name, bucket, cash_effect))
+        stats = summary.setdefault(bucket, {"count": 0, "gross": 0.0, "net": 0.0})
         stats["count"] += 1
-        stats["amount"] += abs(float(amount or 0.0))
+        stats["gross"] += abs(float(cash_effect or 0.0))
+        stats["net"] += float(cash_effect or 0.0)
 
     if not filtered:
         target = f" for {symbol.upper()}" if symbol else ""
@@ -2126,20 +2272,24 @@ def _transaction_drilldown_text(conn, days_back: int, tx_filter: str = "all", sy
     lines.append("<b>Summary:</b>")
     for bucket, stats in sorted(summary.items(), key=lambda item: item[1]["count"], reverse=True):
         lines.append(
-            f"  {_tx_label(bucket, bucket)}: {int(stats['count'])} | {_fmt_money(stats['amount'])}"
+            f"  {_tx_label(bucket, bucket)}: {int(stats['count'])} | "
+            f"gross {_fmt_money(stats['gross'])} | net {_fmt_money(stats['net'])}"
         )
 
     lines.append("")
     lines.append("<b>Recent Transactions:</b>")
-    for tx_date, tx_type, tx_symbol, quantity, amount, name, bucket in filtered[:12]:
+    for tx_date, tx_type, tx_symbol, quantity, amount, name, bucket, cash_effect in filtered[:12]:
         label = _tx_label(tx_type, bucket)
         amount_val = abs(float(amount or 0.0))
         qty = abs(float(quantity or 0.0))
         symbol_part = f" {tx_symbol}" if tx_symbol else ""
         if (tx_type or "").lower() in {"buy", "sell"}:
-            lines.append(f"  {tx_date} | {label}{symbol_part} | {qty:,.4f} sh | {_fmt_money(amount_val)}")
+            lines.append(
+                f"  {tx_date} | {label}{symbol_part} | {qty:,.4f} sh | "
+                f"gross {_fmt_money(amount_val)} | cash {_fmt_money(cash_effect)}"
+            )
         else:
-            lines.append(f"  {tx_date} | {label}{symbol_part} | {_fmt_money(amount_val)}")
+            lines.append(f"  {tx_date} | {label}{symbol_part} | {_fmt_money(cash_effect)}")
     return "\n".join(lines)
 
 
@@ -2169,6 +2319,7 @@ def _root_menu_text(snap: dict | None) -> str:
     lines.append("• Positions: top symbols -> position hub -> snapshot/history/transactions/dividends")
     lines.append("• Changes: daily compare plus final/rolling period attribution")
     lines.append("• Periods: weekly/monthly/quarterly/yearly reports with holdings/activity/risk/goals/margin drilldowns")
+    lines.append("• Transactions: normalized cashflow, realized P&L windows, recent sales, raw ledger views")
     lines.append("• Planning: goal, net goal, pace, pace windows, projection, simulation, what-if, rebalance")
     lines.append("• System: health, alerts, settings, macro, data coverage")
     lines.append("• Charts / AI: fast chart shortcuts and daily/period insights")
@@ -2424,7 +2575,7 @@ def _menu_payload(conn, section: str, snap: dict | None) -> tuple[str, dict]:
     if normalized == "tx":
         text = (
             "<b>🧾 Transactions</b>\n\n"
-            "Drill into recent cash movement, trades, dividends, and margin-account interest charges."
+            "Drill into normalized cash movement, realized gains/losses, recent sales, and the underlying ledger."
         )
         markup = build_inline_keyboard([
             [
@@ -2438,6 +2589,14 @@ def _menu_payload(conn, section: str, snap: dict | None) -> tuple[str, dict]:
             [
                 {"text": "Cash 60d", "callback_data": "tx:60:cash"},
                 {"text": "Margin 90d", "callback_data": "tx:90:margin"},
+            ],
+            [
+                {"text": "P&L YTD", "callback_data": "cg:ytd"},
+                {"text": "Cashflow YTD", "callback_data": "cf:ytd"},
+            ],
+            [
+                {"text": "P&L 30D", "callback_data": "cg:30d"},
+                {"text": "Recent Sales", "callback_data": "sales:10"},
             ],
             [_nav_row("nav:root")[0], _nav_row("nav:root")[1]],
         ])
@@ -2693,6 +2852,13 @@ def _tx_detail_markup(days_back: int, tx_filter: str, symbol: str | None = None)
                 {"text": "Cash", "callback_data": f"tx:{days_back}:cash"},
                 {"text": "Margin", "callback_data": f"tx:{days_back}:margin"},
             ],
+            [
+                {"text": "P&L YTD", "callback_data": "cg:ytd"},
+                {"text": "Cashflow YTD", "callback_data": "cf:ytd"},
+            ],
+            [
+                {"text": "Recent Sales", "callback_data": "sales:10"},
+            ],
             [_nav_row("nav:tx")[0], _nav_row("nav:tx")[1]],
         ]
     return build_inline_keyboard(buttons)
@@ -2795,6 +2961,7 @@ def _cached_period_detail_text(conn, action: str, period_snap: dict) -> str:
         "period_holdings": format_period_holdings_html,
         "period_trades": format_period_trades_html,
         "period_activity": format_period_activity_html,
+        "period_pnl": format_period_pnl_html,
         "period_risk": format_period_risk_html,
         "period_goals": format_period_goals_html,
         "period_margin": format_period_margin_html,
@@ -2891,6 +3058,53 @@ def _cached_transaction_view(conn, days_back: int, tx_filter: str = "all", symbo
     )
 
 
+def _cached_capital_gains_view(conn, window_key: str = "ytd") -> str:
+    normalized = _normalize_window_key(window_key, "ytd")
+
+    def _build():
+        _, snap = _latest_snapshot(conn)
+        return _capital_gains_text(snap or {}, normalized) if snap else "No daily snapshot available."
+
+    return _cached_runtime_artifact(
+        _cache_key(
+            "capital_gains_text",
+            _daily_signature(conn),
+            _transactions_signature(conn),
+            normalized,
+        ),
+        _build,
+        ttl_seconds=_TELEGRAM_VIEW_TTL_SECONDS,
+    )
+
+
+def _cached_cashflow_view(conn, window_key: str = "ytd") -> str:
+    normalized = _normalize_window_key(window_key, "ytd")
+
+    def _build():
+        _, snap = _latest_snapshot(conn)
+        return _cashflow_text(snap or {}, normalized) if snap else "No daily snapshot available."
+
+    return _cached_runtime_artifact(
+        _cache_key(
+            "cashflow_text",
+            _daily_signature(conn),
+            _transactions_signature(conn),
+            normalized,
+        ),
+        _build,
+        ttl_seconds=_TELEGRAM_VIEW_TTL_SECONDS,
+    )
+
+
+def _cached_sales_view(conn, limit: int = 10) -> str:
+    normalized_limit = max(1, min(int(limit), 25))
+    return _cached_runtime_artifact(
+        _cache_key("recent_sales_text", _transactions_signature(conn), normalized_limit),
+        lambda: _recent_sales_text(conn, normalized_limit),
+        ttl_seconds=_TELEGRAM_VIEW_TTL_SECONDS,
+    )
+
+
 def _cached_chart_image(conn, chart_type: str, chart_days: int = 90, snap: dict | None = None) -> bytes | None:
     chart_key = _cache_key(
         "telegram_chart",
@@ -2958,6 +3172,9 @@ def _warm_telegram_cache(db_path: str):
             "balance",
             "income",
             "income_profile",
+            "pnl",
+            "cashflow",
+            "sales",
             "goal",
             "goal_net",
             "perf",
@@ -3013,6 +3230,9 @@ def _warm_telegram_cache(db_path: str):
                 "balance": lambda: _balance_text(snap) if snap else no_snap,
                 "income": lambda: _income_text(snap) if snap else no_snap,
                 "income_profile": lambda: _income_profile_text(snap) if snap else no_snap,
+                "pnl": lambda: _capital_gains_text(snap) if snap else no_snap,
+                "cashflow": lambda: _cashflow_text(snap) if snap else no_snap,
+                "sales": lambda: _recent_sales_text(conn, 10),
                 "goal": lambda: _goal_text(snap) if snap else no_snap,
                 "goal_net": lambda: _goal_net_text(snap) if snap else no_snap,
                 "perf": lambda: _perf_text(snap) if snap else no_snap,
@@ -3062,12 +3282,17 @@ def _warm_telegram_cache(db_path: str):
             _cached_period_report(conn, kind)
             period_snap = _latest_period_target_snapshot(conn, kind, prefer_rolling=True)
             if period_snap:
-                for action in ("period_holdings", "period_trades", "period_activity", "period_risk", "period_goals", "period_margin"):
+                for action in ("period_holdings", "period_trades", "period_activity", "period_pnl", "period_risk", "period_goals", "period_margin"):
                     _cached_period_detail_text(conn, action, period_snap)
         _cached_period_change_view(conn, "monthly", rolling=True)
 
         for mode in ("up7", "up30", "recent30"):
             _cached_dividend_calendar_view(conn, mode=mode)
+
+        for window_key in ("mtd", "30d", "qtd", "ytd", "ltd"):
+            _cached_capital_gains_view(conn, window_key)
+            _cached_cashflow_view(conn, window_key)
+        _cached_sales_view(conn, 10)
 
         for days_back, tx_filter in (
             (7, "all"),
@@ -3837,6 +4062,65 @@ async def _handle_callback_query(callback_query: dict):
             prefer_edit=True,
         )
 
+    elif action == "cg":
+        window_key = _normalize_window_key(param or "ytd", "ytd")
+        await _show(
+            _cached_capital_gains_view(conn, window_key),
+            reply_markup=build_inline_keyboard([
+                [
+                    {"text": "MTD", "callback_data": "cg:mtd"},
+                    {"text": "30D", "callback_data": "cg:30d"},
+                    {"text": "YTD", "callback_data": "cg:ytd"},
+                ],
+                [
+                    {"text": "QTD", "callback_data": "cg:qtd"},
+                    {"text": "LTD", "callback_data": "cg:ltd"},
+                    {"text": "Recent Sales", "callback_data": "sales:10"},
+                ],
+                _nav_row("nav:tx"),
+            ]),
+            prefer_edit=True,
+        )
+
+    elif action == "cf":
+        window_key = _normalize_window_key(param or "ytd", "ytd")
+        await _show(
+            _cached_cashflow_view(conn, window_key),
+            reply_markup=build_inline_keyboard([
+                [
+                    {"text": "MTD", "callback_data": "cf:mtd"},
+                    {"text": "30D", "callback_data": "cf:30d"},
+                    {"text": "YTD", "callback_data": "cf:ytd"},
+                ],
+                [
+                    {"text": "QTD", "callback_data": "cf:qtd"},
+                    {"text": "LTD", "callback_data": "cf:ltd"},
+                    {"text": "Recent Sales", "callback_data": "sales:10"},
+                ],
+                _nav_row("nav:tx"),
+            ]),
+            prefer_edit=True,
+        )
+
+    elif action == "sales":
+        limit = max(1, min(int(param), 25)) if (param or "").isdigit() else 10
+        await _show(
+            _cached_sales_view(conn, limit),
+            reply_markup=build_inline_keyboard([
+                [
+                    {"text": "10", "callback_data": "sales:10"},
+                    {"text": "15", "callback_data": "sales:15"},
+                    {"text": "25", "callback_data": "sales:25"},
+                ],
+                [
+                    {"text": "P&L YTD", "callback_data": "cg:ytd"},
+                    {"text": "Cashflow YTD", "callback_data": "cf:ytd"},
+                ],
+                _nav_row("nav:tx"),
+            ]),
+            prefer_edit=True,
+        )
+
     elif action == "cmd":
         # Menu button - execute a command and either refresh the menu panel or send a new message
         as_of, snap = _latest_snapshot(conn)
@@ -3863,6 +4147,9 @@ async def _handle_callback_query(callback_query: dict):
             "balance": lambda: _balance_text(snap) if snap else no_snap,
             "income": lambda: _income_text(snap) if snap else no_snap,
             "income_profile": lambda: _income_profile_text(snap) if snap else no_snap,
+            "pnl": lambda: _capital_gains_text(snap) if snap else no_snap,
+            "cashflow": lambda: _cashflow_text(snap) if snap else no_snap,
+            "sales": lambda: _recent_sales_text(conn, 10),
             "goal": lambda: _goal_text(snap) if snap else no_snap,
             "goal_net": lambda: _goal_net_text(snap) if snap else no_snap,
             "perf": lambda: _perf_text(snap) if snap else no_snap,
@@ -3907,6 +4194,9 @@ async def _handle_callback_query(callback_query: dict):
                 "mtd": "nav:inc",
                 "received": "nav:inc",
                 "perf": "nav:inc",
+                "pnl": "nav:tx",
+                "cashflow": "nav:tx",
+                "sales": "nav:tx",
                 "risk": "nav:rm",
                 "risk_detail": "nav:rm",
                 "margin": "nav:rm",
@@ -3982,7 +4272,7 @@ async def _handle_callback_query(callback_query: dict):
             except Exception:
                 await tg.send_message_html(f"Error generating {period_kind} report")
 
-    elif action in {"period_holdings", "period_trades", "period_activity", "period_risk", "period_goals", "period_margin"}:
+    elif action in {"period_holdings", "period_trades", "period_activity", "period_pnl", "period_risk", "period_goals", "period_margin"}:
         period_snap = _target_period_snapshot_from_callback(conn, param)
         if not period_snap:
             await tg.send_message_html("No period snapshot found for this action.")
@@ -4222,6 +4512,62 @@ async def telegram_webhook(update: dict):
         await tg.send_message_html(
             _cached_transaction_view(conn, days_back, tx_filter),
             reply_markup=_tx_detail_markup(days_back, tx_filter),
+        )
+        return {"ok": True}
+    elif cmd == "pnl":
+        window_key = _normalize_window_key(args[0] if args else "ytd", "ytd")
+        await tg.send_message_html(
+            _cached_capital_gains_view(conn, window_key),
+            reply_markup=build_inline_keyboard([
+                [
+                    {"text": "MTD", "callback_data": "cg:mtd"},
+                    {"text": "30D", "callback_data": "cg:30d"},
+                    {"text": "YTD", "callback_data": "cg:ytd"},
+                ],
+                [
+                    {"text": "QTD", "callback_data": "cg:qtd"},
+                    {"text": "LTD", "callback_data": "cg:ltd"},
+                    {"text": "Recent Sales", "callback_data": "sales:10"},
+                ],
+                _nav_row("nav:tx"),
+            ]),
+        )
+        return {"ok": True}
+    elif cmd == "cashflow":
+        window_key = _normalize_window_key(args[0] if args else "ytd", "ytd")
+        await tg.send_message_html(
+            _cached_cashflow_view(conn, window_key),
+            reply_markup=build_inline_keyboard([
+                [
+                    {"text": "MTD", "callback_data": "cf:mtd"},
+                    {"text": "30D", "callback_data": "cf:30d"},
+                    {"text": "YTD", "callback_data": "cf:ytd"},
+                ],
+                [
+                    {"text": "QTD", "callback_data": "cf:qtd"},
+                    {"text": "LTD", "callback_data": "cf:ltd"},
+                    {"text": "Recent Sales", "callback_data": "sales:10"},
+                ],
+                _nav_row("nav:tx"),
+            ]),
+        )
+        return {"ok": True}
+    elif cmd == "sales":
+        limit = max(1, min(int(args[0]), 25)) if args and args[0].isdigit() else 10
+        await tg.send_message_html(
+            _cached_sales_view(conn, limit),
+            reply_markup=build_inline_keyboard([
+                [
+                    {"text": "10", "callback_data": "sales:10"},
+                    {"text": "15", "callback_data": "sales:15"},
+                    {"text": "25", "callback_data": "sales:25"},
+                ],
+                [
+                    {"text": "P&L YTD", "callback_data": "cg:ytd"},
+                    {"text": "Cashflow YTD", "callback_data": "cf:ytd"},
+                ],
+                _nav_row("nav:tx"),
+            ]),
         )
         return {"ok": True}
     elif cmd == "status":

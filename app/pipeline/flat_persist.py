@@ -1172,6 +1172,8 @@ def _write_period_flat(conn: sqlite3.Connection, snapshot: dict, run_id: str) ->
     dividends = activity.get("dividends") or {}
     interest = activity.get("interest") or {}
     trades = activity.get("trades") or {}
+    realized = activity.get("realized") or {}
+    cashflow = activity.get("cashflow") or {}
     margin = activity.get("margin") or {}
     positions = activity.get("positions") or {}
 
@@ -1184,8 +1186,10 @@ def _write_period_flat(conn: sqlite3.Connection, snapshot: dict, run_id: str) ->
             interest_total_paid, interest_avg_daily_balance, interest_avg_rate_pct, interest_annualized,
             trades_total_count, trades_buy_count, trades_sell_count,
             margin_borrowed, margin_repaid, margin_net_change,
-            positions_added_count, positions_removed_count, positions_increased_count, positions_decreased_count
-        ) VALUES (?,?,?, ?,?, ?,?, ?,?, ?,?,?,?, ?,?,?, ?,?,?, ?,?,?,?)""",
+            positions_added_count, positions_removed_count, positions_increased_count, positions_decreased_count,
+            buys_total, sells_total, trading_net_cash, realized_capital_pnl,
+            fees_total, interest_income_total, realized_total_return
+        ) VALUES (?,?,?, ?,?, ?,?, ?,?, ?,?,?,?, ?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?,?,?,?)""",
         (
             period_type, period_start, period_end,
             contributions.get("total"), contributions.get("count"),
@@ -1198,6 +1202,13 @@ def _write_period_flat(conn: sqlite3.Connection, snapshot: dict, run_id: str) ->
             len(positions.get("removed") or []),
             len(positions.get("symbols_increased") or []),
             len(positions.get("symbols_decreased") or []),
+            trades.get("buys_total"),
+            trades.get("sells_total"),
+            trades.get("trading_net_cash"),
+            realized.get("capital_pnl"),
+            interest.get("fees_total"),
+            interest.get("income_total"),
+            cashflow.get("realized_total_return"),
         ),
     )
 
@@ -1290,13 +1301,22 @@ def _write_period_flat(conn: sqlite3.Connection, snapshot: dict, run_id: str) ->
         cur.execute(
             """INSERT INTO period_trades (
                 period_type, period_start_date, period_end_date,
-                symbol, buy_count, sell_count
-            ) VALUES (?,?,?, ?,?,?)""",
+                symbol, buy_count, sell_count,
+                shares_bought, shares_sold, buy_amount_total, sell_amount_total,
+                net_trade_cash, realized_cost_basis, realized_capital_pnl
+            ) VALUES (?,?,?, ?,?,?,?,?,?,?,?,?,?)""",
             (
                 period_type, period_start, period_end,
                 symbol,
                 trade_counts.get("buy_count") or 0,
                 trade_counts.get("sell_count") or 0,
+                trade_counts.get("shares_bought"),
+                trade_counts.get("shares_sold"),
+                trade_counts.get("buy_amount_total"),
+                trade_counts.get("sell_amount_total"),
+                trade_counts.get("net_trade_cash"),
+                trade_counts.get("realized_cost_basis"),
+                trade_counts.get("realized_capital_pnl"),
             ),
         )
 

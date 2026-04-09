@@ -12,6 +12,7 @@ from ..services.telegram import TelegramClient
 from .facts import upsert_facts_from_sources
 from .utils import append_lm_raw, start_run, finish_run_ok, finish_run_fail, get_run_status, ensure_cusip_map
 from .transactions import normalize_investment_transactions
+from .realized import backfill_transaction_economics, rebuild_realized_trade_ledger
 from .corporate_actions import load_provider_actions, upsert_lm_dividend_events, symbols_for_actions, estimate_dividend_schedule
 from .validation import validate_daily_snapshot
 from .locking import acquire_lock, release_lock
@@ -102,7 +103,7 @@ def trigger_sync_window(background, start_date: str, end_date: str) -> str:
 
 def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = None):
     conn = get_conn(settings.db_path)
-    # migrate(conn)  # Temporarily disabled - run refresh script to apply migration
+    migrate(conn)
     cur = conn.cursor()
     run_count = cur.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
     first_run = run_count == 0
@@ -164,7 +165,17 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
         started = _step_start("normalize_transactions")
         ensure_cusip_map(conn)
         tx_upserted, new_tx_count = normalize_investment_transactions(conn, run_id)
-        _step_done("normalize_transactions", started, inserted=tx_upserted, new=new_tx_count)
+        normalized_count = backfill_transaction_economics(conn)
+        realized_sales, realized_lots = rebuild_realized_trade_ledger(conn, run_id)
+        _step_done(
+            "normalize_transactions",
+            started,
+            inserted=tx_upserted,
+            new=new_tx_count,
+            normalized=normalized_count,
+            realized_sales=realized_sales,
+            realized_lots=realized_lots,
+        )
 
         started = _step_start("lm_dividends_upsert")
         lm_div_count = upsert_lm_dividend_events(conn, run_id)

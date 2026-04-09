@@ -32,6 +32,7 @@ from .snapshots import (
     _quarter_start,
     _year_start,
 )
+from .realized import build_daily_realized_snapshot, build_period_realized_summary
 from ..config import settings
 
 SIGNIFICANT_MISSING_PCT = 1.0
@@ -258,6 +259,84 @@ def _daily_reliability_score_guide() -> dict:
             "better_is": "lower",
         },
     }
+
+
+def _load_period_trade_rows(
+    conn: sqlite3.Connection,
+    period_type: str,
+    period_start_date: str,
+    period_end_date: str,
+) -> list[dict[str, Any]]:
+    try:
+        rows = conn.execute(
+            """
+            SELECT
+              symbol,
+              buy_count,
+              sell_count,
+              shares_bought,
+              shares_sold,
+              buy_amount_total,
+              sell_amount_total,
+              net_trade_cash,
+              realized_cost_basis,
+              realized_capital_pnl
+            FROM period_trades
+            WHERE period_type=? AND period_start_date=? AND period_end_date=?
+            ORDER BY symbol
+            """,
+            (period_type, period_start_date, period_end_date),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = conn.execute(
+            """
+            SELECT symbol, buy_count, sell_count
+            FROM period_trades
+            WHERE period_type=? AND period_start_date=? AND period_end_date=?
+            ORDER BY symbol
+            """,
+            (period_type, period_start_date, period_end_date),
+        ).fetchall()
+
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if isinstance(row, sqlite3.Row):
+            record = dict(row)
+        else:
+            record = {
+                "symbol": row[0],
+                "buy_count": row[1] if len(row) > 1 else 0,
+                "sell_count": row[2] if len(row) > 2 else 0,
+            }
+        record.setdefault("shares_bought", None)
+        record.setdefault("shares_sold", None)
+        record.setdefault("buy_amount_total", None)
+        record.setdefault("sell_amount_total", None)
+        record.setdefault("net_trade_cash", None)
+        record.setdefault("realized_cost_basis", None)
+        record.setdefault("realized_capital_pnl", None)
+        out.append(record)
+    return out
+
+
+def _period_trades_by_symbol(trade_rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    trades_by_symbol: dict[str, dict[str, Any]] = {}
+    for row in trade_rows:
+        symbol = row.get("symbol")
+        if not symbol:
+            continue
+        trades_by_symbol[symbol] = {
+            "buy_count": int(row.get("buy_count") or 0),
+            "sell_count": int(row.get("sell_count") or 0),
+            "shares_bought": _to_float(row.get("shares_bought")),
+            "shares_sold": _to_float(row.get("shares_sold")),
+            "buy_amount_total": _to_float(row.get("buy_amount_total")),
+            "sell_amount_total": _to_float(row.get("sell_amount_total")),
+            "net_trade_cash": _to_float(row.get("net_trade_cash")),
+            "realized_cost_basis": _to_float(row.get("realized_cost_basis")),
+            "realized_capital_pnl": _to_float(row.get("realized_capital_pnl")),
+        }
+    return trades_by_symbol
 
 
 def _derive_pace_nulls(pace: dict, r: dict, conn: sqlite3.Connection) -> None:
@@ -633,6 +712,14 @@ def assemble_daily_snapshot(conn: sqlite3.Connection, as_of_date: str | None = N
             ],
         },
     }
+    realized_snapshot = build_daily_realized_snapshot(conn, as_of)
+    capital_gains = {
+        "windows": realized_snapshot.get("windows") or {},
+        "recent_sales": realized_snapshot.get("recent_sales") or [],
+    }
+    cashflow = {
+        "windows": realized_snapshot.get("cashflow_windows") or {},
+    }
 
     macro = {
         "snapshot": {
@@ -668,6 +755,8 @@ def assemble_daily_snapshot(conn: sqlite3.Connection, as_of_date: str | None = N
         "goals": goals,
         "margin": margin,
         "dividends": dividends,
+        "capital_gains": capital_gains,
+        "cashflow": cashflow,
         "macro": macro,
         "meta": meta,
         "as_of_date_local": as_of,
@@ -1238,6 +1327,15 @@ def assemble_period_snapshot(
     # ── Activity section (NEW) ───────────────────────────────────────────
     activity_block = None
     try:
+        period_start_dt = _parse_date(period_start_date)
+        period_end_dt = _parse_date(period_end_date)
+        realized_activity = (
+            build_period_realized_summary(conn, period_start_dt, period_end_dt)
+            if period_start_dt and period_end_dt
+            else {}
+        )
+        realized_activity_cashflow = realized_activity.get("cashflow") or {}
+        realized_activity_block = realized_activity.get("realized") or {}
         activity_row = conn.execute(
             """SELECT * FROM period_activity
                WHERE period_type=? AND period_start_date=? AND period_end_date=?""",
@@ -1271,12 +1369,7 @@ def assemble_period_snapshot(
                 (period_type, period_start_date, period_end_date),
             ).fetchall()
 
-            # Trades
-            trade_rows = conn.execute(
-                """SELECT symbol, buy_count, sell_count FROM period_trades
-                   WHERE period_type=? AND period_start_date=? AND period_end_date=?""",
-                (period_type, period_start_date, period_end_date),
-            ).fetchall()
+            trade_rows = _load_period_trade_rows(conn, period_type, period_start_date, period_end_date)
 
             # Position lists
             position_rows = conn.execute(
@@ -1292,13 +1385,7 @@ def assemble_period_snapshot(
                 amount = row[3]
                 dividends_by_symbol[symbol] = dividends_by_symbol.get(symbol, 0) + amount
 
-            trades_by_symbol = {}
-            for row in trade_rows:
-                symbol = row[0]
-                trades_by_symbol[symbol] = {
-                    "buy_count": row[1] or 0,
-                    "sell_count": row[2] or 0
-                }
+            trades_by_symbol = _period_trades_by_symbol(trade_rows)
 
             positions_added = []
             positions_removed = []
@@ -1345,13 +1432,32 @@ def assemble_period_snapshot(
                     "total_paid": activity_row.get("interest_total_paid") or 0,
                     "avg_daily_balance": activity_row.get("interest_avg_daily_balance") or 0,
                     "avg_rate_pct": activity_row.get("interest_avg_rate_pct") or 0,
-                    "annualized": activity_row.get("interest_annualized") or 0
+                    "annualized": activity_row.get("interest_annualized") or 0,
+                    "income_total": activity_row.get("interest_income_total") or realized_activity_cashflow.get("interest_income_total"),
+                    "fees_total": activity_row.get("fees_total") or realized_activity_cashflow.get("fees_total"),
                 },
                 "trades": {
                     "total_count": activity_row.get("trades_total_count") or 0,
                     "buy_count": activity_row.get("trades_buy_count") or 0,
                     "sell_count": activity_row.get("trades_sell_count") or 0,
-                    "by_symbol": trades_by_symbol
+                    "buys_total": activity_row.get("buys_total") or realized_activity_cashflow.get("buys_total"),
+                    "sells_total": activity_row.get("sells_total") or realized_activity_cashflow.get("sells_total"),
+                    "trading_net_cash": activity_row.get("trading_net_cash") or realized_activity_cashflow.get("trading_net_cash"),
+                    "by_symbol": trades_by_symbol,
+                },
+                "realized": {
+                    "capital_pnl": activity_row.get("realized_capital_pnl") or realized_activity_block.get("realized_pnl"),
+                    "gross_proceeds": realized_activity_block.get("gross_proceeds"),
+                    "net_proceeds": realized_activity_block.get("net_proceeds"),
+                    "cost_basis_sold": realized_activity_block.get("realized_cost_basis"),
+                    "sale_count": realized_activity_block.get("sale_count") or activity_row.get("trades_sell_count") or 0,
+                    "winning_sales": realized_activity_block.get("winning_sales"),
+                    "losing_sales": realized_activity_block.get("losing_sales"),
+                },
+                "cashflow": {
+                    "external_net": realized_activity_cashflow.get("external_net"),
+                    "realized_total_return": activity_row.get("realized_total_return") or realized_activity_cashflow.get("realized_total_return"),
+                    "portfolio_cash_net": realized_activity_cashflow.get("portfolio_cash_net"),
                 },
                 "positions": {
                     "added": sorted(positions_added),
@@ -1722,6 +1828,9 @@ def assemble_period_snapshot_target(
 
     _type_map = {"WEEK": "weekly", "MONTH": "monthly", "QUARTER": "quarterly", "YEAR": "yearly"}
     snapshot_type = _type_map.get(period_type, period_type.lower())
+    realized_summary = build_period_realized_summary(conn, start_dt, end_dt)
+    realized_cashflow = realized_summary.get("cashflow") or {}
+    realized_block = realized_summary.get("realized") or {}
 
     daily_rows = [
         dict(row)
@@ -1850,13 +1959,7 @@ def assemble_period_snapshot_target(
            ORDER BY ex_date, symbol""",
         (period_type, period_start_date, period_end_date),
     ).fetchall()
-    trade_rows = conn.execute(
-        """SELECT symbol, buy_count, sell_count
-           FROM period_trades
-           WHERE period_type=? AND period_start_date=? AND period_end_date=?
-           ORDER BY symbol""",
-        (period_type, period_start_date, period_end_date),
-    ).fetchall()
+    trade_rows = _load_period_trade_rows(conn, period_type, period_start_date, period_end_date)
     position_rows = conn.execute(
         """SELECT list_type, symbol
            FROM period_position_lists
@@ -1892,14 +1995,7 @@ def assemble_period_snapshot_target(
             }
         )
 
-    trades_by_symbol: dict[str, dict[str, int]] = {}
-    for sym, buy_count, sell_count in trade_rows:
-        if not sym:
-            continue
-        trades_by_symbol[sym] = {
-            "buy_count": int(buy_count or 0),
-            "sell_count": int(sell_count or 0),
-        }
+    trades_by_symbol = _period_trades_by_symbol(trade_rows)
 
     positions = {
         "added": [],
@@ -1966,6 +2062,7 @@ def assemble_period_snapshot_target(
         s = start_holdings.get(sym) or {}
         e = end_holdings.get(sym) or {}
         hist = holdings_history.get(sym) or []
+        trade_stats = trades_by_symbol.get(sym) or {}
 
         start_mv = _to_float(s.get("market_value"))
         end_mv = _to_float(e.get("market_value"))
@@ -2025,6 +2122,7 @@ def assemble_period_snapshot_target(
                     "contribution_to_portfolio_pct": contribution_pct,
                     "start_twr_12m_pct": _to_float(s.get("twr_12m_pct")),
                     "end_twr_12m_pct": _to_float(e.get("twr_12m_pct")),
+                    "realized_capital_pnl": _to_float(trade_stats.get("realized_capital_pnl")),
                 },
                 "income": {
                     "dividends_received": dividends_received,
@@ -2041,6 +2139,17 @@ def assemble_period_snapshot_target(
                     "worst_day_date": worst_day[1],
                     "best_day_pct": best_day[0],
                     "best_day_date": best_day[1],
+                },
+                "trading": {
+                    "buy_count": int(trade_stats.get("buy_count") or 0),
+                    "sell_count": int(trade_stats.get("sell_count") or 0),
+                    "shares_bought": _to_float(trade_stats.get("shares_bought")),
+                    "shares_sold": _to_float(trade_stats.get("shares_sold")),
+                    "buy_amount_total": _to_float(trade_stats.get("buy_amount_total")),
+                    "sell_amount_total": _to_float(trade_stats.get("sell_amount_total")),
+                    "net_trade_cash": _to_float(trade_stats.get("net_trade_cash")),
+                    "realized_cost_basis": _to_float(trade_stats.get("realized_cost_basis")),
+                    "realized_capital_pnl": _to_float(trade_stats.get("realized_capital_pnl")),
                 },
             }
         )
@@ -2312,12 +2421,31 @@ def assemble_period_snapshot_target(
                 "avg_daily_balance": avg_daily_balance_fallback,
                 "avg_rate_pct": avg_rate_pct_fallback,
                 "annualized": _coalesce(_to_float(activity.get("interest_annualized")), annualized_interest_fallback),
+                "income_total": _to_float(activity.get("interest_income_total")),
+                "fees_total": _to_float(activity.get("fees_total")),
             },
             "trades": {
                 "total_count": int(activity.get("trades_total_count") or 0),
                 "buy_count": int(activity.get("trades_buy_count") or 0),
                 "sell_count": int(activity.get("trades_sell_count") or 0),
+                "buys_total": _to_float(activity.get("buys_total")),
+                "sells_total": _to_float(activity.get("sells_total")),
+                "trading_net_cash": _to_float(activity.get("trading_net_cash")),
                 "by_symbol": trades_by_symbol,
+            },
+            "realized": {
+                "capital_pnl": _coalesce(_to_float(activity.get("realized_capital_pnl")), _to_float(realized_block.get("realized_pnl"))),
+                "gross_proceeds": _to_float(realized_block.get("gross_proceeds")),
+                "net_proceeds": _to_float(realized_block.get("net_proceeds")),
+                "cost_basis_sold": _to_float(realized_block.get("realized_cost_basis")),
+                "sale_count": int(realized_block.get("sale_count") or 0),
+                "winning_sales": int(realized_block.get("winning_sales") or 0),
+                "losing_sales": int(realized_block.get("losing_sales") or 0),
+            },
+            "cashflow": {
+                "external_net": _to_float(realized_cashflow.get("external_net")),
+                "realized_total_return": _coalesce(_to_float(activity.get("realized_total_return")), _to_float(realized_cashflow.get("realized_total_return"))),
+                "portfolio_cash_net": _to_float(realized_cashflow.get("portfolio_cash_net")),
             },
             "positions": positions,
             "margin": {

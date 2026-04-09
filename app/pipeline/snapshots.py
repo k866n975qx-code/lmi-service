@@ -17,6 +17,7 @@ import structlog
 from ..utils import sha256_json, now_utc_iso, to_local_date, to_local_datetime_iso
 from .validation import validate_period_snapshot
 from . import metrics
+from .realized import build_daily_realized_snapshot
 
 TRADE_TYPES = {"buy", "buy_shares", "reinvest", "reinvestment", "sell", "sell_shares", "redemption"}
 ACQUIRE_TYPES = {"buy", "buy_shares", "reinvest", "reinvestment"}
@@ -4164,6 +4165,7 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         "windows": {"30d": window_30d, "ytd": window_ytd, "qtd": window_qtd},
         "realized_mtd": realized_mtd,
     }
+    realized_snapshot = build_daily_realized_snapshot(conn, as_of_date_str)
 
     # dividends upcoming (pay-date based, exclude paid events)
     window_start = pay_window_start
@@ -4482,6 +4484,13 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         "total_market_value": totals["market_value"],
         "income": income,
         "dividends": dividends,
+        "capital_gains": {
+            "windows": realized_snapshot.get("windows") or {},
+            "recent_sales": realized_snapshot.get("recent_sales") or [],
+        },
+        "cashflow": {
+            "windows": realized_snapshot.get("cashflow_windows") or {},
+        },
         "dividends_upcoming": dividends_upcoming,
         "portfolio_rollups": portfolio_rollups,
         "goal_progress": goal_progress,
