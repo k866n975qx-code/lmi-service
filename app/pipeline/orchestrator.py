@@ -10,7 +10,15 @@ from ..alerts.storage import migrate_alerts as migrate_alerts_table
 from ..alerts.notifier import send_alerts_sync
 from ..services.telegram import TelegramClient
 from .facts import upsert_facts_from_sources
-from .utils import append_lm_raw, start_run, finish_run_ok, finish_run_fail, get_run_status, ensure_cusip_map
+from .utils import (
+    append_lm_raw,
+    start_run,
+    finish_run_ok,
+    finish_run_fail,
+    get_run_status,
+    ensure_cusip_map,
+    normalize_run_failures,
+)
 from .transactions import normalize_investment_transactions
 from .realized import backfill_transaction_economics, rebuild_realized_trade_ledger
 from .corporate_actions import load_provider_actions, upsert_lm_dividend_events, symbols_for_actions, estimate_dividend_schedule
@@ -104,6 +112,9 @@ def trigger_sync_window(background, start_date: str, end_date: str) -> str:
 def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = None):
     conn = get_conn(settings.db_path)
     migrate(conn)
+    normalized_failures = normalize_run_failures(conn)
+    if normalized_failures:
+        log.info("normalized_historical_run_failures", count=normalized_failures)
     cur = conn.cursor()
     run_count = cur.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
     first_run = run_count == 0

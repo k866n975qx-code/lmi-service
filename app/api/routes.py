@@ -17,6 +17,7 @@ from ..config import settings
 from ..db import get_conn
 from ..cache_layer import CacheLayer
 from ..services.telegram import TelegramClient, send_goal_tiers_to_telegram
+from ..pipeline.utils import is_maintenance_interruption
 
 router = APIRouter()
 
@@ -29,6 +30,17 @@ _PERIOD_MAP = {
 
 # Rolling summaries use the same period_type (WEEK, MONTH, etc.) with is_rolling=1
 
+def _serialize_run_row(row):
+    if not row:
+        return None
+    return {
+        'run_id': row[0],
+        'status': row[1],
+        'started_at_utc': row[2],
+        'finished_at_utc': row[3],
+        'error_message': row[4],
+    }
+
 @router.get(
     '/health',
     summary="Health check",
@@ -39,13 +51,42 @@ def health():
     try:
         conn = get_conn(settings.db_path)
         cur = conn.cursor()
-        row = cur.execute(
-            "SELECT run_id, status, started_at_utc, finished_at_utc FROM runs ORDER BY started_at_utc DESC LIMIT 1"
-        ).fetchone()
-        last = None
-        if row:
-            last = {'run_id': row[0], 'status': row[1], 'started_at_utc': row[2], 'finished_at_utc': row[3]}
-        return {'ok': True, 'db': 'ok', 'last_run': last}
+        rows = cur.execute(
+            """
+            SELECT run_id, status, started_at_utc, finished_at_utc, error_message
+            FROM runs
+            ORDER BY started_at_utc DESC
+            LIMIT 100
+            """
+        ).fetchall()
+        run_items = [_serialize_run_row(row) for row in rows]
+        last_event_run = run_items[0] if run_items else None
+        last_run = next(
+            (item for item in run_items if not is_maintenance_interruption(item.get('error_message'))),
+            None,
+        )
+        last_successful_run = next((item for item in run_items if item['status'] == 'succeeded'), None)
+        last_failed_run = next(
+            (
+                item
+                for item in run_items
+                if item['status'] == 'failed' and not is_maintenance_interruption(item.get('error_message'))
+            ),
+            None,
+        )
+        last_maintenance_run = next(
+            (item for item in run_items if is_maintenance_interruption(item.get('error_message'))),
+            None,
+        )
+        return {
+            'ok': True,
+            'db': 'ok',
+            'last_run': last_run or last_event_run,
+            'last_event_run': last_event_run,
+            'last_successful_run': last_successful_run,
+            'last_failed_run': last_failed_run,
+            'last_maintenance_run': last_maintenance_run,
+        }
     except Exception as e:
         raise HTTPException(503, f'db_error: {e}')
 

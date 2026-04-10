@@ -6,6 +6,16 @@ from ..utils import now_utc_iso, to_local_date, retry_call
 
 log = structlog.get_logger()
 
+MAINTENANCE_INTERRUPTION_PREFIX = "maintenance_interruption:"
+_LEGACY_MAINTENANCE_ERROR_REWRITES = {
+    "Local interruption during provider_actions after successful transaction normalization": (
+        f"{MAINTENANCE_INTERRUPTION_PREFIX}local_stop_after_provider_actions"
+    ),
+    "Cleared stale local running state before rebuild": (
+        f"{MAINTENANCE_INTERRUPTION_PREFIX}cleared_stale_local_running_state"
+    ),
+}
+
 def _allowed_plaid_ids():
     raw = settings.lm_plaid_account_ids
     if not raw:
@@ -117,9 +127,10 @@ def finish_run_ok(conn: sqlite3.Connection, run_id: str):
     )
 
 def finish_run_fail(conn: sqlite3.Connection, run_id: str, err: str):
+    normalized_err = normalize_run_error_message(err)
     conn.execute(
         "UPDATE runs SET finished_at_utc=?, status=?, error_message=? WHERE run_id=?",
-        (now_utc_iso(), 'failed', err[:1000], run_id),
+        (now_utc_iso(), 'failed', (normalized_err or "")[:1000], run_id),
     )
 
 def get_run_status(conn: sqlite3.Connection, run_id: str):
@@ -132,6 +143,70 @@ def get_run_status(conn: sqlite3.Connection, run_id: str):
     return {
         'run_id': row[0], 'started_at_utc': row[1], 'finished_at_utc': row[2], 'status': row[3], 'error_message': row[4]
     }
+
+def normalize_run_error_message(err: str | None) -> str | None:
+    if err is None:
+        return None
+    text = str(err).strip()
+    if not text:
+        return ""
+    rewritten = _LEGACY_MAINTENANCE_ERROR_REWRITES.get(text)
+    if rewritten:
+        return rewritten
+    lowered = text.lower()
+    if lowered.startswith(MAINTENANCE_INTERRUPTION_PREFIX):
+        return text
+    if lowered.startswith("interrupted_by_signal:"):
+        signal_name = text.split(":", 1)[1].strip() or "unknown"
+        return f"{MAINTENANCE_INTERRUPTION_PREFIX}signal:{signal_name}"
+    if "local interruption" in lowered:
+        return f"{MAINTENANCE_INTERRUPTION_PREFIX}local_interruption"
+    if "stale local running state" in lowered:
+        return f"{MAINTENANCE_INTERRUPTION_PREFIX}cleared_stale_local_running_state"
+    return text
+
+def is_maintenance_interruption(err: str | None) -> bool:
+    normalized = normalize_run_error_message(err)
+    return bool(normalized and normalized.startswith(MAINTENANCE_INTERRUPTION_PREFIX))
+
+def normalize_run_failures(conn: sqlite3.Connection) -> int:
+    cur = conn.cursor()
+    rows = cur.execute(
+        """
+        SELECT run_id, error_message
+        FROM runs
+        WHERE status='failed' AND error_message IS NOT NULL AND error_message != ''
+        """
+    ).fetchall()
+    updates: list[tuple[str, str]] = []
+    for run_id, error_message in rows:
+        normalized = normalize_run_error_message(error_message)
+        if normalized and normalized != error_message:
+            updates.append((normalized[:1000], run_id))
+    if updates:
+        cur.executemany("UPDATE runs SET error_message=? WHERE run_id=?", updates)
+    return len(updates)
+
+def mark_run_interrupted(db_path: str, run_id: str, signal_name: str) -> bool:
+    from ..db import get_conn
+    from .locking import release_lock
+
+    conn = get_conn(db_path)
+    try:
+        row = conn.execute(
+            "SELECT status, finished_at_utc FROM runs WHERE run_id=?",
+            (run_id,),
+        ).fetchone()
+        if not row:
+            return False
+        status, finished_at_utc = row
+        if finished_at_utc or str(status).lower() != "running":
+            return False
+        finish_run_fail(conn, run_id, f"{MAINTENANCE_INTERRUPTION_PREFIX}signal:{signal_name}")
+        release_lock(conn, "sync", run_id)
+        return True
+    finally:
+        conn.close()
 
 def _lm_headers():
     return {"Authorization": f"Bearer {settings.lm_token}", "Accept": "application/json"}
