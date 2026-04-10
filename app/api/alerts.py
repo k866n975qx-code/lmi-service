@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import re
+import sqlite3
 import threading
 from datetime import date, timedelta
 from fastapi import APIRouter, HTTPException
@@ -2224,8 +2225,7 @@ def _transaction_drilldown_text(conn, days_back: int, tx_filter: str = "all", sy
         symbol_clause = " AND symbol = ?"
         params.append(symbol.upper())
 
-    rows = conn.execute(
-        f"""
+    base_select = f"""
         SELECT
           date,
           transaction_type,
@@ -2233,14 +2233,32 @@ def _transaction_drilldown_text(conn, days_back: int, tx_filter: str = "all", sy
           quantity,
           amount,
           name,
-          economic_bucket,
-          cash_flow_amount
+          {{economic_bucket_expr}} AS economic_bucket,
+          {{cash_flow_expr}} AS cash_flow_amount
         FROM investment_transactions
         WHERE date BETWEEN ? AND ?{symbol_clause}
         ORDER BY date DESC, lm_transaction_id DESC
-        """,
-        params,
-    ).fetchall()
+    """
+    try:
+        rows = conn.execute(
+            base_select.format(
+                economic_bucket_expr="economic_bucket",
+                cash_flow_expr="cash_flow_amount",
+            ),
+            params,
+        ).fetchall()
+    except sqlite3.OperationalError as exc:
+        # Some tests still build a minimal transactions table without the normalized
+        # cashflow columns. Fall back to the legacy shape and rebucket in Python.
+        if "no such column" not in str(exc).lower():
+            raise
+        rows = conn.execute(
+            base_select.format(
+                economic_bucket_expr="NULL",
+                cash_flow_expr="NULL",
+            ),
+            params,
+        ).fetchall()
     filtered = []
     summary: dict[str, dict[str, float]] = {}
     for tx_date, tx_type, tx_symbol, quantity, amount, name, economic_bucket, cash_flow_amount in rows:
@@ -2264,6 +2282,11 @@ def _transaction_drilldown_text(conn, days_back: int, tx_filter: str = "all", sy
         target = f" for {symbol.upper()}" if symbol else ""
         return f"No {tx_filter} transactions found{target} in the selected window."
 
+    def _display_cash(bucket: str, cash_effect: float) -> float:
+        if bucket in {"margin_interest", "margin_repay", "withdrawal", "fee"}:
+            return abs(float(cash_effect or 0.0))
+        return float(cash_effect or 0.0)
+
     title_target = f" - {symbol.upper()}" if symbol else ""
     lines = [f"<b>🧾 Transaction Drilldown{title_target}</b>\n"]
     lines.append(f"Window: {start} → {end}")
@@ -2271,9 +2294,10 @@ def _transaction_drilldown_text(conn, days_back: int, tx_filter: str = "all", sy
     lines.append("")
     lines.append("<b>Summary:</b>")
     for bucket, stats in sorted(summary.items(), key=lambda item: item[1]["count"], reverse=True):
+        primary_amount = stats["gross"] if bucket in {"margin_interest", "margin_repay", "withdrawal", "fee"} else stats["net"]
         lines.append(
             f"  {_tx_label(bucket, bucket)}: {int(stats['count'])} | "
-            f"gross {_fmt_money(stats['gross'])} | net {_fmt_money(stats['net'])}"
+            f"{_fmt_money(primary_amount)} | gross {_fmt_money(stats['gross'])} | net {_fmt_money(stats['net'])}"
         )
 
     lines.append("")
@@ -2289,7 +2313,7 @@ def _transaction_drilldown_text(conn, days_back: int, tx_filter: str = "all", sy
                 f"gross {_fmt_money(amount_val)} | cash {_fmt_money(cash_effect)}"
             )
         else:
-            lines.append(f"  {tx_date} | {label}{symbol_part} | {_fmt_money(cash_effect)}")
+            lines.append(f"  {tx_date} | {label}{symbol_part} | {_fmt_money(_display_cash(bucket, cash_effect))}")
     return "\n".join(lines)
 
 
