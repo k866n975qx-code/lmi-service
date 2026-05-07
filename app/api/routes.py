@@ -3,6 +3,7 @@ from datetime import date
 from pathlib import Path
 import os
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi.responses import FileResponse
 from .schemas import SyncRun, StatusResponse, SyncWindowRequest
 from ..pipeline.orchestrator import trigger_sync, trigger_sync_window, get_status
 from ..pipeline.periods import _period_bounds
@@ -18,6 +19,7 @@ from ..db import get_conn
 from ..cache_layer import CacheLayer
 from ..services.telegram import TelegramClient, send_goal_tiers_to_telegram
 from ..pipeline.utils import is_maintenance_interruption
+from ..pipeline.transaction_export import export_transactions_csv
 
 router = APIRouter()
 
@@ -151,6 +153,36 @@ def status(run_id: str):
     if not st:
         raise HTTPException(404, 'run not found')
     return st
+
+@router.post(
+    '/exports/transactions',
+    summary="Refresh transaction CSV export",
+    description="Regenerates the importer-compatible transaction CSV from normalized transactions.",
+    tags=["Exports"],
+)
+def refresh_transaction_export():
+    try:
+        conn = get_conn(settings.db_path)
+        result = export_transactions_csv(conn, settings.transaction_export_path)
+        return {'ok': True, 'path': result.output_path, 'row_count': result.row_count}
+    except Exception as e:
+        raise HTTPException(500, f'transaction_export_error: {e}')
+
+@router.get(
+    '/exports/transactions.csv',
+    summary="Download transaction CSV export",
+    description="Returns the current transaction CSV export, generating it first if missing.",
+    tags=["Exports"],
+)
+def download_transaction_export():
+    path = Path(settings.transaction_export_path)
+    if not path.exists():
+        try:
+            conn = get_conn(settings.db_path)
+            export_transactions_csv(conn, path)
+        except Exception as e:
+            raise HTTPException(500, f'transaction_export_error: {e}')
+    return FileResponse(path, media_type='text/csv', filename=path.name)
 
 @router.get(
     '/summaries/available',

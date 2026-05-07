@@ -63,6 +63,8 @@ FRED_API_KEY=your_fred_key_here
 LOCAL_TZ=America/Los_Angeles
 DB_PATH=./data/app.db
 CUSIP_CSV=./CUSIP.csv
+TRANSACTION_EXPORT_ENABLED=1
+TRANSACTION_EXPORT_PATH=./data/transactions_export.csv
 
 # Benchmarks
 BENCHMARK_PRIMARY=^GSPC
@@ -77,6 +79,9 @@ python scripts/init_db.py
 
 # Run first sync
 python scripts/sync_all.py
+
+# Manually refresh transaction CSV export
+python scripts/export_transactions.py
 
 # Start API server
 uvicorn app.main:app --host 0.0.0.0 --port 8010
@@ -199,6 +204,7 @@ sudo systemctl enable --now lmi-sync@<repo>.timer
 |--------|-------------|
 | `scripts/init_db.py` | Initialize database and seed CUSIP mappings |
 | `scripts/sync_all.py` | Manual sync trigger |
+| `scripts/export_transactions.py` | Export all normalized transactions to importer CSV |
 | `scripts/backfill_period_summaries.py` | Regenerate period snapshots |
 | `scripts/backfill_rolling_summaries.py` | Regenerate rolling summaries |
 | `scripts/cleanup_rolling_summaries.py` | Remove orphaned rolling snapshots |
@@ -213,6 +219,7 @@ sudo systemctl enable --now lmi-sync@<repo>.timer
 - **Fully flattened schema**: V5 schema has no JSON blobs - every field has its own column.
 - **Provider fallback chain**: yfinance → yahooquery → stooq with per-provider rate limits.
 - **FIFO lot reconstruction**: Holdings reconstructed from transactions using FIFO cost basis.
+- **Transaction CSV export**: Sync refreshes `TRANSACTION_EXPORT_PATH` with importer-compatible transaction history.
 - **On-demand diffs**: Comparisons computed on request, not stored.
 - **Distributed locking**: Prevents concurrent syncs via `locks` table.
 - **Time budget**: Sync aborts if `sync_time_budget_seconds` exceeded (default: 300s).

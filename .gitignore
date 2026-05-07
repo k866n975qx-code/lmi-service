@@ -63,3 +63,11 @@ blueprint.md
 /scripts
 /api_samples
 /tests
+
+# Allow specific new source/test additions inside otherwise ignored project-data dirs.
+!/scripts/
+/scripts/*
+!/scripts/export_transactions.py
+!/tests/
+/tests/*
+!/tests/test_transaction_export.py

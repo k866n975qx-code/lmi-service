@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     http_retry_backoff_seconds: float = Field(default=1.0, alias="HTTP_RETRY_BACKOFF_SECONDS")
     db_path: str = Field(default="./data/app.db", alias="DB_PATH")
     cusip_csv: str = Field(default="./CUSIP.csv", alias="CUSIP_CSV")
+    transaction_export_enabled: int = Field(default=1, alias="TRANSACTION_EXPORT_ENABLED")
+    transaction_export_path: str = Field(default="./data/transactions_export.csv", alias="TRANSACTION_EXPORT_PATH")
     benchmark_primary: str = Field(default="^GSPC", alias="BENCHMARK_PRIMARY")
     benchmark_secondary: str = Field(default="SPY", alias="BENCHMARK_SECONDARY")
     goal_target_monthly: float | None = Field(default=None, alias="GOAL_TARGET_MONTHLY")

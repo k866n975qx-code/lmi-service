@@ -20,6 +20,7 @@ from .utils import (
     normalize_run_failures,
 )
 from .transactions import normalize_investment_transactions
+from .transaction_export import export_transactions_csv
 from .realized import backfill_transaction_economics, rebuild_realized_trade_ledger
 from .corporate_actions import load_provider_actions, upsert_lm_dividend_events, symbols_for_actions, estimate_dividend_schedule
 from .validation import validate_daily_snapshot
@@ -320,6 +321,19 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
         started = _step_start("persist_periodic_snapshots")
         maybe_persist_periodic(conn, run_id, daily, daily_was_written=wrote_daily)
         _step_done("persist_periodic_snapshots", started)
+
+        if bool(settings.transaction_export_enabled):
+            started = _step_start("transaction_export")
+            try:
+                export_result = export_transactions_csv(conn, settings.transaction_export_path)
+                _step_done(
+                    "transaction_export",
+                    started,
+                    output_path=export_result.output_path,
+                    row_count=export_result.row_count,
+                )
+            except Exception as export_err:
+                log.warning("transaction_export_failed", run_id=run_id, err=str(export_err))
 
         finish_run_ok(conn, run_id)
         try:
