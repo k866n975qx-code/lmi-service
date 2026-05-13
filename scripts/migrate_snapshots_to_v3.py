@@ -39,6 +39,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.config import settings
 from app.db import get_conn
+from app.pipeline.holdings import reconstruct_account_holdings, reconstruct_holdings
 from app.pipeline.market import MarketData
 from app.pipeline.snapshots import build_daily_snapshot
 from app.pipeline.null_reasons import replace_nulls_with_reasons
@@ -89,6 +90,8 @@ def get_dates_for_backfill(conn: sqlite3.Connection, start_date: str, end_date: 
 
 # Flat daily tables only. Does NOT touch: period_summary, account_balances, margin_balance_history, runs, investment_transactions, lm_raw, etc.
 DAILY_CHILD_TABLES = [
+    "daily_account_holdings",
+    "daily_account_portfolio",
     "daily_holdings",
     "daily_goal_tiers",
     "daily_margin_rate_scenarios",
@@ -159,39 +162,16 @@ def migrate_snapshot(conn: sqlite3.Connection, as_of_date_str: str, old_snapshot
         as_of_date = date.fromisoformat(as_of_date_str)
 
         if verbose:
-            print(f"    Rebuilding holdings from transactions...")
+            print(f"    Rebuilding holdings and account holdings from transactions...")
 
-        query = """
-            SELECT symbol,
-                   SUM(CASE
-                       WHEN transaction_type IN ('buy', 'sell') THEN quantity
-                       ELSE 0
-                   END) as shares,
-                   SUM(CASE
-                       WHEN transaction_type IN ('buy', 'sell') THEN amount
-                       ELSE 0
-                   END) as cost_basis
-            FROM investment_transactions
-            WHERE date <= ?
-            GROUP BY symbol
-            HAVING shares > 0.001
-        """
-
-        rows = conn.execute(query, (as_of_date_str,)).fetchall()
-
-        holdings = {}
-        symbols = set()
-        for symbol, shares, cost_basis in rows:
-            if symbol and shares > 0:
-                symbols.add(symbol)
-                holdings[symbol] = {'symbol': symbol, 'shares': shares, 'cost_basis': cost_basis}
-
+        holdings, symbols = reconstruct_holdings(conn, as_of_date=as_of_date)
+        account_holdings = reconstruct_account_holdings(conn, as_of_date=as_of_date)
         if not holdings:
             print(f"    ERROR: No holdings from transactions")
             return None
 
         if verbose:
-            print(f"    Rebuilt {len(holdings)} holdings from transactions")
+            print(f"    Rebuilt {len(holdings)} holdings across {len(account_holdings)} accounts")
 
         # Load market data and filter to as_of_date
         md = MarketData()
@@ -281,6 +261,7 @@ def migrate_snapshot(conn: sqlite3.Connection, as_of_date_str: str, old_snapshot
             with patch.object(snapshots_module, '_load_account_balances', return_value=account_balances_as_of):
                 with freeze_time(frozen_utc_dt):
                     new_snapshot, _ = build_daily_snapshot(conn, holdings, md)
+                    new_snapshot["account_holdings"] = account_holdings
 
         # build_daily_snapshot now outputs v5.0 via transform_to_v5()
         # No manual schema_version override needed

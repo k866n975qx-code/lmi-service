@@ -60,11 +60,109 @@
         }
       }
     },
+    "/accounts": {
+      "get": {
+        "operationId": "listPortfolioAccounts",
+        "summary": "List portfolio accounts",
+        "description": "Returns configured Lunch Money/Plaid accounts included in combined portfolio reporting, including investment and margin account roles.",
+        "responses": {
+          "200": {
+            "description": "Portfolio account list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/portfolio/daily/latest/accounts": {
+      "get": {
+        "operationId": "getLatestDailyAccountSplit",
+        "summary": "Get latest account split",
+        "description": "Returns account-level flat daily portfolio rows for the latest combined portfolio snapshot.",
+        "responses": {
+          "200": {
+            "description": "Latest account split",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSplitResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/accounts/{plaid_account_id}/daily/latest": {
+      "get": {
+        "operationId": "getLatestAccountDaily",
+        "summary": "Get latest account daily summary",
+        "description": "Returns one account's latest daily summary plus its holdings.",
+        "parameters": [
+          {
+            "name": "plaid_account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Lunch Money/Plaid account id, such as 317631 or 400346."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account daily summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDailyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/accounts/{plaid_account_id}/holdings/latest": {
+      "get": {
+        "operationId": "getLatestAccountHoldings",
+        "summary": "Get latest account holdings",
+        "description": "Returns one account's latest flat holding rows.",
+        "parameters": [
+          {
+            "name": "plaid_account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Lunch Money/Plaid account id, such as 317631 or 400346."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account holding rows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountHoldingsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/portfolio/daily/latest": {
       "get": {
         "operationId": "getLatestDailyPortfolio",
         "summary": "Get latest daily portfolio",
-        "description": "Returns the most recent daily portfolio snapshot.",
+        "description": "Returns the most recent combined daily portfolio snapshot. The response includes an accounts block for account-level differentiation.",
         "parameters": [
           {
             "name": "slim",
@@ -428,6 +526,54 @@
         "type": "object",
         "properties": {},
         "additionalProperties": true
+      },
+      "AccountsResponse": {
+        "type": "object",
+        "properties": {
+          "count": {"type": "integer"},
+          "primary_account_id": {"type": ["string", "null"]},
+          "investment_account_ids": {"type": "array", "items": {"type": "string"}},
+          "margin_account_ids": {"type": "array", "items": {"type": "string"}},
+          "items": {
+            "type": "array",
+            "items": {"type": "object", "additionalProperties": true}
+          }
+        },
+        "required": ["count", "items"]
+      },
+      "AccountSplitResponse": {
+        "type": "object",
+        "properties": {
+          "as_of_date_local": {"type": "string", "format": "date"},
+          "items": {
+            "type": "array",
+            "items": {"type": "object", "additionalProperties": true}
+          }
+        },
+        "required": ["as_of_date_local", "items"]
+      },
+      "AccountDailyResponse": {
+        "type": "object",
+        "properties": {
+          "summary": {"type": "object", "additionalProperties": true},
+          "holdings": {
+            "type": "array",
+            "items": {"type": "object", "additionalProperties": true}
+          }
+        },
+        "required": ["summary", "holdings"]
+      },
+      "AccountHoldingsResponse": {
+        "type": "object",
+        "properties": {
+          "as_of_date_local": {"type": "string", "format": "date"},
+          "plaid_account_id": {"type": "string"},
+          "items": {
+            "type": "array",
+            "items": {"type": "object", "additionalProperties": true}
+          }
+        },
+        "required": ["as_of_date_local", "plaid_account_id", "items"]
       },
       "DiffResponse": {
         "type": "object",

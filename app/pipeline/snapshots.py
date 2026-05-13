@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from ..config import settings
+from ..account_config import investment_account_ids, margin_account_ids, primary_investment_account_id
 import structlog
 from ..utils import sha256_json, now_utc_iso, to_local_date, to_local_datetime_iso
 from .validation import validate_period_snapshot
@@ -4449,12 +4450,13 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         "filled_from_existing": False,
     }
 
+    primary_account_id = primary_investment_account_id()
     plaid_account_id = None
-    if settings.lm_plaid_account_ids:
+    if primary_account_id:
         try:
-            plaid_account_id = int(settings.lm_plaid_account_ids.split(",")[0].strip())
+            plaid_account_id = int(primary_account_id)
         except ValueError:
-            plaid_account_id = settings.lm_plaid_account_ids.split(",")[0].strip()
+            plaid_account_id = primary_account_id
 
     macro = _stabilize_macro_snapshot(conn, _build_macro_snapshot(md, as_of_date_local), as_of_date_local)
 
@@ -4475,6 +4477,8 @@ def build_daily_snapshot(conn: sqlite3.Connection, holdings: dict, md) -> tuple[
         "as_of_utc": as_of_utc,
         "as_of_date_local": as_of_date_str,
         "plaid_account_id": plaid_account_id,
+        "portfolio_account_ids": investment_account_ids(),
+        "margin_account_ids": margin_account_ids(),
         "prices_as_of": prices_as_of_date.isoformat() if prices_as_of_date else as_of_date_str,
         "prices_as_of_utc": prices_as_of_utc.isoformat() if prices_as_of_utc else None,
         "holdings": holdings_out,

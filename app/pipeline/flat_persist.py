@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import sqlite3
 
+from ..account_config import account_profile
 from .diff_daily import (
     _totals,
     _income,
@@ -71,6 +72,315 @@ def _flatten_holding_for_persist(h: dict) -> dict:
 def _now_utc_iso() -> str:
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def _to_float(value) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _round_money(value) -> float | None:
+    numeric = _to_float(value)
+    return round(numeric, 2) if numeric is not None else None
+
+
+def _round_pct(value) -> float | None:
+    numeric = _to_float(value)
+    return round(numeric, 3) if numeric is not None else None
+
+
+def _safe_divide(numerator, denominator) -> float | None:
+    n = _to_float(numerator)
+    d = _to_float(denominator)
+    if n is None or d in (None, 0):
+        return None
+    return n / d
+
+
+def _account_meta(conn: sqlite3.Connection, plaid_account_id: str) -> dict:
+    row = conn.execute(
+        """
+        SELECT plaid_account_id, display_name, short_name, account_role, is_primary
+        FROM portfolio_accounts
+        WHERE plaid_account_id=?
+        """,
+        (str(plaid_account_id),),
+    ).fetchone()
+    if row:
+        return {
+            "plaid_account_id": str(row[0]),
+            "display_name": row[1],
+            "short_name": row[2],
+            "account_role": row[3],
+            "is_primary": int(row[4] or 0),
+        }
+    profile = account_profile(str(plaid_account_id))
+    return {
+        "plaid_account_id": profile.plaid_account_id,
+        "display_name": profile.short_name,
+        "short_name": profile.short_name,
+        "account_role": profile.account_role,
+        "is_primary": int(profile.is_primary),
+    }
+
+
+def _account_rows(conn: sqlite3.Connection) -> list[dict]:
+    try:
+        rows = conn.execute(
+            """
+            SELECT plaid_account_id, display_name, short_name, account_role, is_primary
+            FROM portfolio_accounts
+            WHERE include_in_portfolio=1
+            ORDER BY is_primary DESC, account_role, short_name, plaid_account_id
+            """
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    return [
+        {
+            "plaid_account_id": str(row[0]),
+            "display_name": row[1],
+            "short_name": row[2],
+            "account_role": row[3],
+            "is_primary": int(row[4] or 0),
+        }
+        for row in rows
+    ]
+
+
+def _latest_account_balances(conn: sqlite3.Connection, as_of: str) -> dict[str, dict]:
+    rows = conn.execute(
+        """
+        SELECT plaid_account_id, name, type, subtype, balance
+        FROM account_balances
+        WHERE as_of_date_local <= ?
+        ORDER BY as_of_date_local DESC
+        """,
+        (as_of,),
+    ).fetchall()
+    out: dict[str, dict] = {}
+    for row in rows:
+        account_id = str(row[0])
+        if account_id in out:
+            continue
+        out[account_id] = {
+            "plaid_account_id": account_id,
+            "name": row[1],
+            "type": row[2],
+            "subtype": row[3],
+            "balance": row[4],
+        }
+    return out
+
+
+def _write_daily_account_flat(conn: sqlite3.Connection, daily: dict, run_id: str, *, as_of: str, created: str) -> None:
+    account_holdings = daily.get("account_holdings") or {}
+    if not isinstance(account_holdings, dict):
+        account_holdings = {}
+
+    holdings = _holdings_flat(daily)
+    combined_by_symbol = {}
+    for holding in holdings:
+        flat = _flatten_holding_for_persist(holding)
+        symbol = flat.get("symbol")
+        if symbol:
+            combined_by_symbol[str(symbol).upper()] = flat
+
+    totals = _totals(daily)
+    income = _income(daily)
+    combined_market_value = _to_float(totals.get("market_value")) or 0.0
+    combined_forward_income = _to_float(income.get("forward_12m_total")) or 0.0
+
+    cur = conn.cursor()
+    cur.execute("DELETE FROM daily_account_holdings WHERE as_of_date_local=?", (as_of,))
+    cur.execute("DELETE FROM daily_account_portfolio WHERE as_of_date_local=?", (as_of,))
+
+    account_totals: dict[str, dict] = {}
+    holding_rows: list[dict] = []
+
+    for account_id, symbol_map in account_holdings.items():
+        if not isinstance(symbol_map, dict):
+            continue
+        meta = _account_meta(conn, str(account_id))
+        account_total = {
+            "market_value": 0.0,
+            "cost_basis": 0.0,
+            "forward_12m_total": 0.0,
+            "projected_monthly_income": 0.0,
+            "holdings_count": 0,
+            "unrealized_pnl": 0.0,
+        }
+        for symbol, account_holding in symbol_map.items():
+            if not isinstance(account_holding, dict):
+                continue
+            symbol_key = str(symbol).upper()
+            combined = combined_by_symbol.get(symbol_key)
+            if not combined:
+                continue
+            shares = _to_float(account_holding.get("shares"))
+            cost_basis = _to_float(account_holding.get("cost_basis"))
+            combined_shares = _to_float(combined.get("shares"))
+            last_price = _to_float(combined.get("last_price"))
+            if shares is None or abs(shares) < 1e-9:
+                continue
+
+            market_value = shares * last_price if last_price is not None else None
+            forward_per_share = _safe_divide(combined.get("forward_12m_dividend"), combined_shares)
+            forward_12m = shares * forward_per_share if forward_per_share is not None else None
+            projected_monthly = _safe_divide(forward_12m, 12.0)
+            projected_annual = forward_12m
+            avg_cost = _safe_divide(cost_basis, shares)
+            unrealized = (market_value - cost_basis) if market_value is not None and cost_basis is not None else None
+            unrealized_pct = _safe_divide(unrealized, cost_basis)
+            current_yield_pct = _safe_divide(forward_12m, market_value)
+            yield_on_cost_pct = _safe_divide(forward_12m, cost_basis)
+            div_30d_per_share = _safe_divide(combined.get("dividends_30d"), combined_shares)
+            div_qtd_per_share = _safe_divide(combined.get("dividends_qtd"), combined_shares)
+            div_ytd_per_share = _safe_divide(combined.get("dividends_ytd"), combined_shares)
+
+            if market_value is not None:
+                account_total["market_value"] += market_value
+            if cost_basis is not None:
+                account_total["cost_basis"] += cost_basis
+            if forward_12m is not None:
+                account_total["forward_12m_total"] += forward_12m
+            if projected_monthly is not None:
+                account_total["projected_monthly_income"] += projected_monthly
+            if unrealized is not None:
+                account_total["unrealized_pnl"] += unrealized
+            account_total["holdings_count"] += 1
+
+            holding_rows.append(
+                {
+                    "plaid_account_id": str(account_id),
+                    "account_role": meta["account_role"],
+                    "account_short_name": meta["short_name"],
+                    "symbol": symbol_key,
+                    "shares": shares,
+                    "cost_basis": cost_basis,
+                    "avg_cost_per_share": avg_cost,
+                    "last_price": last_price,
+                    "market_value": market_value,
+                    "unrealized_pnl": unrealized,
+                    "unrealized_pct": (unrealized_pct * 100.0) if unrealized_pct is not None else None,
+                    "portfolio_weight_pct": (_safe_divide(market_value, combined_market_value) or 0.0) * 100.0 if market_value is not None else None,
+                    "forward_12m_dividend": forward_12m,
+                    "projected_monthly_dividend": projected_monthly,
+                    "projected_annual_dividend": projected_annual,
+                    "current_yield_pct": (current_yield_pct * 100.0) if current_yield_pct is not None else None,
+                    "yield_on_cost_pct": (yield_on_cost_pct * 100.0) if yield_on_cost_pct is not None else None,
+                    "dividends_30d": shares * div_30d_per_share if div_30d_per_share is not None else None,
+                    "dividends_qtd": shares * div_qtd_per_share if div_qtd_per_share is not None else None,
+                    "dividends_ytd": shares * div_ytd_per_share if div_ytd_per_share is not None else None,
+                }
+            )
+        account_totals[str(account_id)] = {**meta, **account_total}
+
+    for row in holding_rows:
+        account_total_mv = account_totals.get(row["plaid_account_id"], {}).get("market_value") or 0.0
+        row["account_weight_pct"] = (_safe_divide(row.get("market_value"), account_total_mv) or 0.0) * 100.0 if account_total_mv else None
+        cur.execute(
+            """
+            INSERT INTO daily_account_holdings (
+              as_of_date_local, plaid_account_id, account_role, account_short_name,
+              symbol, shares, cost_basis, avg_cost_per_share, last_price, market_value,
+              unrealized_pnl, unrealized_pct, account_weight_pct, portfolio_weight_pct,
+              forward_12m_dividend, projected_monthly_dividend, projected_annual_dividend,
+              current_yield_pct, yield_on_cost_pct, dividends_30d, dividends_qtd, dividends_ytd
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                as_of,
+                row["plaid_account_id"],
+                row["account_role"],
+                row["account_short_name"],
+                row["symbol"],
+                _round_pct(row["shares"]),
+                _round_money(row["cost_basis"]),
+                _round_money(row["avg_cost_per_share"]),
+                _round_money(row["last_price"]),
+                _round_money(row["market_value"]),
+                _round_money(row["unrealized_pnl"]),
+                _round_pct(row["unrealized_pct"]),
+                _round_pct(row["account_weight_pct"]),
+                _round_pct(row["portfolio_weight_pct"]),
+                _round_money(row["forward_12m_dividend"]),
+                _round_money(row["projected_monthly_dividend"]),
+                _round_money(row["projected_annual_dividend"]),
+                _round_pct(row["current_yield_pct"]),
+                _round_pct(row["yield_on_cost_pct"]),
+                _round_money(row["dividends_30d"]),
+                _round_money(row["dividends_qtd"]),
+                _round_money(row["dividends_ytd"]),
+            ),
+        )
+
+    balances = _latest_account_balances(conn, as_of)
+    for meta in _account_rows(conn):
+        account_id = meta["plaid_account_id"]
+        account_totals.setdefault(
+            account_id,
+            {
+                **meta,
+                "market_value": 0.0,
+                "cost_basis": 0.0,
+                "forward_12m_total": 0.0,
+                "projected_monthly_income": 0.0,
+                "holdings_count": 0,
+                "unrealized_pnl": 0.0,
+            },
+        )
+
+    for account_id, row in account_totals.items():
+        balance = balances.get(account_id) or {}
+        margin_loan_balance = 0.0
+        if row.get("account_role") == "margin":
+            margin_loan_balance = abs(_to_float(balance.get("balance")) or 0.0)
+        market_value = _to_float(row.get("market_value")) or 0.0
+        cost_basis = _to_float(row.get("cost_basis")) or 0.0
+        forward_12m = _to_float(row.get("forward_12m_total")) or 0.0
+        projected_monthly = _to_float(row.get("projected_monthly_income")) or 0.0
+        unrealized_pnl = _to_float(row.get("unrealized_pnl")) or 0.0
+        net_liquidation_value = market_value - margin_loan_balance
+        account_weight_pct = (_safe_divide(market_value, combined_market_value) or 0.0) * 100.0 if combined_market_value else None
+        income_weight_pct = (_safe_divide(forward_12m, combined_forward_income) or 0.0) * 100.0 if combined_forward_income else None
+        cur.execute(
+            """
+            INSERT INTO daily_account_portfolio (
+              as_of_date_local, plaid_account_id, account_role, display_name, short_name,
+              market_value, cost_basis, net_liquidation_value, unrealized_pnl, unrealized_pct,
+              margin_loan_balance, ltv_pct, projected_monthly_income, forward_12m_total,
+              portfolio_yield_pct, portfolio_yield_on_cost_pct, holdings_count,
+              account_weight_pct, income_weight_pct, is_primary, built_from_run_id, created_at_utc
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                as_of,
+                account_id,
+                row.get("account_role") or "unknown",
+                row.get("display_name") or row.get("short_name"),
+                row.get("short_name"),
+                _round_money(market_value),
+                _round_money(cost_basis),
+                _round_money(net_liquidation_value),
+                _round_money(unrealized_pnl),
+                _round_pct((_safe_divide(unrealized_pnl, cost_basis) or 0.0) * 100.0 if cost_basis else None),
+                _round_money(margin_loan_balance),
+                _round_pct((_safe_divide(margin_loan_balance, market_value) or 0.0) * 100.0 if market_value else None),
+                _round_money(projected_monthly),
+                _round_money(forward_12m),
+                _round_pct((_safe_divide(forward_12m, market_value) or 0.0) * 100.0 if market_value else None),
+                _round_pct((_safe_divide(forward_12m, cost_basis) or 0.0) * 100.0 if cost_basis else None),
+                int(row.get("holdings_count") or 0),
+                _round_pct(account_weight_pct),
+                _round_pct(income_weight_pct),
+                int(row.get("is_primary") or 0),
+                run_id,
+                created,
+            ),
+        )
 
 
 def _goal_tiers(snap: dict) -> dict:
@@ -457,6 +767,8 @@ def _write_daily_flat(conn: sqlite3.Connection, daily: dict, run_id: str) -> Non
             ),
         )
 
+    _write_daily_account_flat(conn, daily, run_id, as_of=as_of, created=created)
+
     # Goal tiers (snapshot tiers often lack target_monthly/progress_pct/confidence; fill from baseline)
     tiers = gt.get("tiers") or []
     gp = _goal_progress(daily)
@@ -592,6 +904,202 @@ _SNAPSHOT_TYPE_TO_DB = {
     "quarterly": "QUARTER",
     "yearly": "YEAR",
 }
+
+
+def _account_rows_for_period_date(conn: sqlite3.Connection, target_date: str) -> dict[str, dict]:
+    columns = [
+        "as_of_date_local", "plaid_account_id", "account_role", "display_name", "short_name",
+        "market_value", "cost_basis", "net_liquidation_value", "unrealized_pnl", "unrealized_pct",
+        "margin_loan_balance", "ltv_pct", "projected_monthly_income", "forward_12m_total",
+        "portfolio_yield_pct", "portfolio_yield_on_cost_pct", "holdings_count",
+        "account_weight_pct", "income_weight_pct", "is_primary",
+    ]
+    rows = conn.execute(
+        f"""
+        SELECT {",".join(columns)}
+        FROM daily_account_portfolio
+        WHERE as_of_date_local = (
+          SELECT MAX(as_of_date_local)
+          FROM daily_account_portfolio
+          WHERE as_of_date_local <= ?
+        )
+        """,
+        (target_date,),
+    ).fetchall()
+    out: dict[str, dict] = {}
+    for row in rows:
+        data = dict(zip(columns, row))
+        if data.get("plaid_account_id") is not None:
+            out[str(data["plaid_account_id"])] = data
+    return out
+
+
+def _write_period_account_flat(
+    conn: sqlite3.Connection,
+    run_id: str,
+    *,
+    period_type: str,
+    period_start: str,
+    period_end: str,
+    is_rolling: int,
+    created_at_utc: str,
+) -> None:
+    cur = conn.cursor()
+    cur.execute(
+        """
+        DELETE FROM period_account_summary
+        WHERE period_type=? AND period_start_date=? AND period_end_date=? AND is_rolling=?
+        """,
+        (period_type, period_start, period_end, is_rolling),
+    )
+    cur.execute(
+        """
+        DELETE FROM period_account_activity
+        WHERE period_type=? AND period_start_date=? AND period_end_date=? AND is_rolling=?
+        """,
+        (period_type, period_start, period_end, is_rolling),
+    )
+
+    start_rows = _account_rows_for_period_date(conn, period_start)
+    end_rows = _account_rows_for_period_date(conn, period_end)
+    account_ids = sorted(set(start_rows) | set(end_rows))
+    for account_id in account_ids:
+        start = start_rows.get(account_id) or {}
+        end = end_rows.get(account_id) or {}
+        role = end.get("account_role") or start.get("account_role") or "unknown"
+        short_name = end.get("short_name") or start.get("short_name")
+        mv_start = _to_float(start.get("market_value"))
+        mv_end = _to_float(end.get("market_value"))
+        income_start = _to_float(start.get("projected_monthly_income"))
+        income_end = _to_float(end.get("projected_monthly_income"))
+        cur.execute(
+            """
+            INSERT INTO period_account_summary (
+              period_type, period_start_date, period_end_date, is_rolling,
+              plaid_account_id, account_role, short_name,
+              market_value_start, market_value_end, market_value_delta,
+              cost_basis_start, cost_basis_end,
+              projected_monthly_income_start, projected_monthly_income_end, projected_monthly_income_delta,
+              forward_12m_total_start, forward_12m_total_end,
+              portfolio_yield_pct_start, portfolio_yield_pct_end,
+              margin_loan_balance_start, margin_loan_balance_end,
+              ltv_pct_start, ltv_pct_end,
+              holdings_count_start, holdings_count_end,
+              account_weight_pct_start, account_weight_pct_end,
+              built_from_run_id, created_at_utc
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                period_type,
+                period_start,
+                period_end,
+                is_rolling,
+                account_id,
+                role,
+                short_name,
+                mv_start,
+                mv_end,
+                (mv_end - mv_start) if mv_start is not None and mv_end is not None else None,
+                start.get("cost_basis"),
+                end.get("cost_basis"),
+                income_start,
+                income_end,
+                (income_end - income_start) if income_start is not None and income_end is not None else None,
+                start.get("forward_12m_total"),
+                end.get("forward_12m_total"),
+                start.get("portfolio_yield_pct"),
+                end.get("portfolio_yield_pct"),
+                start.get("margin_loan_balance"),
+                end.get("margin_loan_balance"),
+                start.get("ltv_pct"),
+                end.get("ltv_pct"),
+                start.get("holdings_count"),
+                end.get("holdings_count"),
+                start.get("account_weight_pct"),
+                end.get("account_weight_pct"),
+                run_id,
+                created_at_utc,
+            ),
+        )
+
+    activity_rows = conn.execute(
+        """
+        SELECT
+          plaid_account_id,
+          COALESCE(SUM(CASE WHEN external_flow_amount > 0 THEN external_flow_amount ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN external_flow_amount > 0 THEN 1 ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN external_flow_amount < 0 THEN ABS(external_flow_amount) ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN external_flow_amount < 0 THEN 1 ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN transaction_type='dividend' THEN income_flow_amount ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN transaction_type='dividend' THEN 1 ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN transaction_type='margin_interest' THEN ABS(financing_flow_amount) ELSE 0 END), 0),
+          COUNT(*),
+          COALESCE(SUM(CASE WHEN transaction_type IN ('buy','buy_shares','reinvest','reinvestment') THEN 1 ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN transaction_type IN ('sell','sell_shares','redemption') THEN 1 ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN trading_flow_amount < 0 THEN ABS(trading_flow_amount) ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN trading_flow_amount > 0 THEN trading_flow_amount ELSE 0 END), 0)
+        FROM investment_transactions
+        WHERE date BETWEEN ? AND ?
+          AND plaid_account_id IS NOT NULL
+        GROUP BY plaid_account_id
+        """,
+        (period_start, period_end),
+    ).fetchall()
+    realized_by_account = {
+        str(row[0]): row[1]
+        for row in conn.execute(
+            """
+            SELECT t.plaid_account_id, COALESCE(SUM(r.realized_pnl), 0)
+            FROM realized_trade_ledger r
+            JOIN investment_transactions t ON t.lm_transaction_id = r.lm_transaction_id
+            WHERE r.date BETWEEN ? AND ?
+              AND t.plaid_account_id IS NOT NULL
+            GROUP BY t.plaid_account_id
+            """,
+            (period_start, period_end),
+        ).fetchall()
+    }
+    for row in activity_rows:
+        account_id = str(row[0])
+        account_meta = end_rows.get(account_id) or start_rows.get(account_id) or {}
+        realized_capital_pnl = _to_float(realized_by_account.get(account_id)) or 0.0
+        dividends_received = _to_float(row[5]) or 0.0
+        interest_paid = _to_float(row[7]) or 0.0
+        cur.execute(
+            """
+            INSERT INTO period_account_activity (
+              period_type, period_start_date, period_end_date, is_rolling, plaid_account_id,
+              account_role, short_name,
+              contributions_total, contributions_count, withdrawals_total, withdrawals_count,
+              dividends_total_received, dividends_count, interest_total_paid,
+              trades_total_count, buy_count, sell_count, buys_total, sells_total,
+              realized_capital_pnl, realized_total_return
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                period_type,
+                period_start,
+                period_end,
+                is_rolling,
+                account_id,
+                account_meta.get("account_role"),
+                account_meta.get("short_name"),
+                row[1],
+                row[2],
+                row[3],
+                row[4],
+                row[5],
+                row[6],
+                row[7],
+                row[8],
+                row[9],
+                row[10],
+                row[11],
+                row[12],
+                realized_capital_pnl,
+                realized_capital_pnl + dividends_received - interest_paid,
+            ),
+        )
 
 
 def _write_period_flat(conn: sqlite3.Connection, snapshot: dict, run_id: str) -> None:
@@ -1334,3 +1842,13 @@ def _write_period_flat(conn: sqlite3.Connection, snapshot: dict, run_id: str) ->
                 margin.get("net_change"),
             ),
         )
+
+    _write_period_account_flat(
+        conn,
+        run_id,
+        period_type=period_type,
+        period_start=period_start,
+        period_end=period_end,
+        is_rolling=is_rolling,
+        created_at_utc=now_utc,
+    )

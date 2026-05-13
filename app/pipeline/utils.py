@@ -2,6 +2,7 @@ import sqlite3, json, hashlib, os, time
 from datetime import datetime, timezone, timedelta, date
 import httpx, structlog
 from ..config import settings
+from ..account_config import account_metadata_from_row, transaction_account_ids
 from ..utils import now_utc_iso, to_local_date, retry_call
 
 log = structlog.get_logger()
@@ -17,10 +18,8 @@ _LEGACY_MAINTENANCE_ERROR_REWRITES = {
 }
 
 def _allowed_plaid_ids():
-    raw = settings.lm_plaid_account_ids
-    if not raw:
-        return None
-    return {part.strip() for part in raw.split(",") if part.strip()}
+    ids = transaction_account_ids()
+    return set(ids) if ids else None
 
 def _filter_by_plaid_ids(items: list, id_keys: list[str]):
     allowed = _allowed_plaid_ids()
@@ -110,6 +109,72 @@ def _upsert_account_balances(conn: sqlite3.Connection, run_id: str, items: list[
                 "lunchmoney",
                 run_id,
                 pulled_at,
+            ),
+        )
+    conn.commit()
+
+
+def _upsert_portfolio_accounts(conn: sqlite3.Connection, items: list[dict]):
+    if not items:
+        return
+    cur = conn.cursor()
+    today = to_local_date(datetime.now(timezone.utc), settings.local_tz, settings.daily_cutover).isoformat()
+    pulled_at = now_utc_iso()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        plaid_account_id = item.get("id") or item.get("plaid_account_id")
+        if plaid_account_id is None:
+            continue
+        plaid_account_id = str(plaid_account_id)
+        meta = account_metadata_from_row(item)
+        display_name = item.get("display_name") or item.get("name") or item.get("official_name")
+        existing = cur.execute(
+            "SELECT first_seen_date FROM portfolio_accounts WHERE plaid_account_id=?",
+            (plaid_account_id,),
+        ).fetchone()
+        first_seen = existing[0] if existing and existing[0] else today
+        cur.execute(
+            """
+            INSERT INTO portfolio_accounts (
+              plaid_account_id, display_name, short_name, institution_name,
+              account_role, account_type, account_subtype, mask, status,
+              include_in_portfolio, include_in_income, include_in_margin, is_primary,
+              first_seen_date, last_seen_utc, source
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(plaid_account_id) DO UPDATE SET
+              display_name=excluded.display_name,
+              short_name=excluded.short_name,
+              institution_name=excluded.institution_name,
+              account_role=excluded.account_role,
+              account_type=excluded.account_type,
+              account_subtype=excluded.account_subtype,
+              mask=excluded.mask,
+              status=excluded.status,
+              include_in_portfolio=excluded.include_in_portfolio,
+              include_in_income=excluded.include_in_income,
+              include_in_margin=excluded.include_in_margin,
+              is_primary=excluded.is_primary,
+              last_seen_utc=excluded.last_seen_utc,
+              source=excluded.source
+            """,
+            (
+                plaid_account_id,
+                display_name,
+                meta["short_name"],
+                item.get("institution_name"),
+                meta["account_role"],
+                item.get("type") or item.get("account_type"),
+                item.get("subtype"),
+                item.get("mask"),
+                item.get("status"),
+                meta["include_in_portfolio"],
+                meta["include_in_income"],
+                meta["include_in_margin"],
+                meta["is_primary"],
+                first_seen,
+                pulled_at,
+                "lunchmoney",
             ),
         )
     conn.commit()
@@ -332,6 +397,7 @@ def append_lm_raw(
             items = plaid.get("plaid_accounts") or plaid.get("accounts") or plaid.get("data") or plaid
             if isinstance(items, list):
                 items = _filter_by_plaid_ids(items, ["id"])
+                _upsert_portfolio_accounts(conn, items)
                 _upsert_account_balances(conn, run_id, items)
                 _append_payloads(conn, run_id, "plaid_accounts", items, "id")
         except Exception as e:

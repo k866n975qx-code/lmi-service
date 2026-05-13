@@ -1,0 +1,70 @@
+Multi-Account Portfolio Integration Log
+
+Scope
+
+- Service repo: /Users/jose/dev/lmi-service
+- Website repo: /Users/jose/dev/mira-live
+- New Lunch Money/Plaid account: 400346 (M1 Finance Low yield, investment brokerage, mask 5241)
+- Existing investment account: 317631 (M1 Finance Div, local label Div)
+- Existing margin account: 317632 (M1 Borrow)
+
+Branching
+
+- Local branch: codex/multi-account-portfolio
+- Base commit: 4962a8a9483d9b1c66e9359c5bd287f1586f3a7a
+- mira-live companion branch was forked from the commit currently deployed on nova: c25d461c722ff0b47ee63ee04359eb0a358640e4
+
+Requirements
+
+- Combined portfolio remains the default reporting surface.
+- Div, Low Yield, and M1 Borrow remain easy to differentiate in API, GPT actions, Telegram, AI prompts, and mira-live.
+- Database reporting stays flat with dedicated columns and tables.
+- No new database JSON blob columns.
+- Existing primary-account behavior remains backward-compatible.
+
+Completed Work
+
+- Verified Lunch Money exposes account 400346 and that prior local/server config did not include it.
+- Added a canonical account registry in app/account_config.py.
+- Added flat account tables:
+  - portfolio_accounts
+  - daily_account_portfolio
+  - daily_account_holdings
+  - period_account_summary
+  - period_account_activity
+- Added account-aware Lunch Money pulls, account metadata upserts, investment account filtering, and margin account filtering.
+- Added account-scoped holdings reconstruction and account-keyed FIFO realized P&L matching.
+- Persisted daily and period account metrics without adding JSON DB columns.
+- Added account split blocks to the assembled daily snapshot.
+- Added API routes:
+  - GET /accounts
+  - GET /portfolio/daily/latest/accounts
+  - GET /accounts/{plaid_account_id}/daily/latest
+  - GET /accounts/{plaid_account_id}/holdings/latest
+- Updated Telegram /balance and added /accounts account split output.
+- Added account split context to AI insight prompts.
+- Updated gpt actions.json with account-aware operations and schemas.
+
+Local Verification
+
+- Backed up local DB to data/app.db.backup.multi_account_20260511_172501.
+- Migrated local data/app.db to PRAGMA user_version=7.
+- Ran local sync manual-multi-account-20260511 for 2026-05-01 through 2026-05-11; it succeeded.
+- Verified latest account rows:
+  - 317631 / Div: market value 92506.63, monthly income 1003.79.
+  - 400346 / Low Yield: market value 299.70, monthly income 0.67.
+  - 317632 / M1 Borrow: margin loan balance 32517.29.
+- Verified 400346 holdings: SCHD, DGRO, NOBL.
+- Verified FastAPI account endpoints with TestClient.
+
+Deployment Notes
+
+- Local and nova environment should set:
+  - LM_INVESTMENT_ACCOUNT_IDS=317631,400346
+  - LM_MARGIN_ACCOUNT_IDS=317632
+  - LM_PRIMARY_INVESTMENT_ACCOUNT_ID=317631
+  - LM_ACCOUNT_317631_LABEL=Div
+  - LM_ACCOUNT_400346_LABEL=Low Yield
+  - LM_ACCOUNT_317632_LABEL=M1 Borrow
+- Run the lmi-service migration before restarting mira-live on nova.
+- After deploy, run a sync window that includes 2026-05-11 or later so the new account tables are populated on the server DB.

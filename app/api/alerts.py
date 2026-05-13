@@ -146,7 +146,7 @@ def _help_text() -> str:
         "/cashflow [mtd|30d|qtd|ytd|ltd] - normalized portfolio cashflow\n"
         "/sales [count] - recent realized sales ledger\n\n"
         "<b>Core Snapshot Views</b>\n"
-        "/status, /balance, /holdings, /allocation, /benchmark\n"
+        "/status, /balance, /accounts, /holdings, /allocation, /benchmark\n"
         "/income, /incomeprofile, /received, /mtd, /perf, /risk, /riskdetail, /margin, /rateshock, /pace\n"
         "/compare, /snapshot, /macro, /health, /coverage, /settings\n\n"
         "<b>Reports And Planning</b>\n"
@@ -676,6 +676,7 @@ def _coverage_text(snap: dict) -> str:
 def _balance_text(snap: dict) -> str:
     totals = _totals(snap)
     income = _income(snap)
+    accounts = ((snap.get("accounts") or {}).get("items") or [])
     lines = ["<b>🧾 Portfolio Balance</b>\n"]
     lines.append(f"Market Value: {_fmt_money(totals.get('market_value'))}")
     lines.append(f"Cost Basis: {_fmt_money(totals.get('cost_basis'))}")
@@ -688,7 +689,51 @@ def _balance_text(snap: dict) -> str:
     lines.append(
         f"Profitable / Losing: {int(totals.get('positions_profitable') or 0)} / {int(totals.get('positions_losing') or 0)}"
     )
+    if accounts:
+        lines.append("")
+        lines.append("<b>Account Split:</b>")
+        for account in accounts:
+            role = account.get("account_role") or "account"
+            label = account.get("short_name") or account.get("display_name") or account.get("plaid_account_id")
+            if role == "margin":
+                lines.append(
+                    f"  {label}: loan {_fmt_money(account.get('margin_loan_balance'))}"
+                )
+            else:
+                lines.append(
+                    f"  {label}: {_fmt_money(account.get('market_value'))} "
+                    f"({_fmt_pct(account.get('account_weight_pct'), 1)}), "
+                    f"{_fmt_money(account.get('projected_monthly_income'))}/mo"
+                )
     return "\n".join(lines)
+
+
+def _accounts_text(snap: dict) -> str:
+    accounts = ((snap.get("accounts") or {}).get("items") or [])
+    if not accounts:
+        return "No account split available. Run a sync after account integration."
+    lines = ["<b>🏦 Account Split</b>\n"]
+    for account in accounts:
+        label = account.get("short_name") or account.get("display_name") or account.get("plaid_account_id")
+        role = account.get("account_role") or "account"
+        primary = " primary" if account.get("is_primary") else ""
+        lines.append(f"<b>{label}</b> ({role}{primary})")
+        if role == "margin":
+            lines.append(f"  Loan: {_fmt_money(account.get('margin_loan_balance'))}")
+            lines.append(f"  NLV impact: {_fmt_money(account.get('net_liquidation_value'))}")
+        else:
+            lines.append(f"  MV: {_fmt_money(account.get('market_value'))} ({_fmt_pct(account.get('account_weight_pct'), 1)} of portfolio)")
+            lines.append(f"  Income: {_fmt_money(account.get('projected_monthly_income'))}/mo ({_fmt_pct(account.get('income_weight_pct'), 1)} of income)")
+            lines.append(f"  Yield / YOC: {_fmt_pct(account.get('portfolio_yield_pct'))} / {_fmt_pct(account.get('portfolio_yield_on_cost_pct'))}")
+            top = (account.get("holdings") or [])[:5]
+            if top:
+                top_text = ", ".join(
+                    f"{h.get('symbol')} {_fmt_pct(h.get('account_weight_pct'), 1)}"
+                    for h in top
+                )
+                lines.append(f"  Top: {top_text}")
+        lines.append("")
+    return "\n".join(lines).strip()
 
 
 def _income_profile_text(snap: dict) -> str:
@@ -4600,6 +4645,9 @@ async def telegram_webhook(update: dict):
     elif cmd == "balance":
         _, snap = _latest()
         reply = _balance_text(snap) if snap else "No daily snapshot available."
+    elif cmd in {"accounts", "account"}:
+        _, snap = _latest()
+        reply = _accounts_text(snap) if snap else "No daily snapshot available."
     elif cmd == "full":
         _, snap = _latest()
         if not snap:

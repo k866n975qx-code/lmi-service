@@ -4,7 +4,7 @@ import sqlite3
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 
-from ..config import settings
+from ..account_config import transaction_account_ids
 
 BUY_TYPES = {"buy", "buy_shares", "reinvest", "reinvestment"}
 SELL_TYPES = {"sell", "sell_shares", "redemption"}
@@ -15,10 +15,8 @@ FEE_TYPES = {"fee"}
 
 
 def _allowed_plaid_ids():
-    raw = settings.lm_plaid_account_ids
-    if not raw:
-        return None
-    return {part.strip() for part in raw.split(",") if part.strip()}
+    ids = transaction_account_ids()
+    return set(ids) if ids else None
 
 
 def _coerce_float(value):
@@ -214,7 +212,7 @@ def rebuild_realized_trade_ledger(conn: sqlite3.Connection, run_id: str) -> tupl
     ).fetchall()
 
     allowed = _allowed_plaid_ids()
-    lots: dict[str, list[dict[str, object]]] = defaultdict(list)
+    lots: dict[tuple[str, str], list[dict[str, object]]] = defaultdict(list)
     realized_rows: list[tuple] = []
     realized_lot_rows: list[tuple] = []
 
@@ -259,11 +257,13 @@ def rebuild_realized_trade_ledger(conn: sqlite3.Connection, run_id: str) -> tupl
         fee_value = abs(_coerce_float(fees) or 0.0)
         price_value = _coerce_float(price)
         symbol_upper = str(symbol).upper()
+        account_key = str(plaid_account_id or "")
+        lot_key = (account_key, symbol_upper)
 
         if tx_type in BUY_TYPES:
             principal_cost = amount_value if amount_value > 0 else quantity_value * float(price_value or 0.0)
             total_cost = principal_cost + fee_value
-            lots[symbol_upper].append(
+            lots[lot_key].append(
                 {
                     "qty": quantity_value,
                     "cost": total_cost,
@@ -284,13 +284,13 @@ def rebuild_realized_trade_ledger(conn: sqlite3.Connection, run_id: str) -> tupl
         lots_closed_count = 0
         lot_index = 0
 
-        while remaining > 1e-9 and lots[symbol_upper]:
-            lot = lots[symbol_upper][0]
+        while remaining > 1e-9 and lots[lot_key]:
+            lot = lots[lot_key][0]
             lot_qty = float(lot["qty"])
             lot_cost = float(lot["cost"])
             take = min(remaining, lot_qty)
             if take <= 0:
-                lots[symbol_upper].pop(0)
+                lots[lot_key].pop(0)
                 continue
 
             cost_per_share = lot_cost / lot_qty if lot_qty else 0.0
@@ -334,7 +334,7 @@ def rebuild_realized_trade_ledger(conn: sqlite3.Connection, run_id: str) -> tupl
                 weighted_holding_days += holding_days * take
 
             if float(lot["qty"]) <= 1e-9:
-                lots[symbol_upper].pop(0)
+                lots[lot_key].pop(0)
 
         unmatched_shares = max(0.0, remaining)
         matched_complete = 1 if unmatched_shares <= 1e-9 else 0

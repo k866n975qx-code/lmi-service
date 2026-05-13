@@ -5,6 +5,7 @@ from datetime import datetime, date, timezone
 from typing import Dict, List, Tuple
 
 from ..config import settings
+from ..account_config import investment_account_ids
 from ..utils import to_local_date
 
 _CUSIP_RE = re.compile(r"\b([A-Z0-9]{8,9})\b")
@@ -16,10 +17,8 @@ SELL_TYPES = {"sell", "sell_shares", "redemption"}
 
 
 def _allowed_plaid_ids():
-    raw = settings.lm_plaid_account_ids
-    if not raw:
-        return None
-    return {part.strip() for part in raw.split(",") if part.strip()}
+    ids = investment_account_ids()
+    return set(ids) if ids else None
 
 
 def _coerce_float(val):
@@ -98,21 +97,26 @@ def _load_splits(conn: sqlite3.Connection):
     return splits
 
 
-def reconstruct_holdings(conn: sqlite3.Connection) -> Tuple[Dict, List[str]]:
+def reconstruct_holdings(conn: sqlite3.Connection, as_of_date: date | None = None) -> Tuple[Dict, List[str]]:
     """Build holdings from normalized investment_transactions (earliest -> latest).
     Returns (holdings_dict, needed_symbols).
     """
     cur = conn.cursor()
-    rows = cur.execute(
-        """
+    query = """
         SELECT
           lm_transaction_id, plaid_account_id, date, transaction_datetime,
           amount, currency, name, category_name, transaction_type,
           quantity, price, fees, security_id, cusip, symbol
         FROM investment_transactions
+    """
+    params: list[str] = []
+    if as_of_date is not None:
+        query += " WHERE date <= ?"
+        params.append(as_of_date.isoformat())
+    query += """
         ORDER BY COALESCE(transaction_datetime, date) ASC, lm_transaction_id ASC
         """
-    ).fetchall()
+    rows = cur.execute(query, params).fetchall()
 
     allowed = _allowed_plaid_ids()
     cusip_map = {cusip: symbol for cusip, symbol in cur.execute("SELECT cusip, symbol FROM cusip_map").fetchall()}
@@ -230,7 +234,7 @@ def reconstruct_holdings(conn: sqlite3.Connection) -> Tuple[Dict, List[str]]:
                     lots[symbol].pop(0)
 
     # Apply remaining splits up to today's local date.
-    as_of_date = to_local_date(datetime.now(timezone.utc), settings.local_tz, settings.daily_cutover)
+    as_of_date = as_of_date or to_local_date(datetime.now(timezone.utc), settings.local_tz, settings.daily_cutover)
     for sym in list(lots.keys()):
         apply_splits(sym, as_of_date)
 
@@ -243,3 +247,158 @@ def reconstruct_holdings(conn: sqlite3.Connection) -> Tuple[Dict, List[str]]:
             continue
         holdings[sym] = {"symbol": sym, "shares": shares, "cost_basis": cost_basis}
     return holdings, sorted(holdings.keys())
+
+
+def reconstruct_account_holdings(conn: sqlite3.Connection, as_of_date: date | None = None) -> Dict[str, Dict[str, Dict]]:
+    """Build holdings by account first, preserving account attribution for shared symbols."""
+    cur = conn.cursor()
+    query = """
+        SELECT
+          lm_transaction_id, plaid_account_id, date, transaction_datetime,
+          amount, currency, name, category_name, transaction_type,
+          quantity, price, fees, security_id, cusip, symbol
+        FROM investment_transactions
+    """
+    params: list[str] = []
+    if as_of_date is not None:
+        query += " WHERE date <= ?"
+        params.append(as_of_date.isoformat())
+    query += """
+        ORDER BY COALESCE(transaction_datetime, date) ASC, lm_transaction_id ASC
+        """
+    rows = cur.execute(query, params).fetchall()
+
+    allowed = _allowed_plaid_ids()
+    cusip_map = {cusip: symbol for cusip, symbol in cur.execute("SELECT cusip, symbol FROM cusip_map").fetchall()}
+    lots: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    splits = _load_splits(conn)
+    split_idx: dict[tuple[str, str], int] = defaultdict(int)
+
+    def apply_splits(account_id: str, symbol: str, up_to: date | None):
+        if up_to is None:
+            return
+        items = splits.get(symbol)
+        if not items:
+            return
+        key = (account_id, symbol)
+        idx = split_idx.get(key, 0)
+        while idx < len(items) and items[idx][0] <= up_to:
+            ratio = items[idx][1]
+            if ratio <= 0:
+                idx += 1
+                continue
+            for lot in lots[key]:
+                lot["qty"] *= ratio
+            idx += 1
+        split_idx[key] = idx
+
+    for row in rows:
+        (
+            _lm_id,
+            plaid_account_id,
+            _date,
+            _dt,
+            amount,
+            _currency,
+            name,
+            _category,
+            tx_type,
+            quantity,
+            price,
+            fees,
+            _security_id,
+            cusip,
+            symbol,
+        ) = row
+
+        if plaid_account_id is None:
+            continue
+        account_id = str(plaid_account_id)
+        if allowed and account_id not in allowed:
+            continue
+
+        tx_type = (tx_type or "").lower()
+        name = name or ""
+
+        if not symbol:
+            symbol = _extract_symbol(name)
+        if not symbol and cusip:
+            symbol = cusip_map.get(cusip)
+        if not symbol:
+            cusip = _extract_cusip(name)
+            if cusip:
+                symbol = cusip_map.get(cusip)
+        if not symbol:
+            continue
+        symbol = symbol.upper()
+
+        tx_date = _parse_date(_dt) or _parse_date(_date)
+        apply_splits(account_id, symbol, tx_date)
+
+        qty = _coerce_float(quantity)
+        if qty is None:
+            qty = _extract_quantity(name)
+        if qty is None or qty == 0:
+            continue
+
+        direction = None
+        if qty < 0:
+            direction = -1
+            qty = abs(qty)
+        if direction is None:
+            if tx_type in BUY_TYPES:
+                direction = 1
+            elif tx_type in SELL_TYPES:
+                direction = -1
+            elif "sell" in name.lower():
+                direction = -1
+            elif "buy" in name.lower() or "purchased" in name.lower():
+                direction = 1
+            else:
+                direction = 1 if qty > 0 else None
+
+        if direction is None:
+            continue
+
+        price_val = _coerce_float(price)
+        fee_val = _coerce_float(fees) or 0.0
+        amt_val = _coerce_float(amount)
+        key = (account_id, symbol)
+
+        if direction > 0:
+            cost = 0.0
+            if price_val is not None:
+                cost = qty * price_val
+            elif amt_val is not None:
+                cost = abs(amt_val)
+            cost += fee_val
+            lots[key].append({"qty": qty, "cost": cost})
+        else:
+            remaining = qty
+            while remaining > 0 and lots[key]:
+                lot = lots[key][0]
+                take = min(remaining, lot["qty"])
+                cost_per_share = (lot["cost"] / lot["qty"]) if lot["qty"] else 0.0
+                lot["qty"] -= take
+                lot["cost"] -= cost_per_share * take
+                remaining -= take
+                if lot["qty"] <= 0:
+                    lots[key].pop(0)
+
+    as_of_date = as_of_date or to_local_date(datetime.now(timezone.utc), settings.local_tz, settings.daily_cutover)
+    for account_id, symbol in list(lots.keys()):
+        apply_splits(account_id, symbol, as_of_date)
+
+    account_holdings: dict[str, dict[str, dict]] = defaultdict(dict)
+    for (account_id, symbol), sym_lots in lots.items():
+        shares = sum(l["qty"] for l in sym_lots if isinstance(l.get("qty"), (int, float)))
+        cost_basis = sum(l["cost"] for l in sym_lots if isinstance(l.get("cost"), (int, float)))
+        if abs(shares) < 1e-9:
+            continue
+        account_holdings[account_id][symbol] = {
+            "plaid_account_id": account_id,
+            "symbol": symbol,
+            "shares": shares,
+            "cost_basis": cost_basis,
+        }
+    return {account_id: dict(holdings) for account_id, holdings in account_holdings.items()}

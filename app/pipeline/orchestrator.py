@@ -2,7 +2,7 @@ import uuid, time, os
 import structlog
 from ..db import get_conn, migrate
 from ..config import settings
-from .holdings import reconstruct_holdings
+from .holdings import reconstruct_account_holdings, reconstruct_holdings
 from .market import MarketData
 from .snapshots import build_daily_snapshot, persist_daily_snapshot, maybe_persist_periodic, persist_rolling_summaries
 from ..alerts.evaluator import evaluate_alerts
@@ -212,11 +212,13 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
         started = _step_start("reconstruct_holdings")
         _check_deadline("before_holdings")
         holdings, symbols = reconstruct_holdings(conn)
+        account_holdings = reconstruct_account_holdings(conn)
         _step_done(
             "reconstruct_holdings",
             started,
             holdings_count=len(holdings),
             symbols_count=len(symbols),
+            account_count=len(account_holdings),
         )
 
         # 3) Load market data for needed symbols (include benchmarks)
@@ -233,6 +235,7 @@ def _sync_impl(run_id: str, lm_start: str | None = None, lm_end: str | None = No
         started = _step_start("build_daily_snapshot")
         _check_deadline("before_snapshot_build")
         daily, sources = build_daily_snapshot(conn, holdings, md)
+        daily["account_holdings"] = account_holdings
         _step_done("build_daily_snapshot", started, sources_count=len(sources))
 
         # Helper to get values from V5 schema (with fallback to V4)

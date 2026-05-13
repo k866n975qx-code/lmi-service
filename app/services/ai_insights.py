@@ -81,6 +81,9 @@ MARGIN STRESS
 - Current Income Coverage: {income_coverage_now:.1f}x
 - +100bp Coverage: {income_coverage_stress:.1f}x
 
+ACCOUNT SPLIT
+{account_split}
+
 MACRO
 - VIX: {vix}
 - 10Y Yield: {ten_year}%
@@ -148,6 +151,21 @@ def _extract_context(snap: dict) -> dict:
         mo_div = u.get("projected_monthly_dividend", 0) or 0
         top_lines.append(f"  {sym}: {w:.1f}% weight, {yld:.1f}% yield, ${mo_div:.2f}/mo")
 
+    account_lines = []
+    for account in ((snap.get("accounts") or {}).get("items") or []):
+        label = account.get("short_name") or account.get("display_name") or account.get("plaid_account_id")
+        role = account.get("account_role") or "account"
+        if role == "margin":
+            account_lines.append(
+                f"  {label}: margin loan ${account.get('margin_loan_balance') or 0:,.2f}"
+            )
+        else:
+            account_lines.append(
+                f"  {label}: ${account.get('market_value') or 0:,.2f} MV, "
+                f"${account.get('projected_monthly_income') or 0:,.2f}/mo, "
+                f"{account.get('portfolio_yield_pct') or 0:.2f}% yield"
+            )
+
     coverage_now = _safe_get(margin_current, "income_interest_coverage", default=None)
     preferred_stress = (
         rate_scenarios.get("+100bp")
@@ -191,6 +209,7 @@ def _extract_context(snap: dict) -> dict:
         "spread": f"{macro_snap.get('yield_spread_10y_2y', 'N/A')}",
         "macro_stress": f"{macro_snap.get('macro_stress_score', 'N/A')}",
         "top_holdings": "\n".join(top_lines) if top_lines else "  No holdings data",
+        "account_split": "\n".join(account_lines) if account_lines else "  No account split data",
     }
 
 

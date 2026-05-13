@@ -2,7 +2,7 @@ import json
 import re
 import sqlite3
 
-from ..config import settings
+from ..account_config import transaction_account_ids
 
 _CUSIP_RE = re.compile(r"\b([A-Z0-9]{8,9})\b")
 _SHARES_OF_RE = re.compile(r"\bshares\s+of\s+([A-Z][A-Z0-9.\-]{0,9})\b", re.IGNORECASE)
@@ -27,10 +27,8 @@ _ALLOWED_TX_TYPES = {
 
 
 def _allowed_plaid_ids():
-    raw = settings.lm_plaid_account_ids
-    if not raw:
-        return None
-    return {part.strip() for part in raw.split(",") if part.strip()}
+    ids = transaction_account_ids()
+    return set(ids) if ids else None
 
 
 def _coerce_float(val):

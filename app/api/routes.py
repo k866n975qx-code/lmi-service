@@ -2,6 +2,7 @@ from collections import deque
 from datetime import date
 from pathlib import Path
 import os
+import sqlite3
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from fastapi.responses import FileResponse
 from .schemas import SyncRun, StatusResponse, SyncWindowRequest
@@ -42,6 +43,26 @@ def _serialize_run_row(row):
         'finished_at_utc': row[3],
         'error_message': row[4],
     }
+
+
+def _row_dict(row):
+    if not row:
+        return None
+    keys = row.keys() if hasattr(row, "keys") else []
+    if keys:
+        return {key: row[key] for key in keys}
+    return dict(row)
+
+
+def _latest_account_date(conn, plaid_account_id: str | None = None):
+    if plaid_account_id:
+        row = conn.execute(
+            "SELECT MAX(as_of_date_local) FROM daily_account_portfolio WHERE plaid_account_id=?",
+            (str(plaid_account_id),),
+        ).fetchone()
+    else:
+        row = conn.execute("SELECT MAX(as_of_date_local) FROM daily_account_portfolio").fetchone()
+    return row[0] if row and row[0] else None
 
 @router.get(
     '/health',
@@ -229,6 +250,118 @@ def list_available_period_summaries(snapshot_type: str | None = None):
             for row in period_rows
         ],
     }
+
+
+@router.get(
+    '/accounts',
+    summary="List configured portfolio accounts",
+    description="Returns Lunch Money/Plaid accounts included in portfolio reporting.",
+    tags=["Accounts"],
+)
+def list_portfolio_accounts():
+    conn = get_conn(settings.db_path)
+    conn.row_factory = None
+    rows = conn.execute(
+        """
+        SELECT
+          plaid_account_id, display_name, short_name, institution_name,
+          account_role, account_type, account_subtype, mask, status,
+          include_in_portfolio, include_in_income, include_in_margin, is_primary,
+          first_seen_date, last_seen_utc
+        FROM portfolio_accounts
+        ORDER BY is_primary DESC, account_role, short_name, plaid_account_id
+        """
+    ).fetchall()
+    columns = [
+        "plaid_account_id", "display_name", "short_name", "institution_name",
+        "account_role", "account_type", "account_subtype", "mask", "status",
+        "include_in_portfolio", "include_in_income", "include_in_margin", "is_primary",
+        "first_seen_date", "last_seen_utc",
+    ]
+    items = [dict(zip(columns, row)) for row in rows]
+    return {
+        "count": len(items),
+        "primary_account_id": next((item["plaid_account_id"] for item in items if item.get("is_primary")), None),
+        "investment_account_ids": [item["plaid_account_id"] for item in items if item.get("account_role") == "investment"],
+        "margin_account_ids": [item["plaid_account_id"] for item in items if item.get("account_role") == "margin"],
+        "items": items,
+    }
+
+
+@router.get(
+    '/portfolio/daily/latest/accounts',
+    summary="Get latest account-level daily portfolio split",
+    description="Returns flat account-level daily portfolio rows for the latest snapshot date.",
+    tags=["Accounts"],
+)
+def get_latest_daily_account_split():
+    conn = get_conn(settings.db_path)
+    conn.row_factory = sqlite3.Row
+    as_of = _latest_account_date(conn)
+    if not as_of:
+        raise HTTPException(404, 'account daily snapshot not found')
+    rows = conn.execute(
+        """
+        SELECT *
+        FROM daily_account_portfolio
+        WHERE as_of_date_local=?
+        ORDER BY is_primary DESC, account_role, market_value DESC, plaid_account_id
+        """,
+        (as_of,),
+    ).fetchall()
+    return {"as_of_date_local": as_of, "items": [_row_dict(row) for row in rows]}
+
+
+@router.get(
+    '/accounts/{plaid_account_id}/daily/latest',
+    summary="Get latest account-level daily summary",
+    description="Returns one account's latest flat daily summary plus holdings.",
+    tags=["Accounts"],
+)
+def get_latest_account_daily(plaid_account_id: str):
+    conn = get_conn(settings.db_path)
+    conn.row_factory = sqlite3.Row
+    as_of = _latest_account_date(conn, plaid_account_id)
+    if not as_of:
+        raise HTTPException(404, 'account daily snapshot not found')
+    row = conn.execute(
+        "SELECT * FROM daily_account_portfolio WHERE as_of_date_local=? AND plaid_account_id=?",
+        (as_of, str(plaid_account_id)),
+    ).fetchone()
+    holdings = conn.execute(
+        """
+        SELECT *
+        FROM daily_account_holdings
+        WHERE as_of_date_local=? AND plaid_account_id=?
+        ORDER BY market_value DESC, symbol
+        """,
+        (as_of, str(plaid_account_id)),
+    ).fetchall()
+    return {"summary": _row_dict(row), "holdings": [_row_dict(item) for item in holdings]}
+
+
+@router.get(
+    '/accounts/{plaid_account_id}/holdings/latest',
+    summary="Get latest account-level holdings",
+    description="Returns one account's latest flat holdings rows.",
+    tags=["Accounts"],
+)
+def get_latest_account_holdings(plaid_account_id: str):
+    conn = get_conn(settings.db_path)
+    conn.row_factory = sqlite3.Row
+    as_of = _latest_account_date(conn, plaid_account_id)
+    if not as_of:
+        raise HTTPException(404, 'account holdings not found')
+    rows = conn.execute(
+        """
+        SELECT *
+        FROM daily_account_holdings
+        WHERE as_of_date_local=? AND plaid_account_id=?
+        ORDER BY market_value DESC, symbol
+        """,
+        (as_of, str(plaid_account_id)),
+    ).fetchall()
+    return {"as_of_date_local": as_of, "plaid_account_id": str(plaid_account_id), "items": [_row_dict(row) for row in rows]}
 
 @router.get(
     '/portfolio/daily/latest',

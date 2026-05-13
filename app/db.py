@@ -250,6 +250,8 @@ def migrate(conn: sqlite3.Connection):
         # Connection remains open, no need to reopen
     if _run_realized_schema_migration(conn):
         print("Realized P&L schema migration completed")
+    if _run_account_schema_migration(conn):
+        print("Account-level flat schema migration completed")
     
     # Drop legacy snapshot tables only if they exist (replaced by daily_portfolio, period_summary).
     # NEVER drop or truncate account_balances - it holds per-date balance history from sync.
@@ -537,6 +539,179 @@ def _run_realized_schema_migration(conn: sqlite3.Connection) -> bool:
     current_version = cur.fetchone()[0]
     if current_version < 6:
         conn.execute("PRAGMA user_version=6")
+        changed = True
+
+    conn.commit()
+    return changed
+
+
+def _run_account_schema_migration(conn: sqlite3.Connection) -> bool:
+    cur = conn.cursor()
+    changed = False
+
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS portfolio_accounts (
+          plaid_account_id TEXT PRIMARY KEY,
+          display_name TEXT,
+          short_name TEXT,
+          institution_name TEXT,
+          account_role TEXT NOT NULL,
+          account_type TEXT,
+          account_subtype TEXT,
+          mask TEXT,
+          status TEXT,
+          include_in_portfolio INTEGER NOT NULL DEFAULT 0,
+          include_in_income INTEGER NOT NULL DEFAULT 0,
+          include_in_margin INTEGER NOT NULL DEFAULT 0,
+          is_primary INTEGER NOT NULL DEFAULT 0,
+          first_seen_date TEXT,
+          last_seen_utc TEXT,
+          source TEXT NOT NULL DEFAULT 'lunchmoney'
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS daily_account_portfolio (
+          as_of_date_local TEXT NOT NULL,
+          plaid_account_id TEXT NOT NULL,
+          account_role TEXT NOT NULL,
+          display_name TEXT,
+          short_name TEXT,
+          market_value REAL,
+          cost_basis REAL,
+          net_liquidation_value REAL,
+          unrealized_pnl REAL,
+          unrealized_pct REAL,
+          margin_loan_balance REAL,
+          ltv_pct REAL,
+          projected_monthly_income REAL,
+          forward_12m_total REAL,
+          portfolio_yield_pct REAL,
+          portfolio_yield_on_cost_pct REAL,
+          holdings_count INTEGER,
+          account_weight_pct REAL,
+          income_weight_pct REAL,
+          is_primary INTEGER NOT NULL DEFAULT 0,
+          built_from_run_id TEXT NOT NULL,
+          created_at_utc TEXT NOT NULL,
+          PRIMARY KEY (as_of_date_local, plaid_account_id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS daily_account_holdings (
+          as_of_date_local TEXT NOT NULL,
+          plaid_account_id TEXT NOT NULL,
+          account_role TEXT NOT NULL,
+          account_short_name TEXT,
+          symbol TEXT NOT NULL,
+          shares REAL,
+          cost_basis REAL,
+          avg_cost_per_share REAL,
+          last_price REAL,
+          market_value REAL,
+          unrealized_pnl REAL,
+          unrealized_pct REAL,
+          account_weight_pct REAL,
+          portfolio_weight_pct REAL,
+          forward_12m_dividend REAL,
+          projected_monthly_dividend REAL,
+          projected_annual_dividend REAL,
+          current_yield_pct REAL,
+          yield_on_cost_pct REAL,
+          dividends_30d REAL,
+          dividends_qtd REAL,
+          dividends_ytd REAL,
+          PRIMARY KEY (as_of_date_local, plaid_account_id, symbol)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS period_account_summary (
+          period_type TEXT NOT NULL,
+          period_start_date TEXT NOT NULL,
+          period_end_date TEXT NOT NULL,
+          is_rolling INTEGER NOT NULL DEFAULT 0,
+          plaid_account_id TEXT NOT NULL,
+          account_role TEXT NOT NULL,
+          short_name TEXT,
+          market_value_start REAL,
+          market_value_end REAL,
+          market_value_delta REAL,
+          cost_basis_start REAL,
+          cost_basis_end REAL,
+          projected_monthly_income_start REAL,
+          projected_monthly_income_end REAL,
+          projected_monthly_income_delta REAL,
+          forward_12m_total_start REAL,
+          forward_12m_total_end REAL,
+          portfolio_yield_pct_start REAL,
+          portfolio_yield_pct_end REAL,
+          margin_loan_balance_start REAL,
+          margin_loan_balance_end REAL,
+          ltv_pct_start REAL,
+          ltv_pct_end REAL,
+          holdings_count_start INTEGER,
+          holdings_count_end INTEGER,
+          account_weight_pct_start REAL,
+          account_weight_pct_end REAL,
+          built_from_run_id TEXT NOT NULL,
+          created_at_utc TEXT NOT NULL,
+          PRIMARY KEY (period_type, period_start_date, period_end_date, is_rolling, plaid_account_id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS period_account_activity (
+          period_type TEXT NOT NULL,
+          period_start_date TEXT NOT NULL,
+          period_end_date TEXT NOT NULL,
+          is_rolling INTEGER NOT NULL DEFAULT 0,
+          plaid_account_id TEXT NOT NULL,
+          account_role TEXT,
+          short_name TEXT,
+          contributions_total REAL,
+          contributions_count INTEGER,
+          withdrawals_total REAL,
+          withdrawals_count INTEGER,
+          dividends_total_received REAL,
+          dividends_count INTEGER,
+          interest_total_paid REAL,
+          trades_total_count INTEGER,
+          buy_count INTEGER,
+          sell_count INTEGER,
+          buys_total REAL,
+          sells_total REAL,
+          realized_capital_pnl REAL,
+          realized_total_return REAL,
+          PRIMARY KEY (period_type, period_start_date, period_end_date, is_rolling, plaid_account_id)
+        )
+        """,
+    ]
+    for stmt in statements:
+        cur.execute(stmt)
+
+    activity_cols = {row[1] for row in cur.execute("PRAGMA table_info(period_account_activity)").fetchall()}
+    if activity_cols:
+        if "account_role" not in activity_cols:
+            cur.execute("ALTER TABLE period_account_activity ADD COLUMN account_role TEXT")
+        if "short_name" not in activity_cols:
+            cur.execute("ALTER TABLE period_account_activity ADD COLUMN short_name TEXT")
+        if "realized_total_return" not in activity_cols:
+            cur.execute("ALTER TABLE period_account_activity ADD COLUMN realized_total_return REAL")
+
+    indexes = [
+        "CREATE INDEX IF NOT EXISTS ix_portfolio_accounts_role ON portfolio_accounts(account_role, include_in_portfolio)",
+        "CREATE INDEX IF NOT EXISTS ix_dap_date_role ON daily_account_portfolio(as_of_date_local DESC, account_role)",
+        "CREATE INDEX IF NOT EXISTS ix_dah_symbol_date ON daily_account_holdings(symbol, as_of_date_local DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_dah_account_date ON daily_account_holdings(plaid_account_id, as_of_date_local DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_pas_period ON period_account_summary(period_type, period_end_date DESC, is_rolling)",
+        "CREATE INDEX IF NOT EXISTS ix_paa_period ON period_account_activity(period_type, period_end_date DESC, is_rolling)",
+    ]
+    for stmt in indexes:
+        cur.execute(stmt)
+
+    cur.execute("PRAGMA user_version")
+    current_version = cur.fetchone()[0]
+    if current_version < 7:
+        conn.execute("PRAGMA user_version=7")
         changed = True
 
     conn.commit()

@@ -403,6 +403,24 @@ def assemble_daily_snapshot(conn: sqlite3.Connection, as_of_date: str | None = N
     upc_rows = conn.execute(
         "SELECT * FROM daily_dividends_upcoming WHERE as_of_date_local=?", (as_of,)
     ).fetchall()
+    account_rows = conn.execute(
+        """
+        SELECT *
+        FROM daily_account_portfolio
+        WHERE as_of_date_local=?
+        ORDER BY is_primary DESC, account_role, market_value DESC, plaid_account_id
+        """,
+        (as_of,),
+    ).fetchall()
+    account_holding_rows = conn.execute(
+        """
+        SELECT *
+        FROM daily_account_holdings
+        WHERE as_of_date_local=?
+        ORDER BY plaid_account_id, market_value DESC, symbol
+        """,
+        (as_of,),
+    ).fetchall()
 
     # Build V5 structure: portfolio date vs price date (use EOD of portfolio date for portfolio_data_as_of_utc)
     prices_utc = r.get("prices_as_of_utc")
@@ -501,6 +519,58 @@ def assemble_daily_snapshot(conn: sqlite3.Connection, as_of_date: str | None = N
     }
 
     holdings = holdings_list
+    account_holdings_by_id: dict[str, list[dict]] = {}
+    for ah in account_holding_rows:
+        item = dict(ah)
+        account_id = str(item.get("plaid_account_id"))
+        account_holdings_by_id.setdefault(account_id, []).append(
+            {
+                "symbol": item.get("symbol"),
+                "shares": item.get("shares"),
+                "market_value": item.get("market_value"),
+                "cost_basis": item.get("cost_basis"),
+                "account_weight_pct": item.get("account_weight_pct"),
+                "portfolio_weight_pct": item.get("portfolio_weight_pct"),
+                "projected_monthly_dividend": item.get("projected_monthly_dividend"),
+                "current_yield_pct": item.get("current_yield_pct"),
+                "yield_on_cost_pct": item.get("yield_on_cost_pct"),
+            }
+        )
+    account_items = []
+    for ar in account_rows:
+        item = dict(ar)
+        account_id = str(item.get("plaid_account_id"))
+        account_items.append(
+            {
+                "plaid_account_id": account_id,
+                "account_role": item.get("account_role"),
+                "display_name": item.get("display_name"),
+                "short_name": item.get("short_name"),
+                "is_primary": bool(item.get("is_primary")) if item.get("is_primary") is not None else False,
+                "market_value": item.get("market_value"),
+                "cost_basis": item.get("cost_basis"),
+                "net_liquidation_value": item.get("net_liquidation_value"),
+                "unrealized_pnl": item.get("unrealized_pnl"),
+                "unrealized_pct": item.get("unrealized_pct"),
+                "margin_loan_balance": item.get("margin_loan_balance"),
+                "ltv_pct": item.get("ltv_pct"),
+                "projected_monthly_income": item.get("projected_monthly_income"),
+                "forward_12m_total": item.get("forward_12m_total"),
+                "portfolio_yield_pct": item.get("portfolio_yield_pct"),
+                "portfolio_yield_on_cost_pct": item.get("portfolio_yield_on_cost_pct"),
+                "holdings_count": item.get("holdings_count"),
+                "account_weight_pct": item.get("account_weight_pct"),
+                "income_weight_pct": item.get("income_weight_pct"),
+                "holdings": account_holdings_by_id.get(account_id, []),
+            }
+        )
+    accounts = {
+        "scope": "combined",
+        "primary_account_id": next((a["plaid_account_id"] for a in account_items if a.get("is_primary")), None),
+        "investment_account_ids": [a["plaid_account_id"] for a in account_items if a.get("account_role") == "investment"],
+        "margin_account_ids": [a["plaid_account_id"] for a in account_items if a.get("account_role") == "margin"],
+        "items": account_items,
+    }
     goals = {
         "baseline": {
             "target_monthly_income": r.get("goal_target_monthly_income"),
@@ -751,6 +821,7 @@ def assemble_daily_snapshot(conn: sqlite3.Connection, as_of_date: str | None = N
     out = {
         "timestamps": timestamps,
         "portfolio": portfolio,
+        "accounts": accounts,
         "holdings": holdings,
         "goals": goals,
         "margin": margin,

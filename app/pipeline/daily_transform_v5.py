@@ -54,7 +54,10 @@ def transform_to_v5(daily: dict) -> dict:
     # ── Account ──────────────────────────────────────────────────────────
     account = {
         "plaid_account_id": daily.get("plaid_account_id"),
-        "account_type": "margin",
+        "primary_investment_account_id": daily.get("plaid_account_id"),
+        "investment_account_ids": daily.get("portfolio_account_ids") or [],
+        "margin_account_ids": daily.get("margin_account_ids") or [],
+        "account_type": "multi_account_portfolio",
         "base_currency": "USD",
     }
 
