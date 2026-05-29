@@ -599,7 +599,11 @@ def _generate_period_activity(conn: sqlite3.Connection, start: date, end: date):
     interest = []
     margin_borrows = []
     margin_repays = []
-    trades_by_symbol = {}
+    trades_by_symbol = {
+        symbol: dict(summary or {})
+        for symbol, summary in realized_by_symbol.items()
+        if symbol
+    }
 
     for row in rows:
         (
@@ -650,16 +654,6 @@ def _generate_period_activity(conn: sqlite3.Connection, start: date, end: date):
             margin_borrows.append({**tx_dict, "amount": abs(float(financing_flow_amount or 0.0))})
         elif normalized_type == "margin_repay":
             margin_repays.append({**tx_dict, "amount": abs(float(financing_flow_amount or 0.0))})
-        elif normalized_type in ("buy", "sell"):
-            if not symbol:
-                continue
-            if symbol not in trades_by_symbol:
-                trades_by_symbol[symbol] = dict(realized_by_symbol.get(symbol) or {})
-            if normalized_type == "buy":
-                trades_by_symbol[symbol]["buy_count"] = int(trades_by_symbol[symbol].get("buy_count") or 0) + 1
-            elif normalized_type == "sell":
-                trades_by_symbol[symbol]["sell_count"] = int(trades_by_symbol[symbol].get("sell_count") or 0) + 1
-
     # Calculate totals
     contributions_total = sum(c["amount"] for c in contributions)
     withdrawals_total = sum(w["amount"] for w in withdrawals)
